@@ -1943,6 +1943,7 @@ public:
     _requestCurrentTime(descriptor.requestCurrentTime),
     _requestAudioBroadcastPart(descriptor.requestAudioBroadcastPart),
     _requestVideoBroadcastPart(descriptor.requestVideoBroadcastPart),
+    _proxy(std::move(descriptor.proxy)),
     _videoCapture(descriptor.videoCapture),
     _videoCaptureSink(new VideoSinkImpl("VideoCapture")),
     _getVideoSource(descriptor.getVideoSource),
@@ -2035,7 +2036,11 @@ public:
 
         bool takeAudioLevelFromNetwork = _e2eEncryptDecrypt == nullptr;
 
-        _networkManager.reset(new ThreadLocalObject<GroupNetworkManager>(_threads->getNetworkThread(), [weak, threads = _threads, takeAudioLevelFromNetwork] () mutable {
+        std::unique_ptr<Proxy> proxy;
+        if (_proxy) {
+            proxy = std::make_unique<Proxy>(*_proxy);
+        }
+        _networkManager.reset(new ThreadLocalObject<GroupNetworkManager>(_threads->getNetworkThread(), [weak, threads = _threads, takeAudioLevelFromNetwork, proxy = std::move(proxy)] () mutable {
             return std::make_shared<GroupNetworkManager>(
                 fieldTrialsBasedConfig,
                 [=](const GroupNetworkManager::State &state) {
@@ -2085,7 +2090,7 @@ public:
                             strong->updateSsrcActivity(ssrc);
                         }
                     });
-                }, threads);
+                }, std::move(proxy), threads);
         }));
 
     #if USE_RNNOISE
@@ -4236,6 +4241,7 @@ private:
     std::function<std::shared_ptr<BroadcastPartTask>(std::function<void(int64_t)>)> _requestCurrentTime;
     std::function<std::shared_ptr<BroadcastPartTask>(std::shared_ptr<PlatformContext>, int64_t, int64_t, std::function<void(BroadcastPart &&)>)> _requestAudioBroadcastPart;
     std::function<std::shared_ptr<BroadcastPartTask>(std::shared_ptr<PlatformContext>, int64_t, int64_t, int32_t, VideoChannelDescription::Quality, std::function<void(BroadcastPart &&)>)> _requestVideoBroadcastPart;
+    std::unique_ptr<Proxy> _proxy;
     std::shared_ptr<VideoCaptureInterface> _videoCapture;
     std::shared_ptr<VideoSinkImpl> _videoCaptureSink;
     std::function<webrtc::scoped_refptr<webrtc::VideoTrackSourceInterface>()> _getVideoSource;

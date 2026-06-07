@@ -264,17 +264,25 @@ public final class Instance {
     }
 
     public static final class Proxy {
+        public static final int PROTOCOL_SOCKS5 = 0;
+        public static final int PROTOCOL_HTTP_CONNECT = 1;
 
         public final String host;
         public final int port;
         public final String login;
         public final String password;
+        public final int protocol;
 
         public Proxy(String host, int port, String login, String password) {
+            this(host, port, login, password, PROTOCOL_SOCKS5);
+        }
+
+        public Proxy(String host, int port, String login, String password, int protocol) {
             this.host = host;
             this.port = port;
             this.login = login;
             this.password = password;
+            this.protocol = protocol;
         }
 
         @Override
@@ -284,6 +292,7 @@ public final class Instance {
                     ", port=" + port +
                     ", login='" + login + '\'' +
                     ", password='" + password + '\'' +
+                    ", protocol=" + protocol +
                     '}';
         }
     }

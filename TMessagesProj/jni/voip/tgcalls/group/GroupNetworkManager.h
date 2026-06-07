@@ -19,6 +19,7 @@
 
 #include "Message.h"
 #include "ThreadLocalObject.h"
+#include "../Instance.h"
 
 namespace rtc {
 class BasicPacketSocketFactory;
@@ -65,6 +66,7 @@ public:
         std::function<void(uint32_t, uint8_t, bool)> audioActivityUpdated,
         bool zeroAudioLevel,
         std::function<void(uint32_t)> anyActivityUpdated,
+        std::unique_ptr<Proxy> proxy,
         std::shared_ptr<Threads> threads);
     ~GroupNetworkManager();
 
@@ -111,6 +113,7 @@ private:
     std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
     std::unique_ptr<rtc::BasicPacketSocketFactory> _socketFactory;
     std::unique_ptr<rtc::BasicNetworkManager> _networkManager;
+    std::unique_ptr<Proxy> _proxy;
     std::unique_ptr<webrtc::TurnCustomizer> _turnCustomizer;
     std::unique_ptr<cricket::BasicPortAllocator> _portAllocator;
     std::unique_ptr<webrtc::AsyncDnsResolverFactoryInterface> _asyncResolverFactory;

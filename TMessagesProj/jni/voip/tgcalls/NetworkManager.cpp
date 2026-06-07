@@ -130,11 +130,15 @@ void NetworkManager::start() {
     if (!_enableTCP) {
         flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
     }
-    if (!_enableP2P) {
+    const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
+    if (!_enableP2P || httpConnectProxy) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
         candidateFilter &= ~(cricket::CF_REFLEXIVE);
+        if (httpConnectProxy) {
+            candidateFilter &= ~(cricket::CF_HOST);
+        }
         _portAllocator->SetCandidateFilter(candidateFilter);
     }
     
@@ -142,7 +146,7 @@ void NetworkManager::start() {
     
     if (_proxy) {
         rtc::ProxyInfo proxyInfo;
-        proxyInfo.type = rtc::ProxyType::PROXY_SOCKS5;
+        proxyInfo.type = _proxy->protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
         proxyInfo.address = rtc::SocketAddress(_proxy->host, _proxy->port);
         proxyInfo.username = _proxy->login;
         proxyInfo.password = rtc::CryptString(TgCallsCryptStringImpl(_proxy->password));

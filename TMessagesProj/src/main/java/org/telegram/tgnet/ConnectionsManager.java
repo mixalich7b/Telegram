@@ -44,6 +44,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.WireGuardManager;
 import org.telegram.ui.Components.VideoPlayer;
 import org.telegram.ui.LoginActivity;
 
@@ -615,7 +616,11 @@ public class ConnectionsManager extends BaseController {
         String proxySecret = preferences.getString("proxy_secret", "");
         int proxyPort = preferences.getInt("proxy_port", 1080);
 
-        if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
+        if (WireGuardManager.applyProxySettingsForAccount(currentAccount)) {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("WireGuard proxy settings applied for account " + currentAccount);
+            }
+        } else if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
             native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
         }
         String installer = "";
@@ -943,7 +948,11 @@ public class ConnectionsManager extends BaseController {
         }
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (enabled && !TextUtils.isEmpty(address)) {
+            if (WireGuardManager.applyProxySettingsForAccount(a)) {
+                if (BuildVars.LOGS_ENABLED) {
+                    FileLog.d("WireGuard proxy settings retained for account " + a);
+                }
+            } else if (enabled && !TextUtils.isEmpty(address)) {
                 native_setProxySettings(a, address, port, username, password, secret);
             } else {
                 native_setProxySettings(a, "", 1080, "", "", "");

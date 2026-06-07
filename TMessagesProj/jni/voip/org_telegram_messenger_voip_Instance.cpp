@@ -323,6 +323,20 @@ DataSaving parseDataSaving(JNIEnv *env, jint dataSaving) {
     }
 }
 
+std::unique_ptr<Proxy> parseProxy(JNIEnv *env, jobject proxyClass) {
+    if (env->IsSameObject(proxyClass, nullptr)) {
+        return nullptr;
+    }
+    JavaObject proxyObject(env, proxyClass);
+    auto proxy = std::make_unique<Proxy>();
+    proxy->host = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("host"));
+    proxy->port = static_cast<uint16_t>(proxyObject.getIntField("port"));
+    proxy->login = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("login"));
+    proxy->password = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("password"));
+    proxy->protocol = proxyObject.getIntField("protocol") == 1 ? Proxy::Protocol::HttpConnect : Proxy::Protocol::Socks5;
+    return proxy;
+}
+
 EndpointType parseEndpointType(JNIEnv *env, jint endpointType) {
     switch (endpointType) {
         case org_telegram_messenger_voip_Instance_ENDPOINT_TYPE_INET:
@@ -402,7 +416,7 @@ void initWebRTC(JNIEnv *env) {
 }
 
 extern "C"
-JNIEXPORT jlong JNICALL Java_org_telegram_messenger_voip_NativeInstance_makeGroupNativeInstance(JNIEnv *env, jclass clazz, jobject instanceObj, jstring logFilePath, jboolean highQuality, jlong videoCapturer, jboolean screencast, jboolean noiseSupression, jboolean conference) {
+JNIEXPORT jlong JNICALL Java_org_telegram_messenger_voip_NativeInstance_makeGroupNativeInstance(JNIEnv *env, jclass clazz, jobject instanceObj, jstring logFilePath, jboolean highQuality, jlong videoCapturer, jboolean screencast, jboolean noiseSupression, jobject proxyClass, jboolean conference) {
     initWebRTC(env);
 
     std::shared_ptr<VideoCaptureInterface> videoCapture;
@@ -483,6 +497,7 @@ JNIEXPORT jlong JNICALL Java_org_telegram_messenger_voip_NativeInstance_makeGrou
                     env->DeleteLocalRef(boolArray);
                 });
             },
+            .proxy = parseProxy(env, proxyClass),
             .videoCapture = videoCapture,
             .videoContentType = screencast ? VideoContentType::Screencast : VideoContentType::Generic,
             .initialEnableNoiseSuppression = (bool) noiseSupression,
@@ -883,14 +898,7 @@ JNIEXPORT jlong JNICALL Java_org_telegram_messenger_voip_NativeInstance_makeNati
         }
     }
 
-    if (!env->IsSameObject(proxyClass, nullptr)) {
-        JavaObject proxyObject(env, proxyClass);
-        descriptor.proxy = std::make_unique<Proxy>();
-        descriptor.proxy->host = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("host"));
-        descriptor.proxy->port = static_cast<uint16_t>(proxyObject.getIntField("port"));
-        descriptor.proxy->login = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("login"));
-        descriptor.proxy->password = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("password"));
-    }
+    descriptor.proxy = parseProxy(env, proxyClass);
 
     readPersistentState(tgvoip::jni::JavaStringToStdString(env, persistentStateFilePath).c_str(), descriptor.persistentState);
 

@@ -75,10 +75,13 @@ dependencies {
     }
     implementation 'com.google.android.recaptcha:recaptcha:18.7.1'
 
+    testImplementation 'junit:junit:4.13.2'
+
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }
 
 def isWindows = String.valueOf(DefaultNativePlatform.currentOperatingSystem.toFamilyName() == OperatingSystemFamily.WINDOWS)
+def tgWireGuardNativeEnabled = project.hasProperty("TG_WIREGUARD") ? project.property("TG_WIREGUARD").toString().toBoolean() : String.valueOf(getProps("TG_WIREGUARD")).toBoolean()
 android {
     compileSdkVersion 35
     buildToolsVersion '35.0.0'
@@ -117,7 +120,7 @@ android {
         externalNativeBuild {
             cmake {
                 version '3.10.2'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21', "-DTG_WIREGUARD=${tgWireGuardNativeEnabled ? 'ON' : 'OFF'}" //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
             }
         }
     }
@@ -259,3 +262,102 @@ task checkVisibility {
 }
 
 preBuild.dependsOn checkVisibility
+
+tasks.register("testWireGuardGo", Exec) {
+    description = "Runs host-side Go tests for the internal WireGuard bridge."
+    group = "verification"
+    workingDir file("jni/tg_wg/go")
+    def goTestBuildDir = rootProject.file(".gradle/wireguard-go-test")
+    environment "GOCACHE", file("${goTestBuildDir}/gocache")
+    environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
+    doFirst {
+        file("${goTestBuildDir}/gocache").mkdirs()
+        file("${goTestBuildDir}/gomod").mkdirs()
+    }
+    commandLine "go", "test", "-count=1", "./..."
+}
+
+tasks.register("verifyWireGuardStaticGuards") {
+    description = "Checks static fail-closed and no-device-VPN invariants for WireGuard integration."
+    group = "verification"
+    doLast {
+        def configFile = file("src/main/java/org/telegram/messenger/WireGuardConfig.java")
+        def configText = configFile.text
+        def wireGuardEnabled = (configText =~ /ENABLED\s*=\s*true/).find()
+        if (!wireGuardEnabled) {
+            if (!(configText =~ /ENABLED\s*=\s*false/)) {
+                throw new GradleException("WireGuardConfig.ENABLED must be explicitly set")
+            }
+            ["PRIVATE_KEY", "PEER_PUBLIC_KEY", "PRESHARED_KEY", "PEER_ENDPOINT"].each { name ->
+                if (!(configText =~ /${name}\s*=\s*""/)) {
+                    throw new GradleException("WireGuardConfig.${name} must be empty by default")
+                }
+            }
+        }
+        def checkedFiles = fileTree(projectDir) {
+            include "src/main/java/org/telegram/messenger/WireGuard*.java"
+            include "jni/tg_wg/**"
+            exclude "jni/tg_wg/go/go.sum"
+            exclude "jni/tg_wg/go/go.mod"
+        }
+        checkedFiles.each { source ->
+            def text = source.text
+            ["VpnService", "Builder.establish", "/dev/tun"].each { forbidden ->
+                if (text.contains(forbidden)) {
+                    throw new GradleException("Forbidden WireGuard integration token '${forbidden}' found in ${source}")
+                }
+            }
+        }
+        if (file("jni/tg_wg/go/build").exists()) {
+            throw new GradleException("TMessagesProj/jni/tg_wg/go/build must not exist; Go caches under jni are packaged as native libs")
+        }
+        def connectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
+        if (!connectionsManagerText.contains("WireGuardManager.applyProxySettingsForAccount")) {
+            throw new GradleException("ConnectionsManager.setProxySettings must preserve WireGuard proxy settings when WireGuard is enabled")
+        }
+        def voipServiceText = file("src/main/java/org/telegram/messenger/voip/VoIPService.java").text
+        ["WireGuardManager.getProxySettings", "WireGuardVoipRouting.shouldEnableP2p", "WireGuardVoipRouting.selectEndpointType", "PROTOCOL_HTTP_CONNECT"].each { token ->
+            if (!voipServiceText.contains(token)) {
+                throw new GradleException("VoIPService must route calls through WireGuard token '${token}'")
+            }
+        }
+        def nativeInstanceText = file("src/main/java/org/telegram/messenger/voip/NativeInstance.java").text
+        if (!nativeInstanceText.contains("Instance.Proxy proxy")) {
+            throw new GradleException("NativeInstance.makeGroup must accept a proxy for WireGuard group-call routing")
+        }
+        def livePlayerText = file("src/main/java/org/telegram/ui/Stories/LivePlayer.java").text
+        ["WireGuardManager.getProxySettings", "PROTOCOL_HTTP_CONNECT"].each { token ->
+            if (!livePlayerText.contains(token)) {
+                throw new GradleException("LivePlayer group-call streaming must route through WireGuard token '${token}'")
+            }
+        }
+        def groupNetworkManagerText = file("jni/voip/tgcalls/group/GroupNetworkManager.cpp").text
+        ["set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST"].each { token ->
+            if (!groupNetworkManagerText.contains(token)) {
+                throw new GradleException("GroupNetworkManager must enforce WireGuard proxy routing token '${token}'")
+            }
+        }
+        def networkManagerText = file("jni/voip/tgcalls/NetworkManager.cpp").text
+        ["set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST"].each { token ->
+            if (!networkManagerText.contains(token)) {
+                throw new GradleException("NetworkManager must enforce WireGuard private-call proxy routing token '${token}'")
+            }
+        }
+        def nativeNetworkingV2Text = file("jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp").text
+        ["set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST", "!_enableTCP && !_proxy"].each { token ->
+            if (!nativeNetworkingV2Text.contains(token)) {
+                throw new GradleException("NativeNetworkingImpl must enforce WireGuard private-call V2 proxy routing token '${token}'")
+            }
+        }
+        def instanceV2ReferenceText = file("jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp").text
+        ["set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST", "kTcpCandidatePolicyEnabled", "server.isTcp && !_proxy", "?transport=tcp"].each { token ->
+            if (!instanceV2ReferenceText.contains(token)) {
+                throw new GradleException("InstanceV2ReferenceImpl must enforce WireGuard private-call V2 reference proxy routing token '${token}'")
+            }
+        }
+        def wireGuardGoText = file("jni/tg_wg/go/tg_wg.go").text
+        if (!wireGuardGoText.contains("httpConnectHandshake")) {
+            throw new GradleException("WireGuard Go proxy must support HTTP CONNECT for WebRTC TCP routing")
+        }
+    }
+}

@@ -199,3 +199,72 @@ android {
 }
 
 apply plugin: 'com.google.gms.google-services'
+
+tasks.register("verifyWireGuardAfatDebugPackaging") {
+    description = "Verifies WireGuard native libraries and Go cache entries in afat debug APK."
+    group = "verification"
+    dependsOn "packageAfatDebug"
+    doLast {
+        def apkFile = file("build/outputs/apk/afat/debug/app.apk")
+        if (!apkFile.exists()) {
+            throw new GradleException("APK not found for WireGuard packaging verification: ${apkFile}")
+        }
+        def entries = [] as Set
+        new java.util.zip.ZipFile(apkFile).withCloseable { zip ->
+            zip.entries().each { entry ->
+                entries.add(entry.name)
+            }
+        }
+
+        ["gomod/", "gocache/", "tg_wg/go/build", "vdso_"].each { forbidden ->
+            def match = entries.find { it.contains(forbidden) }
+            if (match != null) {
+                throw new GradleException("APK contains forbidden Go build/cache entry: ${match}")
+            }
+        }
+
+        def enabled = isWireGuardEnabledForCurrentBuild()
+        def abis = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
+        abis.each { abi ->
+            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-wg-go.so"].each { lib ->
+                def libName = lib.toString()
+                def present = entries.contains(libName)
+                if (enabled && !present) {
+                    throw new GradleException("WireGuard is enabled but APK is missing ${libName}")
+                }
+                if (!enabled && present) {
+                    throw new GradleException("WireGuard is disabled but APK contains ${libName}")
+                }
+            }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name == "assembleAfatDebug" }.configureEach {
+        dependsOn ":TMessagesProj:testDebugUnitTest"
+        dependsOn ":TMessagesProj:testWireGuardGo"
+        dependsOn ":TMessagesProj:verifyWireGuardStaticGuards"
+        finalizedBy "verifyWireGuardAfatDebugPackaging"
+    }
+    tasks.named("verifyWireGuardAfatDebugPackaging").configure {
+        mustRunAfter "assembleAfatDebug"
+    }
+}
+
+def isWireGuardEnabledForCurrentBuild() {
+    if (project.hasProperty("TG_WIREGUARD")) {
+        return project.property("TG_WIREGUARD").toString().toBoolean()
+    }
+    return String.valueOf(getLocalProp("TG_WIREGUARD")).toBoolean()
+}
+
+def getLocalProp(String propName) {
+    def propsFile = rootProject.file('local.properties')
+    if (propsFile.exists()) {
+        def props = new Properties()
+        props.load(new FileInputStream(propsFile))
+        return props[propName]
+    }
+    return ""
+}

@@ -24,6 +24,43 @@
 
 namespace tgcalls {
 
+class TgCallsCryptStringImpl : public rtc::CryptStringImpl {
+public:
+    explicit TgCallsCryptStringImpl(std::string const &value) :
+    _value(value) {
+    }
+
+    virtual ~TgCallsCryptStringImpl() override {
+    }
+
+    virtual size_t GetLength() const override {
+        return _value.size();
+    }
+
+    virtual void CopyTo(char* dest, bool nullterminate) const override {
+        memcpy(dest, _value.data(), _value.size());
+        if (nullterminate) {
+            dest[_value.size()] = 0;
+        }
+    }
+
+    virtual std::string UrlEncode() const override {
+        return _value;
+    }
+
+    virtual CryptStringImpl* Copy() const override {
+        return new TgCallsCryptStringImpl(_value);
+    }
+
+    virtual void CopyRawTo(std::vector<unsigned char>* dest) const override {
+        dest->resize(_value.size());
+        memcpy(dest->data(), _value.data(), _value.size());
+    }
+
+private:
+    std::string _value;
+};
+
 enum {
     kRtcpExpectedVersion = 2,
     kRtcpMinHeaderLength = 4,
@@ -335,6 +372,7 @@ GroupNetworkManager::GroupNetworkManager(
     std::function<void(uint32_t, uint8_t, bool)> audioActivityUpdated,
     bool zeroAudioLevel,
     std::function<void(uint32_t)> anyActivityUpdated,
+    std::unique_ptr<Proxy> proxy,
     std::shared_ptr<Threads> threads) :
 _threads(std::move(threads)),
 _stateUpdated(std::move(stateUpdated)),
@@ -343,7 +381,8 @@ _dataChannelStateUpdated(dataChannelStateUpdated),
 _dataChannelMessageReceived(dataChannelMessageReceived),
 _audioActivityUpdated(audioActivityUpdated),
 _zeroAudioLevel(zeroAudioLevel),
-_anyActivityUpdated(anyActivityUpdated) {
+_anyActivityUpdated(anyActivityUpdated),
+_proxy(std::move(proxy)) {
     assert(_threads->getNetworkThread()->IsCurrent());
 
     _localIceParameters = PeerIceParameters(rtc::CreateRandomString(cricket::ICE_UFRAG_LENGTH), rtc::CreateRandomString(cricket::ICE_PWD_LENGTH), false);
@@ -391,6 +430,25 @@ void GroupNetworkManager::resetDtlsSrtpTransport() {
     flags |=
         cricket::PORTALLOCATOR_ENABLE_IPV6 |
         cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
+
+    const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
+    if (_proxy) {
+        flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
+        flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
+        uint32_t candidateFilter = portAllocator->candidate_filter();
+        candidateFilter &= ~(cricket::CF_REFLEXIVE);
+        if (httpConnectProxy) {
+            candidateFilter &= ~(cricket::CF_HOST);
+        }
+        portAllocator->SetCandidateFilter(candidateFilter);
+
+        rtc::ProxyInfo proxyInfo;
+        proxyInfo.type = _proxy->protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
+        proxyInfo.address = rtc::SocketAddress(_proxy->host, _proxy->port);
+        proxyInfo.username = _proxy->login;
+        proxyInfo.password = rtc::CryptString(TgCallsCryptStringImpl(_proxy->password));
+        portAllocator->set_proxy("t/1.0", proxyInfo);
+    }
     
     portAllocator->set_flags(flags);
     portAllocator->Initialize();

@@ -39,10 +39,16 @@ struct FilePath {
 };
 
 struct Proxy {
+	enum class Protocol {
+		Socks5,
+		HttpConnect,
+	};
+
 	std::string host;
 	uint16_t port = 0;
 	std::string login;
 	std::string password;
+	Protocol protocol = Protocol::Socks5;
 };
 
 struct RtcServer {

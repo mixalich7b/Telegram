@@ -74,6 +74,15 @@ private:
     std::string _value;
 };
 
+rtc::ProxyInfo proxyInfoFromDescriptor(const Proxy &proxy) {
+    rtc::ProxyInfo proxyInfo;
+    proxyInfo.type = proxy.protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
+    proxyInfo.address = rtc::SocketAddress(proxy.host, proxy.port);
+    proxyInfo.username = proxy.login;
+    proxyInfo.password = rtc::CryptString(CryptStringImpl(proxy.password));
+    return proxyInfo;
+}
+
 class WrappedAsyncPacketSocket : public rtc::AsyncPacketSocket {
 public:
     WrappedAsyncPacketSocket(std::unique_ptr<rtc::AsyncPacketSocket> &&wrappedSocket) :
@@ -597,7 +606,8 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         cricket::PORTALLOCATOR_ENABLE_IPV6 |
         cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
 
-    if (!_enableTCP) {
+    const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
+    if (!_enableTCP && !_proxy) {
         flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
     }
     
@@ -606,7 +616,13 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
         candidateFilter &= ~(cricket::CF_REFLEXIVE);
+        if (httpConnectProxy) {
+            candidateFilter &= ~(cricket::CF_HOST);
+        }
         _portAllocator->SetCandidateFilter(candidateFilter);
+    }
+    if (_proxy) {
+        _portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
     }
     
     _portAllocator->set_step_delay(cricket::kMinimumStepDelay);

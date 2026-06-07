@@ -107,6 +107,52 @@ static VideoCaptureInterfaceObject *GetVideoCaptureAssumingSameThread(VideoCaptu
         : nullptr;
 }
 
+class CryptStringImpl : public rtc::CryptStringImpl {
+public:
+    explicit CryptStringImpl(std::string const &value) :
+    _value(value) {
+    }
+
+    virtual ~CryptStringImpl() override {
+    }
+
+    virtual size_t GetLength() const override {
+        return _value.size();
+    }
+
+    virtual void CopyTo(char* dest, bool nullterminate) const override {
+        memcpy(dest, _value.data(), _value.size());
+        if (nullterminate) {
+            dest[_value.size()] = 0;
+        }
+    }
+
+    virtual std::string UrlEncode() const override {
+        return _value;
+    }
+
+    virtual CryptStringImpl* Copy() const override {
+        return new CryptStringImpl(_value);
+    }
+
+    virtual void CopyRawTo(std::vector<unsigned char>* dest) const override {
+        dest->resize(_value.size());
+        memcpy(dest->data(), _value.data(), _value.size());
+    }
+
+private:
+    std::string _value;
+};
+
+rtc::ProxyInfo proxyInfoFromDescriptor(const Proxy &proxy) {
+    rtc::ProxyInfo proxyInfo;
+    proxyInfo.type = proxy.protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
+    proxyInfo.address = rtc::SocketAddress(proxy.host, proxy.port);
+    proxyInfo.username = proxy.login;
+    proxyInfo.password = rtc::CryptString(CryptStringImpl(proxy.password));
+    return proxyInfo;
+}
+
 class SetSessionDescriptionObserver : public webrtc::SetLocalDescriptionObserverInterface, public webrtc::SetRemoteDescriptionObserverInterface {
 public:
     SetSessionDescriptionObserver(std::function<void(webrtc::RTCError)> &&completion) :
@@ -636,15 +682,30 @@ public:
         _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver());
 
         auto portAllocator = std::make_unique<cricket::BasicPortAllocator>(_networkManager.get(), _socketFactory.get(), nullptr, _relayPortFactory.get());
+        const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
+        if (_proxy) {
+            uint32_t flags = portAllocator->flags();
+            flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
+            flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
+            portAllocator->set_flags(flags);
+
+            uint32_t candidateFilter = portAllocator->candidate_filter();
+            candidateFilter &= ~(cricket::CF_REFLEXIVE);
+            if (httpConnectProxy) {
+                candidateFilter &= ~(cricket::CF_HOST);
+            }
+            portAllocator->SetCandidateFilter(candidateFilter);
+            portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
+        }
         peerConnectionDependencies.allocator = std::move(portAllocator);
 
         webrtc::PeerConnectionInterface::RTCConfiguration peerConnectionConfiguration;
-        if (_enableP2P) {
+        if (_enableP2P && !_proxy) {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kAll;
         } else {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kRelay;
         }
-        peerConnectionConfiguration.tcp_candidate_policy = webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyDisabled;
+        peerConnectionConfiguration.tcp_candidate_policy = _proxy ? webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyEnabled : webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyDisabled;
         peerConnectionConfiguration.enable_ice_renomination = true;
         peerConnectionConfiguration.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
         peerConnectionConfiguration.bundle_policy = webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
@@ -655,7 +716,7 @@ public:
         peerConnectionConfiguration.prioritize_most_likely_ice_candidate_pairs = true;
 
         for (auto &server : _rtcServers) {
-            if (server.isTcp) {
+            if (server.isTcp && !_proxy) {
                 continue;
             }
 
@@ -668,8 +729,11 @@ public:
             if (server.isTurn) {
                 webrtc::PeerConnectionInterface::IceServer mappedServer;
 
-                mappedServer.urls.push_back(
-                    "turn:" + address.HostAsURIString() + ":" + std::to_string(server.port));
+                std::string turnUrl = "turn:" + address.HostAsURIString() + ":" + std::to_string(server.port);
+                if (server.isTcp) {
+                    turnUrl += "?transport=tcp";
+                }
+                mappedServer.urls.push_back(turnUrl);
                 mappedServer.username = server.login;
                 mappedServer.password = server.password;
 
