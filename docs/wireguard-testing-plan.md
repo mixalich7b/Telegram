@@ -34,7 +34,7 @@ JVM unit tests live under `TMessagesProj/src/test/java` and cover:
 
 - WireGuard userspace config generation and key validation;
 - controller startup, restart, network refresh, and fail-closed behavior;
-- profile serialization and schema round-trip behavior;
+- profile serialization, encrypted envelope, and schema round-trip behavior;
 - endpoint validation for domain, IPv4, bracketed IPv6, invalid host, and
   invalid port forms;
 - config parser rules, including comments, lists, domain/IPv4/bracketed IPv6
@@ -58,6 +58,8 @@ accidentally:
 - no Android `VpnService`, `Builder.establish()`, or `/dev/tun`;
 - `WireGuardConfig.ENABLED` remains disabled by default;
 - `BuildConfig.TG_WIREGUARD_ENABLED` gates UI build support;
+- profile storage uses Android Keystore-backed AES-GCM and does not write the
+  plaintext profile list to `mainconfig`;
 - WireGuard proxy authority is preserved while enabled;
 - route-changing UI paths use `NetworkRouteSettings`;
 - unsupported builds block WireGuard add/import/scan/enable actions;

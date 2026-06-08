@@ -118,7 +118,7 @@ public final class WireGuardManager {
     }
 
     public static boolean isBuildSupported() {
-        return BuildConfig.TG_WIREGUARD_ENABLED;
+        return BuildConfig.TG_WIREGUARD_ENABLED && WireGuardSettings.isSecureStorageSupported();
     }
 
     public static boolean isUserEnabled() {

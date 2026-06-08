@@ -317,6 +317,31 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (!buildGradleText.contains("TG_WIREGUARD_ENABLED")) {
             throw new GradleException("BuildConfig must expose TG_WIREGUARD_ENABLED for WireGuard UI availability")
         }
+        def wireGuardSecureStoreText = file("src/main/java/org/telegram/messenger/WireGuardSecureStore.java").text
+        ["AndroidKeyStore", "AES/GCM/NoPadding", "Build.VERSION_CODES.M", "wireguard_profiles_encrypted_v1"].each { token ->
+            if (!wireGuardSecureStoreText.contains(token)) {
+                throw new GradleException("WireGuard profiles must use Android Keystore-backed encrypted storage token '${token}'")
+            }
+        }
+        def wireGuardSettingsText = file("src/main/java/org/telegram/messenger/WireGuardSettings.java").text
+        ["WireGuardSecureStore.loadProfiles", "WireGuardSecureStore.saveProfiles", "saveSettingsLocked"].each { token ->
+            if (!wireGuardSettingsText.contains(token)) {
+                throw new GradleException("WireGuardSettings must keep profile storage encrypted and settings disable-able token '${token}'")
+            }
+        }
+        def wireGuardManagerText = file("src/main/java/org/telegram/messenger/WireGuardManager.java").text
+        ["BuildConfig.TG_WIREGUARD_ENABLED", "WireGuardSettings.isSecureStorageSupported"].each { token ->
+            if (!wireGuardManagerText.contains(token)) {
+                throw new GradleException("WireGuardManager.isBuildSupported must gate build and secure storage support token '${token}'")
+            }
+        }
+        fileTree("src/main/java/org/telegram/messenger") {
+            include "WireGuard*.java"
+        }.each { source ->
+            if (source.text.contains("wireguard_profile_list")) {
+                throw new GradleException("WireGuard profiles must not be stored in plaintext mainconfig in ${source}")
+            }
+        }
         def connectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
         if (!connectionsManagerText.contains("WireGuardManager.applyProxySettingsForAccount")) {
             throw new GradleException("ConnectionsManager.setProxySettings must preserve WireGuard proxy settings when WireGuard is enabled")

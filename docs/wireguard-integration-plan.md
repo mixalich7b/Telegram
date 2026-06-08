@@ -51,12 +51,17 @@ not replace the internal proxy in that state.
   enabled, the app applies a blocked local proxy instead of going direct.
 - In `TG_WIREGUARD=false` builds, WireGuard add/import/scan/enable actions are
   blocked by UI. Stale enabled settings remain fail-closed and disable-able.
+- On devices without Keystore-backed WireGuard profile storage, WireGuard
+  add/import/scan/enable actions are blocked instead of falling back to plaintext
+  profile storage.
 
 ## Profiles And Configs
 
-Profiles live in global `mainconfig` and contain interface key/address data, peer
-key/endpoint data, allowed IPs, keepalive, MTU, optional DNS/preshared key, a
-stable id, and a user-visible name.
+Route state lives in global `mainconfig`. Profile contents live in
+`wireguard_secure` as an `AES/GCM/NoPadding` encrypted blob protected by an
+Android Keystore key, and require Android API 23 or newer. Profiles contain
+interface key/address data, peer key/endpoint data, allowed IPs, keepalive, MTU,
+optional DNS/preshared key, a stable id, and a user-visible name.
 
 `WireGuardConfigParser` accepts one `[Interface]` and one `[Peer]`, comments,
 whitespace, comma-separated values, domain endpoints, IPv4 endpoints, and
@@ -106,7 +111,8 @@ implemented.
 WireGuard native integration is opt-in through `TG_WIREGUARD`.
 
 - Default builds must work without WireGuard native libraries.
-- `BuildConfig.TG_WIREGUARD_ENABLED` gates Java UI availability.
+- `BuildConfig.TG_WIREGUARD_ENABLED` and Keystore-backed secure storage gate
+  Java UI availability.
 - `libtg-wg.so` wraps JNI/C++ integration.
 - `libtg-wg-go.so` contains the Go WireGuard bridge.
 - Go module/cache output must stay outside `TMessagesProj/jni` because Android
@@ -116,7 +122,8 @@ WireGuard native integration is opt-in through `TG_WIREGUARD`.
 
 - Java runtime and settings:
   `WireGuardManager`, `WireGuardController`, `WireGuardSettings`,
-  `WireGuardProfile`, `WireGuardConfigParser`, `NetworkRouteSettings`.
+  `WireGuardSecureStore`, `WireGuardProfile`, `WireGuardConfigParser`,
+  `NetworkRouteSettings`.
 - UI:
   `ProxyListActivity`, `WireGuardSettingsActivity`, `LoginActivity`,
   `DialogsActivity`.

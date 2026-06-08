@@ -46,6 +46,9 @@ WebRTC VoIP TCP relay traffic
   `NetworkRouteSettings`.
 - In `TG_WIREGUARD=false` builds, UI must not enable/add/import/scan WireGuard
   profiles. Stale enabled settings should remain fail-closed and disable-able.
+- WireGuard profiles must be stored with Android Keystore-backed encryption on
+  supported devices. Do not add plaintext SharedPreferences fallback for
+  profile private keys or preshared keys.
 - UDP ASSOCIATE is not implemented. Current VoIP safe mode is TCP relay through
   HTTP CONNECT; do not assume UDP relay works through WireGuard yet.
 
@@ -60,6 +63,7 @@ WebRTC VoIP TCP relay traffic
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardVoipRouting.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardProfile.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardSettings.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardSecureStore.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardConfigParser.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/NetworkRouteSettings.java`
 - UI:
@@ -114,6 +118,8 @@ WebRTC VoIP TCP relay traffic
   fails, restart the runtime and reapply proxy settings; if restart fails, fail
   closed.
 - The internal proxy binds to `127.0.0.1` with generated credentials.
+- Profile contents are encrypted separately from `mainconfig`; only route state
+  such as enabled/current profile id belongs in global preferences.
 - Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
   scans JNI folders recursively and may otherwise package dependency `.so`
   files.

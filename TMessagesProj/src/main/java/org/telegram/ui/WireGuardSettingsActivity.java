@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NetworkRouteSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
@@ -214,7 +215,14 @@ public class WireGuardSettingsActivity extends BaseFragment {
             return;
         }
 
-        WireGuardProfile saved = WireGuardManager.saveProfile(profile);
+        WireGuardProfile saved;
+        try {
+            saved = WireGuardManager.saveProfile(profile);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            showWireGuardUnavailable();
+            return;
+        }
         if (addingNewProfile) {
             if (!NetworkRouteSettings.enableWireGuard(saved.id)) {
                 showWireGuardUnavailable();

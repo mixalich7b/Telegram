@@ -37,19 +37,22 @@ the normal disabled-WireGuard state.
 `LoginActivity` keeps the proxy/WireGuard settings entry visible before login and
 opens the same `ProxyListActivity`; global settings are reused after login.
 
-In builds without native WireGuard support, add/import/scan/enable/profile
-selection actions show `WireGuardUnavailableInThisBuild`. Stale enabled settings
-remain fail-closed and can still be disabled.
+In builds without native WireGuard support, or on Android versions before API
+23 where Keystore-backed profile storage is unavailable, add/import/scan/enable
+and profile selection actions show `WireGuardUnavailableInThisBuild`. Stale
+enabled settings remain fail-closed and can still be disabled.
 
 ## Profile Data
 
-Profiles are stored in global `mainconfig` with these keys:
+Route state is stored in global `mainconfig` with these keys:
 
 - `wireguard_enabled`
 - `wireguard_current_profile_id`
-- `wireguard_profile_list`
 
-The profile schema version is embedded in `wireguard_profile_list`.
+Profile contents are stored separately in `wireguard_secure` under
+`wireguard_profiles_encrypted_v1`. The profile blob is serialized with an
+embedded schema version and then encrypted with `AES/GCM/NoPadding` using an
+Android Keystore key. There is no plaintext SharedPreferences fallback.
 
 Profile fields:
 
@@ -64,8 +67,8 @@ Profile fields:
 - allowed IPs;
 - persistent keepalive.
 
-Private keys are sensitive: do not log them, show them in status text, or commit
-real profiles.
+Private keys are sensitive: do not log them, show them in status text, store
+them in plaintext preferences, or commit real profiles.
 
 ## Import
 
