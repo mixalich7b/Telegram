@@ -362,6 +362,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         private TextView textView;
         private TextView valueTextView;
         private ImageView editImageView;
+        private ImageView deleteImageView;
         private Drawable checkDrawable;
         private WireGuardProfile currentInfo;
 
@@ -376,7 +377,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             textView.setSingleLine(true);
             textView.setEllipsize(TextUtils.TruncateAt.END);
             textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
-            addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 56 : 21), 10, (LocaleController.isRTL ? 21 : 56), 0));
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 104 : 21), 10, (LocaleController.isRTL ? 21 : 104), 0));
 
             valueTextView = new TextView(context);
             valueTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
@@ -386,15 +387,23 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             valueTextView.setSingleLine(true);
             valueTextView.setCompoundDrawablePadding(AndroidUtilities.dp(6));
             valueTextView.setEllipsize(TextUtils.TruncateAt.END);
-            addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 56 : 21), 35, (LocaleController.isRTL ? 21 : 56), 0));
+            addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 104 : 21), 35, (LocaleController.isRTL ? 21 : 104), 0));
 
             editImageView = new ImageView(context);
             editImageView.setImageResource(R.drawable.msg_info);
             editImageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.MULTIPLY));
             editImageView.setScaleType(ImageView.ScaleType.CENTER);
             editImageView.setContentDescription(getString(R.string.Edit));
-            addView(editImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
+            addView(editImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, (LocaleController.isRTL ? 56 : 8), 8, (LocaleController.isRTL ? 8 : 56), 0));
             editImageView.setOnClickListener(v -> presentFragment(new WireGuardSettingsActivity(currentInfo)));
+
+            deleteImageView = new ImageView(context);
+            deleteImageView.setImageResource(R.drawable.msg_delete);
+            deleteImageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.MULTIPLY));
+            deleteImageView.setScaleType(ImageView.ScaleType.CENTER);
+            deleteImageView.setContentDescription(getString(R.string.Delete));
+            addView(deleteImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
+            deleteImageView.setOnClickListener(v -> showDeleteWireGuardProfileConfirmation(currentInfo));
 
             setWillNotDraw(false);
         }
@@ -859,6 +868,30 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 .setMessage(getString(R.string.WireGuardUnavailableInThisBuild))
                 .setPositiveButton(getString(R.string.OK), null)
                 .create());
+    }
+
+    private void showDeleteWireGuardProfileConfirmation(WireGuardProfile profile) {
+        if (profile == null || TextUtils.isEmpty(profile.id) || getParentActivity() == null) {
+            return;
+        }
+        WireGuardProfile profileToDelete = profile.copy();
+        WireGuardProfile activeProfile = WireGuardManager.getActiveProfile();
+        boolean deletingActive = WireGuardManager.isUserEnabled() && activeProfile != null && profileToDelete.id.equals(activeProfile.id);
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.DeleteWireGuardProfileTitle));
+        builder.setMessage(getString(deletingActive ? R.string.DeleteActiveWireGuardProfileConfirm : R.string.DeleteWireGuardProfileConfirm));
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
+            WireGuardManager.deleteProfile(profileToDelete.id);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+            updateRows(true);
+        });
+        AlertDialog dialog = builder.create();
+        showDialog(dialog);
+        TextView button = (TextView) dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+        if (button != null) {
+            button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
+        }
     }
 
     private void showWireGuardInvalidConfig(Throwable e) {
@@ -1528,7 +1561,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, TextCheckCell.class, HeaderCell.class, TextDetailProxyCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, TextCheckCell.class, HeaderCell.class, TextDetailProxyCell.class, TextDetailWireGuardCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
@@ -1550,6 +1583,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGreenText));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_text_RedRegular));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"checkImageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText3));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextDetailWireGuardCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailWireGuardCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueText6));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailWireGuardCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailWireGuardCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_text_RedRegular));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailWireGuardCell.class}, new String[]{"editImageView", "deleteImageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText3));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
 

@@ -11,8 +11,9 @@ device-level VPN session.
 
 The current implementation supports UI-managed WireGuard profiles in the
 existing proxy settings flow. Users can add profiles manually, import standard
-WireGuard config files, persist settings across app restarts, enable WireGuard
-before authorization, and switch between multiple WireGuard profiles.
+WireGuard config files, scan WireGuard config QR codes, persist settings across
+app restarts, enable WireGuard before authorization, switch between multiple
+WireGuard profiles, and delete saved profiles.
 
 Current routing shape:
 
@@ -43,7 +44,7 @@ WebRTC VoIP TCP relay traffic
   direct fallback.
 - Existing proxy behavior must stay mutually exclusive with WireGuard through
   `NetworkRouteSettings`.
-- In `TG_WIREGUARD=false` builds, UI must not enable/add/import WireGuard
+- In `TG_WIREGUARD=false` builds, UI must not enable/add/import/scan WireGuard
   profiles. Stale enabled settings should remain fail-closed and disable-able.
 - UDP ASSOCIATE is not implemented. Current VoIP safe mode is TCP relay through
   HTTP CONNECT; do not assume UDP relay works through WireGuard yet.
@@ -67,6 +68,7 @@ WebRTC VoIP TCP relay traffic
   - `TMessagesProj/src/main/java/org/telegram/ui/LoginActivity.java`
   - `TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java`
   - `TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java`
+  - `TMessagesProj/src/main/java/org/telegram/ui/CameraScanActivity.java`
 - Telegram runtime proxy enforcement:
   - `TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java`
 - Startup hook:
@@ -127,7 +129,10 @@ WebRTC VoIP TCP relay traffic
 - Disabling WireGuard leaves ordinary proxy, proxy-for-calls, and proxy rotation
   disabled.
 - `Use Proxy For Calls` must not be available while WireGuard is active.
-- Manual entry and config import must use the same validation rules.
+- Manual entry, config-file import, and QR-code import must use the same
+  validation rules.
+- Deleting a saved WireGuard profile requires user confirmation.
+- Deleting the active WireGuard profile must stop WireGuard.
 - Multiple `[Peer]` sections remain unsupported until runtime and UI support them
   deliberately.
 

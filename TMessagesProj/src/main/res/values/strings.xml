@@ -2685,6 +2685,9 @@
     <string name="AddWireGuardConnection">Add WireGuard Connection</string>
     <string name="ImportWireGuardConfig">Import WireGuard Config</string>
     <string name="ScanWireGuardQrCode">Scan WireGuard QR Code</string>
+    <string name="DeleteWireGuardProfileTitle">Delete WireGuard Profile</string>
+    <string name="DeleteWireGuardProfileConfirm">Are you sure you want to delete this WireGuard profile?</string>
+    <string name="DeleteActiveWireGuardProfileConfirm">Are you sure you want to delete this active WireGuard profile? WireGuard will be stopped.</string>
     <string name="WireGuardDetails">WireGuard Details</string>
     <string name="WireGuardName">Name</string>
     <string name="WireGuardPrivateKey">Private Key</string>
