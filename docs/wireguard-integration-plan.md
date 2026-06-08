@@ -6,10 +6,10 @@ Route Telegram traffic through a WireGuard server inside the Telegram process,
 without Android `VpnService`, without `/dev/tun`, and without a device-level VPN
 session.
 
-The feature is opt-in at build time and user-controlled at runtime. It supports
-UI-managed profiles, manual entry, config-file import, config QR import,
-persistence across restarts, profile switching, profile deletion, and setup
-before authorization.
+The feature is always included in supported builds and user-controlled at
+runtime. It supports UI-managed profiles, manual entry, config-file import,
+config QR import, persistence across restarts, profile switching, profile
+deletion, and setup before authorization.
 
 ## Routing
 
@@ -49,11 +49,9 @@ not replace the internal proxy in that state.
   proxy-for-calls, and proxy rotation disabled.
 - If startup, restart, or native network refresh fails while WireGuard is
   enabled, the app applies a blocked local proxy instead of going direct.
-- In `TG_WIREGUARD=false` builds, WireGuard add/import/scan/enable actions are
-  blocked by UI. Stale enabled settings remain fail-closed and disable-able.
 - On devices without Keystore-backed WireGuard profile storage, WireGuard
   add/import/scan/enable actions are blocked instead of falling back to plaintext
-  profile storage.
+  profile storage. Stale enabled settings remain fail-closed and disable-able.
 
 ## Profiles And Configs
 
@@ -108,13 +106,11 @@ implemented.
 
 ## Build
 
-WireGuard native integration is opt-in through `TG_WIREGUARD`.
+WireGuard native integration is always built.
 
-- Default builds must work without WireGuard native libraries.
-- `BuildConfig.TG_WIREGUARD_ENABLED` and Keystore-backed secure storage gate
-  Java UI availability.
 - `libtg-wg.so` wraps JNI/C++ integration.
 - `libtg-wg-go.so` contains the Go WireGuard bridge.
+- Keystore-backed secure storage gates Java UI availability.
 - Go module/cache output must stay outside `TMessagesProj/jni` because Android
   Gradle scans JNI folders recursively.
 

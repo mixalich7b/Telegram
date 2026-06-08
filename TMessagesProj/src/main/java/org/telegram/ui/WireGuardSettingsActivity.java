@@ -187,8 +187,8 @@ public class WireGuardSettingsActivity extends BaseFragment {
     }
 
     private void saveProfile() {
-        if (addingNewProfile && !WireGuardManager.isBuildSupported()) {
-            showWireGuardUnavailable();
+        if (addingNewProfile && !WireGuardManager.isSupported()) {
+            showWireGuardUnsupported();
             return;
         }
 
@@ -220,12 +220,12 @@ public class WireGuardSettingsActivity extends BaseFragment {
             saved = WireGuardManager.saveProfile(profile);
         } catch (Throwable e) {
             FileLog.e(e);
-            showWireGuardUnavailable();
+            showWireGuardUnsupported();
             return;
         }
         if (addingNewProfile) {
             if (!NetworkRouteSettings.enableWireGuard(saved.id)) {
-                showWireGuardUnavailable();
+                showWireGuardUnsupported();
                 return;
             }
         } else {
@@ -234,10 +234,10 @@ public class WireGuardSettingsActivity extends BaseFragment {
         finishFragment();
     }
 
-    private void showWireGuardUnavailable() {
+    private void showWireGuardUnsupported() {
         showDialog(new AlertDialog.Builder(getParentActivity())
                 .setTitle(getString(R.string.UseWireGuardSettings))
-                .setMessage(getString(R.string.WireGuardUnavailableInThisBuild))
+                .setMessage(getString(R.string.WireGuardUnsupportedOnThisDevice))
                 .setPositiveButton(getString(R.string.OK), null)
                 .create());
     }

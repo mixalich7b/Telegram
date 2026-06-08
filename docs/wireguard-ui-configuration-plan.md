@@ -37,10 +37,10 @@ the normal disabled-WireGuard state.
 `LoginActivity` keeps the proxy/WireGuard settings entry visible before login and
 opens the same `ProxyListActivity`; global settings are reused after login.
 
-In builds without native WireGuard support, or on Android versions before API
-23 where Keystore-backed profile storage is unavailable, add/import/scan/enable
-and profile selection actions show `WireGuardUnavailableInThisBuild`. Stale
-enabled settings remain fail-closed and can still be disabled.
+On Android versions before API 23 where Keystore-backed profile storage is
+unavailable, add/import/scan/enable and profile selection actions show
+`WireGuardUnsupportedOnThisDevice`. Stale enabled settings remain fail-closed
+and can still be disabled.
 
 ## Profile Data
 

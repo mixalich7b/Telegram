@@ -81,7 +81,6 @@ dependencies {
 }
 
 def isWindows = String.valueOf(DefaultNativePlatform.currentOperatingSystem.toFamilyName() == OperatingSystemFamily.WINDOWS)
-def tgWireGuardNativeEnabled = project.hasProperty("TG_WIREGUARD") ? project.property("TG_WIREGUARD").toString().toBoolean() : String.valueOf(getProps("TG_WIREGUARD")).toBoolean()
 android {
     compileSdkVersion 35
     buildToolsVersion '35.0.0'
@@ -117,12 +116,10 @@ android {
 
         multiDexEnabled true
 
-        buildConfigField "boolean", "TG_WIREGUARD_ENABLED", String.valueOf(tgWireGuardNativeEnabled)
-
         externalNativeBuild {
             cmake {
                 version '3.10.2'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21', "-DTG_WIREGUARD=${tgWireGuardNativeEnabled ? 'ON' : 'OFF'}" //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
             }
         }
     }
@@ -283,19 +280,6 @@ tasks.register("verifyWireGuardStaticGuards") {
     description = "Checks static fail-closed and no-device-VPN invariants for WireGuard integration."
     group = "verification"
     doLast {
-        def configFile = file("src/main/java/org/telegram/messenger/WireGuardConfig.java")
-        def configText = configFile.text
-        def wireGuardEnabled = (configText =~ /ENABLED\s*=\s*true/).find()
-        if (!wireGuardEnabled) {
-            if (!(configText =~ /ENABLED\s*=\s*false/)) {
-                throw new GradleException("WireGuardConfig.ENABLED must be explicitly set")
-            }
-            ["PRIVATE_KEY", "PEER_PUBLIC_KEY", "PRESHARED_KEY", "PEER_ENDPOINT"].each { name ->
-                if (!(configText =~ /${name}\s*=\s*""/)) {
-                    throw new GradleException("WireGuardConfig.${name} must be empty by default")
-                }
-            }
-        }
         def checkedFiles = fileTree(projectDir) {
             include "src/main/java/org/telegram/messenger/WireGuard*.java"
             include "jni/tg_wg/**"
@@ -313,10 +297,6 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (file("jni/tg_wg/go/build").exists()) {
             throw new GradleException("TMessagesProj/jni/tg_wg/go/build must not exist; Go caches under jni are packaged as native libs")
         }
-        def buildGradleText = file("build.gradle").text
-        if (!buildGradleText.contains("TG_WIREGUARD_ENABLED")) {
-            throw new GradleException("BuildConfig must expose TG_WIREGUARD_ENABLED for WireGuard UI availability")
-        }
         def wireGuardSecureStoreText = file("src/main/java/org/telegram/messenger/WireGuardSecureStore.java").text
         ["AndroidKeyStore", "AES/GCM/NoPadding", "Build.VERSION_CODES.M", "wireguard_profiles_encrypted_v1"].each { token ->
             if (!wireGuardSecureStoreText.contains(token)) {
@@ -330,9 +310,9 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def wireGuardManagerText = file("src/main/java/org/telegram/messenger/WireGuardManager.java").text
-        ["BuildConfig.TG_WIREGUARD_ENABLED", "WireGuardSettings.isSecureStorageSupported"].each { token ->
+        ["WireGuardSettings.isSecureStorageSupported"].each { token ->
             if (!wireGuardManagerText.contains(token)) {
-                throw new GradleException("WireGuardManager.isBuildSupported must gate build and secure storage support token '${token}'")
+                throw new GradleException("WireGuardManager.isSupported must gate secure storage support token '${token}'")
             }
         }
         fileTree("src/main/java/org/telegram/messenger") {
@@ -352,24 +332,24 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("NetworkRouteSettings must enforce proxy/WireGuard mutual exclusion token '${token}'")
             }
         }
-        ["public static boolean enableWireGuard", "WireGuardManager.isBuildSupported", "return false", "proxy_enabled_calls", "proxyRotationEnabled"].each { token ->
+        ["public static boolean enableWireGuard", "WireGuardManager.isSupported", "return false", "proxy_enabled_calls", "proxyRotationEnabled"].each { token ->
             if (!networkRouteSettingsText.contains(token)) {
-                throw new GradleException("NetworkRouteSettings must guard WireGuard build support and disable proxy state token '${token}'")
+                throw new GradleException("NetworkRouteSettings must guard WireGuard support and disable proxy state token '${token}'")
             }
         }
         if (!(networkRouteSettingsText =~ /disableWireGuard\(\)[\s\S]*putBoolean\("proxy_enabled", false\)[\s\S]*putBoolean\("proxy_enabled_calls", false\)/)) {
             throw new GradleException("NetworkRouteSettings.disableWireGuard must leave ordinary proxy and proxy-for-calls disabled")
         }
         def proxyListActivityText = file("src/main/java/org/telegram/ui/ProxyListActivity.java").text
-        ["WireGuardManager.isBuildSupported", "WireGuardUnavailableInThisBuild", "showWireGuardUnavailable", "!useWireGuardSettings &&"].each { token ->
+        ["WireGuardManager.isSupported", "WireGuardUnsupportedOnThisDevice", "showWireGuardUnsupported", "!useWireGuardSettings &&"].each { token ->
             if (!proxyListActivityText.contains(token)) {
-                throw new GradleException("ProxyListActivity must gate WireGuard UI and hide proxy-calls UI in WireGuard mode token '${token}'")
+                throw new GradleException("ProxyListActivity must gate WireGuard support and hide proxy-calls UI in WireGuard mode token '${token}'")
             }
         }
         def wireGuardSettingsActivityText = file("src/main/java/org/telegram/ui/WireGuardSettingsActivity.java").text
-        ["WireGuardManager.isBuildSupported", "WireGuardUnavailableInThisBuild", "showWireGuardUnavailable"].each { token ->
+        ["WireGuardManager.isSupported", "WireGuardUnsupportedOnThisDevice", "showWireGuardUnsupported"].each { token ->
             if (!wireGuardSettingsActivityText.contains(token)) {
-                throw new GradleException("WireGuardSettingsActivity must gate new profiles when native WireGuard support is unavailable token '${token}'")
+                throw new GradleException("WireGuardSettingsActivity must gate new profiles when secure storage is unavailable token '${token}'")
             }
         }
         [

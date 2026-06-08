@@ -45,7 +45,7 @@ public final class NetworkRouteSettings {
     }
 
     public static boolean enableWireGuard(String profileId) {
-        if (!WireGuardManager.isBuildSupported()) {
+        if (!WireGuardManager.isSupported()) {
             return false;
         }
 

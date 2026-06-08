@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.10.2)
 
-option(TG_WIREGUARD "Build internal WireGuard userspace bridge" OFF)
-
 set(CMAKE_CXX_FLAGS "-std=c++14 -DANDROID -g")
 set(CMAKE_C_FLAGS "-w -std=c11 -DANDROID -D_LARGEFILE_SOURCE=1 -g -Wno-error=implicit-function-declaration")
 set(CMAKE_ASM_FLAGS "${CFLAGS} -x assembler-with-cpp")
@@ -229,46 +227,44 @@ target_include_directories(tgnet PUBLIC
 target_link_libraries(tgnet
         crypto)
 
-if (TG_WIREGUARD)
-    set(TG_WG_OUTPUT_DIR "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-    if ("${TG_WG_OUTPUT_DIR}" STREQUAL "")
-        set(TG_WG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-    endif()
-    set(TG_WG_GO_SO "${TG_WG_OUTPUT_DIR}/libtg-wg-go.so")
-    add_custom_command(
-            OUTPUT ${TG_WG_GO_SO}
-            COMMAND ${CMAKE_COMMAND} -E env
-                    ANDROID_ABI=${ANDROID_ABI}
-                    ANDROID_NDK=${ANDROID_NDK}
-                    ANDROID_PLATFORM=${ANDROID_PLATFORM}
-                    TG_WG_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/tg_wg_go_build
-                    CC=${CMAKE_C_COMPILER}
-                    CXX=${CMAKE_CXX_COMPILER}
-                    ${CMAKE_HOME_DIRECTORY}/tg_wg/go/build-android.sh ${TG_WG_GO_SO}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tg_wg/go
-            DEPENDS
-                    tg_wg/go/build-android.sh
-                    tg_wg/go/go.mod
-                    tg_wg/go/go.sum
-                    tg_wg/go/tg_wg.go
-                    tg_wg/go/exports_android.go
-                    tg_wg/go/log_android.go
-            COMMENT "Building libtg-wg-go.so for ${ANDROID_ABI}"
-            VERBATIM)
-    add_custom_target(tg-wg-go ALL DEPENDS ${TG_WG_GO_SO})
-    add_library(tg-wg-go-lib SHARED IMPORTED GLOBAL)
-    set_target_properties(tg-wg-go-lib PROPERTIES
-            IMPORTED_LOCATION ${TG_WG_GO_SO}
-            IMPORTED_NO_SONAME TRUE)
-
-    add_library(tg-wg SHARED
-            tg_wg/tg_wg_jni.cpp)
-    add_dependencies(tg-wg tg-wg-go tg-wg-go-lib)
-    target_link_libraries(tg-wg
-            tg-wg-go-lib
-            log
-            dl)
+set(TG_WG_OUTPUT_DIR "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+if ("${TG_WG_OUTPUT_DIR}" STREQUAL "")
+    set(TG_WG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
+set(TG_WG_GO_SO "${TG_WG_OUTPUT_DIR}/libtg-wg-go.so")
+add_custom_command(
+        OUTPUT ${TG_WG_GO_SO}
+        COMMAND ${CMAKE_COMMAND} -E env
+                ANDROID_ABI=${ANDROID_ABI}
+                ANDROID_NDK=${ANDROID_NDK}
+                ANDROID_PLATFORM=${ANDROID_PLATFORM}
+                TG_WG_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/tg_wg_go_build
+                CC=${CMAKE_C_COMPILER}
+                CXX=${CMAKE_CXX_COMPILER}
+                ${CMAKE_HOME_DIRECTORY}/tg_wg/go/build-android.sh ${TG_WG_GO_SO}
+        WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tg_wg/go
+        DEPENDS
+                tg_wg/go/build-android.sh
+                tg_wg/go/go.mod
+                tg_wg/go/go.sum
+                tg_wg/go/tg_wg.go
+                tg_wg/go/exports_android.go
+                tg_wg/go/log_android.go
+        COMMENT "Building libtg-wg-go.so for ${ANDROID_ABI}"
+        VERBATIM)
+add_custom_target(tg-wg-go ALL DEPENDS ${TG_WG_GO_SO})
+add_library(tg-wg-go-lib SHARED IMPORTED GLOBAL)
+set_target_properties(tg-wg-go-lib PROPERTIES
+        IMPORTED_LOCATION ${TG_WG_GO_SO}
+        IMPORTED_NO_SONAME TRUE)
+
+add_library(tg-wg SHARED
+        tg_wg/tg_wg_jni.cpp)
+add_dependencies(tg-wg tg-wg-go tg-wg-go-lib)
+target_link_libraries(tg-wg
+        tg-wg-go-lib
+        log
+        dl)
 
 #rlottie
 add_library(rlottie STATIC

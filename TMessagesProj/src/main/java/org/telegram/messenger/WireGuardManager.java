@@ -7,6 +7,11 @@ import java.util.Locale;
 
 public final class WireGuardManager {
 
+    private static final String NATIVE_LIBRARY_NAME = "tg-wg";
+    private static final String SOCKS_BIND_HOST = "127.0.0.1";
+    private static final int SOCKS_BIND_PORT = 0;
+    private static final int BLOCKED_PROXY_PORT = 1;
+
     private static final SecureRandom random = new SecureRandom();
     private static final WireGuardController controller = new WireGuardController(
             new WireGuardController.Config() {
@@ -42,28 +47,28 @@ public final class WireGuardManager {
                 @Override
                 public int mtu() {
                     WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
-                    return profile == null ? WireGuardConfig.MTU : profile.mtu;
+                    return profile == null ? WireGuardProfile.DEFAULT_MTU : profile.mtu;
                 }
 
                 @Override
                 public String socksHost() {
-                    return WireGuardConfig.SOCKS_BIND_HOST;
+                    return SOCKS_BIND_HOST;
                 }
 
                 @Override
                 public int socksPort() {
-                    return WireGuardConfig.SOCKS_BIND_PORT;
+                    return SOCKS_BIND_PORT;
                 }
 
                 @Override
                 public int blockedProxyPort() {
-                    return WireGuardConfig.BLOCKED_PROXY_PORT;
+                    return BLOCKED_PROXY_PORT;
                 }
             },
             new WireGuardController.NativeRuntime() {
                 @Override
                 public int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword) {
-                    System.loadLibrary(WireGuardConfig.NATIVE_LIBRARY_NAME);
+                    System.loadLibrary(NATIVE_LIBRARY_NAME);
                     return nativeStart(userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword);
                 }
 
@@ -117,8 +122,8 @@ public final class WireGuardManager {
         return controller.isEnabled();
     }
 
-    public static boolean isBuildSupported() {
-        return BuildConfig.TG_WIREGUARD_ENABLED && WireGuardSettings.isSecureStorageSupported();
+    public static boolean isSupported() {
+        return WireGuardSettings.isSecureStorageSupported();
     }
 
     public static boolean isUserEnabled() {

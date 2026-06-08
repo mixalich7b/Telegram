@@ -1,7 +1,7 @@
 # Repository Notes for WireGuard Integration
 
-This repository contains an Android Telegram client with an experimental
-in-process WireGuard integration.
+This repository contains an Android Telegram client with an in-process
+WireGuard integration.
 
 ## Feature Goal
 
@@ -35,27 +35,24 @@ WebRTC VoIP TCP relay traffic
 
 - Do not introduce Android `VpnService`, `Builder.establish()`, `/dev/tun`, or a
   device-level VPN session for this feature.
-- Keep `TG_WIREGUARD` build integration opt-in. The default build must work with
-  WireGuard disabled and without WireGuard native libraries.
-- Keep `WireGuardConfig.ENABLED` disabled by default in shared code.
 - Do not commit real WireGuard keys, endpoints, Telegram `APP_ID`, or Telegram
   `APP_HASH`.
 - When WireGuard is user-enabled, traffic must fail closed. Do not add a silent
   direct fallback.
 - Existing proxy behavior must stay mutually exclusive with WireGuard through
   `NetworkRouteSettings`.
-- In `TG_WIREGUARD=false` builds, UI must not enable/add/import/scan WireGuard
-  profiles. Stale enabled settings should remain fail-closed and disable-able.
 - WireGuard profiles must be stored with Android Keystore-backed encryption on
   supported devices. Do not add plaintext SharedPreferences fallback for
   profile private keys or preshared keys.
+- On devices without Keystore-backed WireGuard profile storage, UI must not
+  enable/add/import/scan WireGuard profiles. Stale enabled settings should
+  remain fail-closed and disable-able.
 - UDP ASSOCIATE is not implemented. Current VoIP safe mode is TCP relay through
   HTTP CONNECT; do not assume UDP relay works through WireGuard yet.
 
 ## Code Map
 
 - Java configuration and orchestration:
-  - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardConfig.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardUserspaceConfig.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardManager.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardController.java`
@@ -174,16 +171,10 @@ Fast no-emulator checks:
 env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:verifyWireGuardStaticGuards
 ```
 
-WireGuard-disabled packaging check:
+Packaging check:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug -PTG_WIREGUARD=false
-```
-
-WireGuard-enabled packaging check:
-
-```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug -PTG_WIREGUARD=true
+env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
 ```
 
 Important details:

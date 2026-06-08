@@ -596,8 +596,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     updateRows(true);
                     return;
                 }
-                if (!WireGuardManager.isBuildSupported()) {
-                    showWireGuardUnavailable();
+                if (!WireGuardManager.isSupported()) {
+                    showWireGuardUnsupported();
                     return;
                 }
                 WireGuardProfile activeProfile = WireGuardManager.getActiveProfile();
@@ -610,7 +610,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     }
                 }
                 if (!NetworkRouteSettings.enableWireGuard(activeProfile.id)) {
-                    showWireGuardUnavailable();
+                    showWireGuardUnsupported();
                     updateRows(true);
                     return;
                 }
@@ -658,13 +658,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     textCheckCell.setChecked(true);
                 }
             } else if (wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow) {
-                if (!WireGuardManager.isBuildSupported()) {
-                    showWireGuardUnavailable();
+                if (!WireGuardManager.isSupported()) {
+                    showWireGuardUnsupported();
                     return;
                 }
                 WireGuardProfile profile = wireGuardProfiles.get(position - wireGuardStartRow);
                 if (!NetworkRouteSettings.enableWireGuard(profile.id)) {
-                    showWireGuardUnavailable();
+                    showWireGuardUnsupported();
                     updateRows(true);
                     return;
                 }
@@ -673,20 +673,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 useProxyForCalls = false;
                 updateRows(true);
             } else if (position == wireGuardAddRow) {
-                if (!WireGuardManager.isBuildSupported()) {
-                    showWireGuardUnavailable();
+                if (!WireGuardManager.isSupported()) {
+                    showWireGuardUnsupported();
                     return;
                 }
                 presentFragment(new WireGuardSettingsActivity());
             } else if (position == wireGuardImportRow) {
-                if (!WireGuardManager.isBuildSupported()) {
-                    showWireGuardUnavailable();
+                if (!WireGuardManager.isSupported()) {
+                    showWireGuardUnsupported();
                     return;
                 }
                 openWireGuardImport();
             } else if (position == wireGuardScanQrRow) {
-                if (!WireGuardManager.isBuildSupported()) {
-                    showWireGuardUnavailable();
+                if (!WireGuardManager.isSupported()) {
+                    showWireGuardUnsupported();
                     return;
                 }
                 openWireGuardQrScan();
@@ -773,14 +773,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
                             updateRows(true);
                             if (listAdapter != null) {
-                            if (SharedConfig.currentProxy == null) {
-                                listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                                if (callsRow != -1) {
-                                    listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                                if (SharedConfig.currentProxy == null) {
+                                    listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                                    if (callsRow != -1) {
+                                        listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                                    }
                                 }
+                                listAdapter.clearSelected();
                             }
-                            listAdapter.clearSelected();
-                        }
                         });
                         AlertDialog dialog = builder.create();
                         showDialog(dialog);
@@ -827,8 +827,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (getParentActivity() == null) {
             return;
         }
-        if (!WireGuardManager.isBuildSupported()) {
-            showWireGuardUnavailable();
+        if (!WireGuardManager.isSupported()) {
+            showWireGuardUnsupported();
             return;
         }
         if (Build.VERSION.SDK_INT >= 23 && getParentActivity().checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -862,10 +862,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         });
     }
 
-    private void showWireGuardUnavailable() {
+    private void showWireGuardUnsupported() {
         showDialog(new AlertDialog.Builder(getParentActivity())
                 .setTitle(getString(R.string.UseWireGuardSettings))
-                .setMessage(getString(R.string.WireGuardUnavailableInThisBuild))
+                .setMessage(getString(R.string.WireGuardUnsupportedOnThisDevice))
                 .setPositiveButton(getString(R.string.OK), null)
                 .create());
     }
@@ -928,8 +928,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (requestCode != REQUEST_IMPORT_WIREGUARD || resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
             return;
         }
-        if (!WireGuardManager.isBuildSupported()) {
-            showWireGuardUnavailable();
+        if (!WireGuardManager.isSupported()) {
+            showWireGuardUnsupported();
             return;
         }
         try {

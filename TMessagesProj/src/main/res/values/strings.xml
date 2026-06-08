@@ -2700,7 +2700,7 @@
     <string name="WireGuardAllowedIps">Allowed IPs</string>
     <string name="WireGuardPersistentKeepalive">Persistent Keepalive</string>
     <string name="WireGuardInvalidConfig">Invalid WireGuard Config</string>
-    <string name="WireGuardUnavailableInThisBuild">WireGuard is not available in this build.</string>
+    <string name="WireGuardUnsupportedOnThisDevice">WireGuard requires secure profile storage and is not supported on this device.</string>
     <string name="WireGuardConnected">WireGuard connected</string>
     <string name="WireGuardConnecting">WireGuard connecting</string>
     <string name="WireGuardFailed">WireGuard failed</string>

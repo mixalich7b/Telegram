@@ -21,8 +21,7 @@ env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebug
 Packaging checks:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug -PTG_WIREGUARD=false
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug -PTG_WIREGUARD=true
+env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
 ```
 
 `:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests, Go
@@ -56,22 +55,18 @@ The Gradle Go test task must keep `GOCACHE` and `GOMODCACHE` outside
 accidentally:
 
 - no Android `VpnService`, `Builder.establish()`, or `/dev/tun`;
-- `WireGuardConfig.ENABLED` remains disabled by default;
-- `BuildConfig.TG_WIREGUARD_ENABLED` gates UI build support;
 - profile storage uses Android Keystore-backed AES-GCM and does not write the
   plaintext profile list to `mainconfig`;
 - WireGuard proxy authority is preserved while enabled;
 - route-changing UI paths use `NetworkRouteSettings`;
-- unsupported builds block WireGuard add/import/scan/enable actions;
+- unsupported devices block WireGuard add/import/scan/enable actions;
 - parser rejects multiple peers;
 - VoIP paths keep HTTP CONNECT, TCP relay, and direct ICE filtering behavior;
 - Go cache/module artifacts stay out of `TMessagesProj/jni`.
 
 ## Packaging Expectations
 
-- `TG_WIREGUARD=false`: APK must not contain `libtg-wg.so` or
-  `libtg-wg-go.so`.
-- `TG_WIREGUARD=true`: APK must contain both libraries for supported ABIs.
+- APK must contain `libtg-wg.so` and `libtg-wg-go.so` for supported ABIs.
 - APK must not contain Go cache/module artifacts such as `gomod`, `gocache`,
   `tg_wg/go/build`, or `vdso_*.so`.
 
