@@ -95,6 +95,25 @@ The QR flow reuses the existing scanner stack:
   `gallery=true`, so users can also import a QR screenshot without another QR
   decoder.
 
+QR decode and delivery path:
+
+- `CameraScanActivity.tryReadQr(...)` decodes raw QR text from a camera frame or
+  selected image. It first tries Google Vision `BarcodeDetector`; if that is not
+  operational, it falls back to ZXing `QRCodeReader`.
+- Camera frames go through `processShot(...)`. Once a QR is decoded,
+  `delegate.processQr(text, onLoadEnd)` can run optional async processing; if it
+  returns `false`, the scanner waits briefly for stable bounds, calls
+  `delegate.didFindQr(text)`, and closes the sheet.
+- Gallery images call `tryReadQr(...)` once, call `delegate.didFindQr(text)` on
+  success, and then close the scanner sheet.
+- `needGalleryButton` only controls scanner UI and gallery picker availability.
+  It must not change accepted QR payload semantics.
+- `TYPE_QR_LOGIN` keeps its scanner-level login-token guard and still rejects
+  decoded text that does not start with `tg://login?token=`.
+- Other scanner modes can customize accepted text with
+  `CameraScanActivityDelegate.shouldAcceptQrText(String text)`. The default
+  accepts decoded text to preserve existing generic QR behavior.
+
 Implementation plan:
 
 1. Add a `wireGuardScanQrRow` in `ProxyListActivity` near
@@ -126,6 +145,34 @@ Implementation plan:
 
 No new QR, camera, or image-decoding dependency should be added unless the
 existing scanner stack proves unusable on target devices.
+
+WireGuard QR parsing details:
+
+1. `ProxyListActivity.openWireGuardQrScan()` overrides
+   `shouldAcceptQrText(String text)` for WireGuard QR import.
+2. The WireGuard hook accepts likely raw configs containing `[Interface]` and
+   `[Peer]` sections and rejects obviously unrelated QR values without
+   dismissing the scanner.
+3. Decoded WireGuard-looking payloads are passed to
+   `openWireGuardImportedConfig(...)`; the actual profile creation still happens
+   only through `WireGuardConfigParser`.
+4. For decoded but invalid WireGuard-looking payloads, the scanner closes and
+   shows `WireGuardInvalidConfig`. Silent non-action makes scanner failures hard
+   to diagnose.
+5. Gallery and camera paths remain identical: both use the same decoded text
+   acceptance hook and the same `openWireGuardImportedConfig(...)` parsing path.
+6. Avoid parsing or logging private keys inside the scanner. Any validation error
+   shown to the user should come from the existing parser/profile validation and
+   must not include key material.
+7. Add focused unit coverage around scanner acceptance logic if it can be
+   extracted into a pure helper. At minimum, cover:
+   raw WireGuard config text is accepted;
+   `tg://login?...` remains accepted only for login scan mode;
+   unrelated URLs are rejected by the WireGuard delegate without creating a
+   profile.
+8. Re-run
+    `env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:verifyWireGuardStaticGuards`
+    after the code change.
 
 ### Before Login
 

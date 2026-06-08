@@ -173,6 +173,10 @@ public class CameraScanActivity extends BaseFragment {
             return false;
         }
 
+        default boolean shouldAcceptQrText(String text) {
+            return true;
+        }
+
         default String getSubtitleText() {
             return null;
         }
@@ -1386,14 +1390,13 @@ public class CameraScanActivity extends BaseFragment {
                 onNoQrFound();
                 return null;
             }
-            if (needGalleryButton) {
-                Uri uri = Uri.parse(text);
-                String path = uri.getPath().replace("/", "");
-            } else {
-                if (currentType == TYPE_QR_LOGIN && !text.startsWith("tg://login?token=")) {
-                    onNoQrFound();
-                    return null;
-                }
+            if (currentType == TYPE_QR_LOGIN && !text.startsWith("tg://login?token=")) {
+                onNoQrFound();
+                return null;
+            }
+            if (delegate != null && !delegate.shouldAcceptQrText(text)) {
+                onNoQrFound();
+                return null;
             }
             QrResult qrResult = new QrResult();
             if (bounds != null) {

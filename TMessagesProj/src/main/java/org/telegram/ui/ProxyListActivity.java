@@ -85,6 +85,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
     private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
@@ -839,6 +840,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             }
 
             @Override
+            public boolean shouldAcceptQrText(String text) {
+                return isLikelyWireGuardConfigQr(text);
+            }
+
+            @Override
             public void onDismiss() {
                 if (pendingConfigText != null) {
                     openWireGuardImportedConfig(pendingConfigText, "");
@@ -923,6 +929,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         } catch (Throwable e) {
             showWireGuardInvalidConfig(e);
         }
+    }
+
+    private static boolean isLikelyWireGuardConfigQr(String text) {
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.toLowerCase(Locale.US);
+        return normalized.contains("[interface]") && normalized.contains("[peer]");
     }
 
     private String readWireGuardConfig(Uri uri) throws Exception {
