@@ -54,7 +54,8 @@ Core coverage:
   - selected profile id is preserved.
 - Config parser:
   - standard `[Interface]` and `[Peer]` fields;
-  - comments, whitespace, comma-separated values, bracketed IPv6 endpoints;
+  - comments, whitespace, comma-separated values, domain endpoints, IPv4
+    endpoints, and bracketed IPv6 endpoints;
   - invalid endpoint ports, missing fields, invalid keys, and multiple peers.
 - VoIP routing helper:
   - WireGuard proxy disables P2P;
@@ -72,6 +73,8 @@ Core coverage:
 - SOCKS5 username/password handshake;
 - unsupported SOCKS methods and commands;
 - IPv4, IPv6, and domain target parsing;
+- WireGuard peer endpoint preprocessing keeps IP endpoints unchanged, resolves
+  domain endpoints to `IP:port`, and reports DNS failures;
 - proxy byte-copy path through a fake dialer;
 - HTTP CONNECT proxy authorization and response behavior;
 - network-change handling through fake `BindUpdate()` success/failure.

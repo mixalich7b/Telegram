@@ -68,7 +68,11 @@ The profile model is:
 - user-visible profile name and stable id.
 
 The standard config parser accepts one `[Interface]` and one `[Peer]`, comments,
-whitespace, comma-separated values, and bracketed IPv6 endpoints. Multiple peers
+whitespace, comma-separated values, domain endpoints, IPv4 endpoints, and
+bracketed IPv6 endpoints. The Go runtime resolves domain peer endpoints to
+`IP:port` before passing the userspace config to `wireguard-go`, whose UAPI
+endpoint parser only accepts IP address endpoints. DNS resolution failure keeps
+startup failed and therefore uses the existing fail-closed route. Multiple peers
 are rejected until the runtime and UI deliberately support them.
 
 ## Route Policy

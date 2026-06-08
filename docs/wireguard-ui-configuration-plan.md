@@ -117,7 +117,7 @@ Rules:
 - accept comments beginning with `#` or `;`;
 - trim whitespace;
 - parse comma-separated `Address`, `DNS`, and `AllowedIPs`;
-- accept bracketed IPv6 endpoints;
+- accept domain endpoints, IPv4 endpoints, and bracketed IPv6 endpoints;
 - require exactly one `[Interface]` and one `[Peer]`;
 - reject multiple peers;
 - validate base64 keys through `WireGuardUserspaceConfig`;

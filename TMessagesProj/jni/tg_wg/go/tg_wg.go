@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
@@ -35,6 +36,10 @@ const (
 	proxyProtocolSocks5 proxyProtocol = iota
 	proxyProtocolHttpConnect
 )
+
+const endpointResolveTimeout = 10 * time.Second
+
+type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, error)
 
 type runtimeState struct {
 	device   wireGuardDevice
@@ -72,6 +77,12 @@ func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []
 	}
 	if mtu <= 0 {
 		mtu = 1420
+	}
+
+	userspaceConfig, err = resolveUserspaceConfigEndpoints(userspaceConfig, net.DefaultResolver.LookupIPAddr)
+	if err != nil {
+		logError("endpoint resolve failed: %v", err)
+		return -10
 	}
 
 	tunDev, tnet, err := netstack.CreateNetTUN(local, dns, mtu)
@@ -409,6 +420,69 @@ func httpProxyAuthorized(request *http.Request, username string, password string
 		return false
 	}
 	return string(decoded) == username+":"+password
+}
+
+func resolveUserspaceConfigEndpoints(config string, lookup endpointResolver) (string, error) {
+	if !strings.Contains(config, "endpoint=") {
+		return config, nil
+	}
+
+	lines := strings.Split(config, "\n")
+	for i, line := range lines {
+		key, value, found := strings.Cut(line, "=")
+		if !found || key != "endpoint" {
+			continue
+		}
+
+		endpoint, err := resolveUserspaceEndpoint(value, lookup)
+		if err != nil {
+			return "", err
+		}
+		lines[i] = key + "=" + endpoint
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func resolveUserspaceEndpoint(endpoint string, lookup endpointResolver) (string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "", errors.New("empty endpoint")
+	}
+	if _, err := netip.ParseAddrPort(endpoint); err == nil {
+		return endpoint, nil
+	}
+
+	host, portString, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint %q: %w", endpoint, err)
+	}
+	port, err := strconv.ParseUint(portString, 10, 16)
+	if err != nil || port == 0 {
+		return "", fmt.Errorf("invalid endpoint port %q", portString)
+	}
+
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return netip.AddrPortFrom(addr, uint16(port)).String(), nil
+	}
+	if lookup == nil {
+		return "", errors.New("endpoint resolver is unavailable")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), endpointResolveTimeout)
+	defer cancel()
+
+	addrs, err := lookup(ctx, host)
+	if err != nil {
+		return "", fmt.Errorf("resolve endpoint host %q: %w", host, err)
+	}
+	for _, ipAddr := range addrs {
+		addr, ok := netip.AddrFromSlice(ipAddr.IP)
+		if !ok {
+			continue
+		}
+		return netip.AddrPortFrom(addr.Unmap(), uint16(port)).String(), nil
+	}
+	return "", fmt.Errorf("resolve endpoint host %q: no IP addresses", host)
 }
 
 func writeSocksFailure(writer io.Writer) {
