@@ -177,6 +177,10 @@ public class CameraScanActivity extends BaseFragment {
             return null;
         }
 
+        default String getTitleText() {
+            return null;
+        }
+
         default void onDismiss() {}
     }
 
@@ -211,6 +215,9 @@ public class CameraScanActivity extends BaseFragment {
                 actionBarLayout[0].showLastFragment();
                 actionBarLayout[0].getView().setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, 0);
                 fragment.setDelegate(cameraDelegate);
+                if (cameraDelegate.getTitleText() != null) {
+                    fragment.titleTextView.setText(cameraDelegate.getTitleText());
+                }
                 if (cameraDelegate.getSubtitleText() != null) {
                     fragment.descriptionText.setText(cameraDelegate.getSubtitleText());
                 }

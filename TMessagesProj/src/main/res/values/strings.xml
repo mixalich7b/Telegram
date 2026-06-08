@@ -2684,6 +2684,7 @@
     <string name="WireGuardConnections">WireGuard Connections</string>
     <string name="AddWireGuardConnection">Add WireGuard Connection</string>
     <string name="ImportWireGuardConfig">Import WireGuard Config</string>
+    <string name="ScanWireGuardQrCode">Scan WireGuard QR Code</string>
     <string name="WireGuardDetails">WireGuard Details</string>
     <string name="WireGuardName">Name</string>
     <string name="WireGuardPrivateKey">Private Key</string>

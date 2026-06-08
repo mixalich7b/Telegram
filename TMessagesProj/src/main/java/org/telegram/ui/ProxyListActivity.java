@@ -10,6 +10,7 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.LocaleController.getString;
 
+import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -18,12 +19,14 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -42,7 +45,9 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DownloadController;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NetworkRouteSettings;
@@ -76,6 +81,7 @@ import org.telegram.ui.Components.SlideChooseView;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -83,6 +89,8 @@ import java.util.List;
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
     private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
     private static final int REQUEST_IMPORT_WIREGUARD = 13;
+    private static final int REQUEST_SCAN_WIREGUARD_QR = 36;
+    private static final int MAX_WIREGUARD_CONFIG_SIZE = 64 * 1024;
     private static final int MENU_DELETE = 0;
     private static final int MENU_SHARE = 1;
 
@@ -120,6 +128,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private int wireGuardEndRow;
     private int wireGuardAddRow;
     private int wireGuardImportRow;
+    private int wireGuardScanQrRow;
     private int wireGuardShadowRow;
 
     private ItemTouchHelper itemTouchHelper;
@@ -665,6 +674,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     return;
                 }
                 openWireGuardImport();
+            } else if (position == wireGuardScanQrRow) {
+                if (!WireGuardManager.isBuildSupported()) {
+                    showWireGuardUnavailable();
+                    return;
+                }
+                openWireGuardQrScan();
             } else if (position == proxyAddRow) {
                 presentFragment(new ProxySettingsActivity());
             } else if (position == deleteAllRow) {
@@ -798,11 +813,73 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         startActivityForResult(Intent.createChooser(intent, getString(R.string.ImportWireGuardConfig)), REQUEST_IMPORT_WIREGUARD);
     }
 
+    private void openWireGuardQrScan() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        if (!WireGuardManager.isBuildSupported()) {
+            showWireGuardUnavailable();
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 23 && getParentActivity().checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            getParentActivity().requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_SCAN_WIREGUARD_QR);
+            return;
+        }
+        CameraScanActivity.showAsSheet(this, true, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
+            private String pendingConfigText;
+
+            @Override
+            public void didFindQr(String text) {
+                pendingConfigText = text;
+            }
+
+            @Override
+            public String getTitleText() {
+                return getString(R.string.ScanWireGuardQrCode);
+            }
+
+            @Override
+            public void onDismiss() {
+                if (pendingConfigText != null) {
+                    openWireGuardImportedConfig(pendingConfigText, "");
+                }
+            }
+        });
+    }
+
     private void showWireGuardUnavailable() {
         showDialog(new AlertDialog.Builder(getParentActivity())
                 .setTitle(getString(R.string.UseWireGuardSettings))
                 .setMessage(getString(R.string.WireGuardUnavailableInThisBuild))
                 .setPositiveButton(getString(R.string.OK), null)
+                .create());
+    }
+
+    private void showWireGuardInvalidConfig(Throwable e) {
+        showDialog(new AlertDialog.Builder(getParentActivity())
+                .setTitle(getString(R.string.WireGuardInvalidConfig))
+                .setMessage(e.getMessage() == null ? getString(R.string.WireGuardInvalidConfig) : e.getMessage())
+                .setPositiveButton(getString(R.string.OK), null)
+                .create());
+    }
+
+    private void showWireGuardQrCameraPermissionDenied() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        showDialog(new AlertDialog.Builder(getParentActivity())
+                .setMessage(AndroidUtilities.replaceTags(getString(R.string.QRCodePermissionNoCameraWithHint)))
+                .setPositiveButton(getString(R.string.PermissionOpenSettings), (dialogInterface, i) -> {
+                    try {
+                        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.parse("package:" + ApplicationLoader.applicationContext.getPackageName()));
+                        getParentActivity().startActivity(intent);
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                    }
+                })
+                .setNegativeButton(getString(R.string.ContactsPermissionAlertNotNow), null)
+                .setTopAnimation(R.raw.permission_request_camera, 72, false, Theme.getColor(Theme.key_dialogTopBackground))
                 .create());
     }
 
@@ -819,14 +896,32 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         try {
             Uri uri = data.getData();
             String configText = readWireGuardConfig(uri);
-            WireGuardProfile profile = WireGuardConfigParser.parse(configText, fallbackNameForUri(uri));
+            openWireGuardImportedConfig(configText, fallbackNameForUri(uri));
+        } catch (Throwable e) {
+            showWireGuardInvalidConfig(e);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQUEST_SCAN_WIREGUARD_QR) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                openWireGuardQrScan();
+            } else {
+                showWireGuardQrCameraPermissionDenied();
+            }
+        }
+    }
+
+    private void openWireGuardImportedConfig(String configText, String fallbackName) {
+        try {
+            if (configText == null || configText.getBytes(StandardCharsets.UTF_8).length > MAX_WIREGUARD_CONFIG_SIZE) {
+                throw new IllegalArgumentException(getString(R.string.WireGuardInvalidConfig));
+            }
+            WireGuardProfile profile = WireGuardConfigParser.parse(configText, fallbackName);
             presentFragment(new WireGuardSettingsActivity(profile));
         } catch (Throwable e) {
-            showDialog(new AlertDialog.Builder(getParentActivity())
-                    .setTitle(getString(R.string.WireGuardInvalidConfig))
-                    .setMessage(e.getMessage() == null ? getString(R.string.WireGuardInvalidConfig) : e.getMessage())
-                    .setPositiveButton(getString(R.string.OK), null)
-                    .create());
+            showWireGuardInvalidConfig(e);
         }
     }
 
@@ -842,7 +937,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             int read;
             while ((read = inputStream.read(buffer)) != -1) {
                 total += read;
-                if (total > 64 * 1024) {
+                if (total > MAX_WIREGUARD_CONFIG_SIZE) {
                     throw new IllegalArgumentException(getString(R.string.WireGuardInvalidConfig));
                 }
                 outputStream.write(buffer, 0, read);
@@ -984,6 +1079,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
         wireGuardAddRow = rowCount++;
         wireGuardImportRow = rowCount++;
+        wireGuardScanQrRow = rowCount++;
         wireGuardShadowRow = rowCount++;
         checkProxyList();
         if (notify && listAdapter != null) {
@@ -1184,7 +1280,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     } else if (position == wireGuardAddRow) {
                         textCell.setText(getString(R.string.AddWireGuardConnection), true);
                     } else if (position == wireGuardImportRow) {
-                        textCell.setText(getString(R.string.ImportWireGuardConfig), false);
+                        textCell.setText(getString(R.string.ImportWireGuardConfig), true);
+                    } else if (position == wireGuardScanQrRow) {
+                        textCell.setText(getString(R.string.ScanWireGuardQrCode), false);
                     }
                     break;
                 }
@@ -1303,7 +1401,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
+            return position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
         }
 
         @Override
@@ -1369,6 +1467,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -14;
             } else if (position == wireGuardImportRow) {
                 return -15;
+            } else if (position == wireGuardScanQrRow) {
+                return -17;
             } else if (position == wireGuardShadowRow) {
                 return -16;
             } else if (position == deleteAllRow) {
@@ -1392,7 +1492,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         public int getItemViewType(int position) {
             if (position == useProxyShadowRow || position == proxyShadowRow || position == wireGuardShadowRow) {
                 return VIEW_TYPE_SHADOW;
-            } else if (position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow) {
+            } else if (position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow) {
                 return VIEW_TYPE_TEXT_SETTING;
             } else if (position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow) {
                 return VIEW_TYPE_TEXT_CHECK;
