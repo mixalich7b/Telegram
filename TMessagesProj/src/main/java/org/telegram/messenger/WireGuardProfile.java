@@ -1,5 +1,7 @@
 package org.telegram.messenger;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -153,10 +155,11 @@ public final class WireGuardProfile {
         }
 
         String host = endpoint.substring(0, portSeparator).trim();
-        if (host.startsWith("[") && host.endsWith("]")) {
+        boolean bracketedHost = host.startsWith("[") && host.endsWith("]");
+        if (bracketedHost) {
             host = host.substring(1, host.length() - 1).trim();
         }
-        if (host.isEmpty()) {
+        if (host.isEmpty() || !isValidEndpointHost(host, bracketedHost)) {
             return false;
         }
 
@@ -176,6 +179,111 @@ public final class WireGuardProfile {
         } catch (NumberFormatException e) {
             return false;
         }
+    }
+
+    private static boolean isValidEndpointHost(String host, boolean bracketedHost) {
+        if (bracketedHost) {
+            return isValidIpv6Literal(host);
+        }
+        if (host.indexOf(':') >= 0 || hasWhitespaceOrControl(host)) {
+            return false;
+        }
+        if (isValidIpv4Literal(host)) {
+            return true;
+        }
+        if (looksLikeIpv4Literal(host)) {
+            return false;
+        }
+        return isValidDomainName(host);
+    }
+
+    private static boolean isValidIpv6Literal(String host) {
+        if (host.indexOf(':') < 0 || hasWhitespaceOrControl(host)) {
+            return false;
+        }
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            return address instanceof Inet6Address;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private static boolean isValidIpv4Literal(String host) {
+        String[] parts = host.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3) {
+                return false;
+            }
+            if (part.length() > 1 && part.charAt(0) == '0') {
+                return false;
+            }
+            int value = 0;
+            for (int i = 0; i < part.length(); i++) {
+                char ch = part.charAt(i);
+                if (ch < '0' || ch > '9') {
+                    return false;
+                }
+                value = value * 10 + (ch - '0');
+            }
+            if (value > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean looksLikeIpv4Literal(String host) {
+        if (host.indexOf('.') < 0) {
+            return false;
+        }
+        for (int i = 0; i < host.length(); i++) {
+            char ch = host.charAt(i);
+            if (ch != '.' && (ch < '0' || ch > '9')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidDomainName(String host) {
+        if (host.endsWith(".")) {
+            host = host.substring(0, host.length() - 1);
+        }
+        if (host.isEmpty() || host.length() > 253) {
+            return false;
+        }
+        String[] labels = host.split("\\.", -1);
+        for (String label : labels) {
+            if (label.isEmpty() || label.length() > 63) {
+                return false;
+            }
+            if (label.charAt(0) == '-' || label.charAt(label.length() - 1) == '-') {
+                return false;
+            }
+            for (int i = 0; i < label.length(); i++) {
+                char ch = label.charAt(i);
+                boolean alpha = ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z';
+                boolean digit = ch >= '0' && ch <= '9';
+                if (!alpha && !digit && ch != '-') {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasWhitespaceOrControl(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isWhitespace(ch) || Character.isISOControl(ch)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String[] normalizeArray(String[] values) {

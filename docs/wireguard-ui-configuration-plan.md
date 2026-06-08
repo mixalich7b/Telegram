@@ -48,7 +48,8 @@ Profiles are stored in global `mainconfig` with these keys:
 - `wireguard_enabled`
 - `wireguard_current_profile_id`
 - `wireguard_profile_list`
-- `wireguard_profile_schema_version`
+
+The profile schema version is embedded in `wireguard_profile_list`.
 
 Profile fields:
 

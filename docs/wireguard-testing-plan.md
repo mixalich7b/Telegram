@@ -34,11 +34,12 @@ JVM unit tests live under `TMessagesProj/src/test/java` and cover:
 
 - WireGuard userspace config generation and key validation;
 - controller startup, restart, network refresh, and fail-closed behavior;
-- profile persistence and selected-profile handling;
+- profile serialization and schema round-trip behavior;
+- endpoint validation for domain, IPv4, bracketed IPv6, invalid host, and
+  invalid port forms;
 - config parser rules, including comments, lists, domain/IPv4/bracketed IPv6
-  endpoints, invalid ports, missing fields, invalid keys, and multiple-peer
-  rejection;
-- route policy and VoIP routing helpers.
+  endpoints, missing fields, invalid keys, and multiple-peer rejection;
+- VoIP routing helpers.
 
 Go tests live in `TMessagesProj/jni/tg_wg/go` and cover:
 
