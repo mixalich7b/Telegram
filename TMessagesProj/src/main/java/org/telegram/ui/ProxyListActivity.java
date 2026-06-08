@@ -13,6 +13,7 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -22,6 +23,7 @@ import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -43,10 +45,14 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NetworkRouteSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.ProxyRotationController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.WireGuardConfigParser;
+import org.telegram.messenger.WireGuardManager;
+import org.telegram.messenger.WireGuardProfile;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
@@ -68,12 +74,15 @@ import org.telegram.ui.Components.NumberTextView;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SlideChooseView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
     private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
+    private static final int REQUEST_IMPORT_WIREGUARD = 13;
     private static final int MENU_DELETE = 0;
     private static final int MENU_SHARE = 1;
 
@@ -86,10 +95,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
     private boolean useProxySettings;
     private boolean useProxyForCalls;
+    private boolean useWireGuardSettings;
 
     private int rowCount;
     @Keep
     private int useProxyRow;
+    private int useWireGuardRow;
     private int useProxyShadowRow;
     private int connectionsHeaderRow;
     private int proxyStartRow;
@@ -104,6 +115,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private int rotationTimeoutInfoRow;
     private int callsDetailRow;
     private int deleteAllRow;
+    private int wireGuardHeaderRow;
+    private int wireGuardStartRow;
+    private int wireGuardEndRow;
+    private int wireGuardAddRow;
+    private int wireGuardImportRow;
+    private int wireGuardShadowRow;
 
     private ItemTouchHelper itemTouchHelper;
     private NumberTextView selectedCountTextView;
@@ -112,6 +129,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
     private List<SharedConfig.ProxyInfo> selectedItems = new ArrayList<>();
     private List<SharedConfig.ProxyInfo> proxyList = new ArrayList<>();
+    private List<WireGuardProfile> wireGuardProfiles = new ArrayList<>();
     private boolean wasCheckedAllList;
 
     public class TextDetailProxyCell extends FrameLayout {
@@ -329,6 +347,113 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
     }
 
+    public class TextDetailWireGuardCell extends FrameLayout {
+
+        private TextView textView;
+        private TextView valueTextView;
+        private ImageView editImageView;
+        private Drawable checkDrawable;
+        private WireGuardProfile currentInfo;
+
+        public TextDetailWireGuardCell(Context context) {
+            super(context);
+
+            textView = new TextView(context);
+            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            textView.setLines(1);
+            textView.setMaxLines(1);
+            textView.setSingleLine(true);
+            textView.setEllipsize(TextUtils.TruncateAt.END);
+            textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 56 : 21), 10, (LocaleController.isRTL ? 21 : 56), 0));
+
+            valueTextView = new TextView(context);
+            valueTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            valueTextView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            valueTextView.setLines(1);
+            valueTextView.setMaxLines(1);
+            valueTextView.setSingleLine(true);
+            valueTextView.setCompoundDrawablePadding(AndroidUtilities.dp(6));
+            valueTextView.setEllipsize(TextUtils.TruncateAt.END);
+            addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, (LocaleController.isRTL ? 56 : 21), 35, (LocaleController.isRTL ? 21 : 56), 0));
+
+            editImageView = new ImageView(context);
+            editImageView.setImageResource(R.drawable.msg_info);
+            editImageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.MULTIPLY));
+            editImageView.setScaleType(ImageView.ScaleType.CENTER);
+            editImageView.setContentDescription(getString(R.string.Edit));
+            addView(editImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
+            editImageView.setOnClickListener(v -> presentFragment(new WireGuardSettingsActivity(currentInfo)));
+
+            setWillNotDraw(false);
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(64) + 1, MeasureSpec.EXACTLY));
+        }
+
+        public void setProfile(WireGuardProfile profile) {
+            currentInfo = profile;
+            textView.setText(profile.getDisplayName());
+            updateStatus();
+        }
+
+        public void updateStatus() {
+            boolean active = useWireGuardSettings && currentInfo != null && currentInfo.id.equals(WireGuardManager.getActiveProfile() == null ? "" : WireGuardManager.getActiveProfile().id);
+            int colorKey;
+            if (active) {
+                String failureReason = WireGuardManager.getFailureReason();
+                if (failureReason != null) {
+                    valueTextView.setText(getString(R.string.WireGuardFailed));
+                    colorKey = Theme.key_text_RedRegular;
+                } else if (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
+                    valueTextView.setText(getString(R.string.WireGuardConnected));
+                    colorKey = Theme.key_windowBackgroundWhiteBlueText6;
+                } else {
+                    valueTextView.setText(getString(R.string.WireGuardConnecting));
+                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
+                }
+            } else {
+                valueTextView.setText(currentInfo == null ? "" : currentInfo.peerEndpoint);
+                colorKey = Theme.key_windowBackgroundWhiteGrayText2;
+            }
+            int color = Theme.getColor(colorKey);
+            valueTextView.setTag(colorKey);
+            valueTextView.setTextColor(color);
+            if (checkDrawable != null) {
+                checkDrawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+            }
+        }
+
+        public void setChecked(boolean checked) {
+            if (checked) {
+                if (checkDrawable == null) {
+                    checkDrawable = getResources().getDrawable(R.drawable.proxy_check).mutate();
+                }
+                if (LocaleController.isRTL) {
+                    valueTextView.setCompoundDrawablesWithIntrinsicBounds(null, null, checkDrawable, null);
+                } else {
+                    valueTextView.setCompoundDrawablesWithIntrinsicBounds(checkDrawable, null, null, null);
+                }
+            } else {
+                valueTextView.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null);
+            }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            updateStatus();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            canvas.drawLine(LocaleController.isRTL ? 0 : AndroidUtilities.dp(20), getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? AndroidUtilities.dp(20) : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
+        }
+    }
+
     @Override
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
@@ -344,6 +469,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         final SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         useProxySettings = preferences.getBoolean("proxy_enabled", false) && !SharedConfig.proxyList.isEmpty();
         useProxyForCalls = preferences.getBoolean("proxy_enabled_calls", false);
+        useWireGuardSettings = WireGuardManager.isUserEnabled();
 
         updateRows(true);
 
@@ -429,13 +555,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     useProxyForCalls = false;
                 }
 
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putBoolean("proxy_enabled", useProxySettings);
-                editor.commit();
-
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
                 NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                if (useProxySettings) {
+                    NetworkRouteSettings.enableProxy(SharedConfig.currentProxy);
+                } else {
+                    NetworkRouteSettings.disableProxy();
+                }
                 NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
 
                 for (int a = proxyStartRow; a < proxyEndRow; a++) {
@@ -445,6 +570,35 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         cell.updateStatus();
                     }
                 }
+            } else if (position == useWireGuardRow) {
+                if (useWireGuardSettings) {
+                    useWireGuardSettings = false;
+                    NetworkRouteSettings.disableWireGuard();
+                    updateRows(true);
+                    return;
+                }
+                if (!WireGuardManager.isBuildSupported()) {
+                    showWireGuardUnavailable();
+                    return;
+                }
+                WireGuardProfile activeProfile = WireGuardManager.getActiveProfile();
+                if (activeProfile == null) {
+                    if (!wireGuardProfiles.isEmpty()) {
+                        activeProfile = wireGuardProfiles.get(0);
+                    } else {
+                        presentFragment(new WireGuardSettingsActivity());
+                        return;
+                    }
+                }
+                if (!NetworkRouteSettings.enableWireGuard(activeProfile.id)) {
+                    showWireGuardUnavailable();
+                    updateRows(true);
+                    return;
+                }
+                useWireGuardSettings = true;
+                useProxySettings = false;
+                useProxyForCalls = false;
+                updateRows(true);
             } else if (position == rotationRow) {
                 SharedConfig.proxyRotationEnabled = !SharedConfig.proxyRotationEnabled;
                 TextCheckCell textCheckCell = (TextCheckCell) view;
@@ -466,19 +620,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
                 useProxySettings = true;
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putString("proxy_ip", info.address);
-                editor.putString("proxy_pass", info.password);
-                editor.putString("proxy_user", info.username);
-                editor.putInt("proxy_port", info.port);
-                editor.putString("proxy_secret", info.secret);
-                editor.putBoolean("proxy_enabled", useProxySettings);
                 if (!info.secret.isEmpty()) {
                     useProxyForCalls = false;
-                    editor.putBoolean("proxy_enabled_calls", false);
                 }
-                editor.commit();
-                SharedConfig.currentProxy = info;
+                NetworkRouteSettings.enableProxy(info);
                 for (int a = proxyStartRow; a < proxyEndRow; a++) {
                     RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
                     if (holder != null) {
@@ -493,7 +638,33 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
                     textCheckCell.setChecked(true);
                 }
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
+            } else if (wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow) {
+                if (!WireGuardManager.isBuildSupported()) {
+                    showWireGuardUnavailable();
+                    return;
+                }
+                WireGuardProfile profile = wireGuardProfiles.get(position - wireGuardStartRow);
+                if (!NetworkRouteSettings.enableWireGuard(profile.id)) {
+                    showWireGuardUnavailable();
+                    updateRows(true);
+                    return;
+                }
+                useWireGuardSettings = true;
+                useProxySettings = false;
+                useProxyForCalls = false;
+                updateRows(true);
+            } else if (position == wireGuardAddRow) {
+                if (!WireGuardManager.isBuildSupported()) {
+                    showWireGuardUnavailable();
+                    return;
+                }
+                presentFragment(new WireGuardSettingsActivity());
+            } else if (position == wireGuardImportRow) {
+                if (!WireGuardManager.isBuildSupported()) {
+                    showWireGuardUnavailable();
+                    return;
+                }
+                openWireGuardImport();
             } else if (position == proxyAddRow) {
                 presentFragment(new ProxySettingsActivity());
             } else if (position == deleteAllRow) {
@@ -513,7 +684,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     updateRows(true);
                     if (listAdapter != null) {
                         listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                        listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                        if (callsRow != -1) {
+                            listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                        }
                         listAdapter.clearSelected();
                     }
                 });
@@ -575,12 +748,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
                             updateRows(true);
                             if (listAdapter != null) {
-                                if (SharedConfig.currentProxy == null) {
-                                    listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                            if (SharedConfig.currentProxy == null) {
+                                listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
+                                if (callsRow != -1) {
                                     listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
                                 }
-                                listAdapter.clearSelected();
                             }
+                            listAdapter.clearSelected();
+                        }
                         });
                         AlertDialog dialog = builder.create();
                         showDialog(dialog);
@@ -616,6 +791,80 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         return fragmentView;
     }
 
+    private void openWireGuardImport() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(Intent.createChooser(intent, getString(R.string.ImportWireGuardConfig)), REQUEST_IMPORT_WIREGUARD);
+    }
+
+    private void showWireGuardUnavailable() {
+        showDialog(new AlertDialog.Builder(getParentActivity())
+                .setTitle(getString(R.string.UseWireGuardSettings))
+                .setMessage(getString(R.string.WireGuardUnavailableInThisBuild))
+                .setPositiveButton(getString(R.string.OK), null)
+                .create());
+    }
+
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        super.onActivityResultFragment(requestCode, resultCode, data);
+        if (requestCode != REQUEST_IMPORT_WIREGUARD || resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+        if (!WireGuardManager.isBuildSupported()) {
+            showWireGuardUnavailable();
+            return;
+        }
+        try {
+            Uri uri = data.getData();
+            String configText = readWireGuardConfig(uri);
+            WireGuardProfile profile = WireGuardConfigParser.parse(configText, fallbackNameForUri(uri));
+            presentFragment(new WireGuardSettingsActivity(profile));
+        } catch (Throwable e) {
+            showDialog(new AlertDialog.Builder(getParentActivity())
+                    .setTitle(getString(R.string.WireGuardInvalidConfig))
+                    .setMessage(e.getMessage() == null ? getString(R.string.WireGuardInvalidConfig) : e.getMessage())
+                    .setPositiveButton(getString(R.string.OK), null)
+                    .create());
+        }
+    }
+
+    private String readWireGuardConfig(Uri uri) throws Exception {
+        InputStream inputStream = getParentActivity().getContentResolver().openInputStream(uri);
+        if (inputStream == null) {
+            throw new IllegalArgumentException(getString(R.string.WireGuardInvalidConfig));
+        }
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int total = 0;
+            int read;
+            while ((read = inputStream.read(buffer)) != -1) {
+                total += read;
+                if (total > 64 * 1024) {
+                    throw new IllegalArgumentException(getString(R.string.WireGuardInvalidConfig));
+                }
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toString("UTF-8");
+        } finally {
+            inputStream.close();
+        }
+    }
+
+    private static String fallbackNameForUri(Uri uri) {
+        String path = uri.getLastPathSegment();
+        if (path == null) {
+            return "";
+        }
+        int slash = path.lastIndexOf('/');
+        if (slash >= 0 && slash + 1 < path.length()) {
+            return path.substring(slash + 1);
+        }
+        return path;
+    }
+
     @Override
     public boolean onBackPressed(boolean invoked) {
         if (!selectedItems.isEmpty()) {
@@ -626,8 +875,17 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     }
 
     private void updateRows(boolean notify) {
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        useWireGuardSettings = WireGuardManager.isUserEnabled();
+        useProxySettings = preferences.getBoolean("proxy_enabled", false) && !SharedConfig.proxyList.isEmpty();
+        useProxyForCalls = preferences.getBoolean("proxy_enabled_calls", false);
+        if (useWireGuardSettings) {
+            useProxySettings = false;
+            useProxyForCalls = false;
+        }
         rowCount = 0;
         useProxyRow = rowCount++;
+        useWireGuardRow = rowCount++;
         if (useProxySettings && SharedConfig.currentProxy != null && SharedConfig.proxyList.size() > 1 && IS_PROXY_ROTATION_AVAILABLE) {
             rotationRow = rowCount++;
             if (SharedConfig.proxyRotationEnabled) {
@@ -652,6 +910,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (notify) {
             proxyList.clear();
             proxyList.addAll(SharedConfig.proxyList);
+            wireGuardProfiles.clear();
+            wireGuardProfiles.addAll(WireGuardManager.getProfiles());
 
             boolean checking = false;
             if (!wasCheckedAllList) {
@@ -691,7 +951,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
         proxyAddRow = rowCount++;
         proxyShadowRow = rowCount++;
-        if (SharedConfig.currentProxy == null || SharedConfig.currentProxy.secret.isEmpty()) {
+        if (!useWireGuardSettings && (SharedConfig.currentProxy == null || SharedConfig.currentProxy.secret.isEmpty())) {
             boolean change = callsRow == -1;
             callsRow = rowCount++;
             callsDetailRow = rowCount++;
@@ -713,6 +973,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         } else {
             deleteAllRow = -1;
         }
+        wireGuardHeaderRow = rowCount++;
+        if (!wireGuardProfiles.isEmpty()) {
+            wireGuardStartRow = rowCount;
+            rowCount += wireGuardProfiles.size();
+            wireGuardEndRow = rowCount;
+        } else {
+            wireGuardStartRow = -1;
+            wireGuardEndRow = -1;
+        }
+        wireGuardAddRow = rowCount++;
+        wireGuardImportRow = rowCount++;
+        wireGuardShadowRow = rowCount++;
         checkProxyList();
         if (notify && listAdapter != null) {
             listAdapter.notifyDataSetChanged();
@@ -773,13 +1045,27 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             int state = ConnectionsManager.getInstance(account).getConnectionState();
             if (currentConnectionState != state) {
                 currentConnectionState = state;
-                if (listView != null && SharedConfig.currentProxy != null) {
-                    int idx = proxyList.indexOf(SharedConfig.currentProxy);
-                    if (idx >= 0) {
-                        RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
-                        if (holder != null) {
-                            TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                            cell.updateStatus();
+                if (listView != null) {
+                    if (SharedConfig.currentProxy != null) {
+                        int idx = proxyList.indexOf(SharedConfig.currentProxy);
+                        if (idx >= 0) {
+                            RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
+                            if (holder != null) {
+                                TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
+                                cell.updateStatus();
+                            }
+                        }
+                    }
+                    WireGuardProfile activeProfile = WireGuardManager.getActiveProfile();
+                    if (activeProfile != null && wireGuardStartRow != -1) {
+                        for (int i = 0; i < wireGuardProfiles.size(); i++) {
+                            if (activeProfile.id.equals(wireGuardProfiles.get(i).id)) {
+                                RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(i + wireGuardStartRow);
+                                if (holder != null && holder.itemView instanceof TextDetailWireGuardCell) {
+                                    ((TextDetailWireGuardCell) holder.itemView).updateStatus();
+                                }
+                                break;
+                            }
                         }
                     }
 
@@ -826,7 +1112,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             VIEW_TYPE_TEXT_CHECK = 3,
             VIEW_TYPE_INFO = 4,
             VIEW_TYPE_PROXY_DETAIL = 5,
-            VIEW_TYPE_SLIDE_CHOOSER = 6;
+            VIEW_TYPE_SLIDE_CHOOSER = 6,
+            VIEW_TYPE_WIREGUARD_DETAIL = 7;
 
         public static final int PAYLOAD_CHECKED_CHANGED = 0;
         public static final int PAYLOAD_SELECTION_CHANGED = 1;
@@ -894,6 +1181,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     } else if (position == deleteAllRow) {
                         textCell.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
                         textCell.setText(getString(R.string.DeleteAllProxies), false);
+                    } else if (position == wireGuardAddRow) {
+                        textCell.setText(getString(R.string.AddWireGuardConnection), true);
+                    } else if (position == wireGuardImportRow) {
+                        textCell.setText(getString(R.string.ImportWireGuardConfig), false);
                     }
                     break;
                 }
@@ -901,6 +1192,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     HeaderCell headerCell = (HeaderCell) holder.itemView;
                     if (position == connectionsHeaderRow) {
                         headerCell.setText(getString(R.string.ProxyConnections));
+                    } else if (position == wireGuardHeaderRow) {
+                        headerCell.setText(getString(R.string.WireGuardConnections));
                     }
                     break;
                 }
@@ -908,6 +1201,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     TextCheckCell checkCell = (TextCheckCell) holder.itemView;
                     if (position == useProxyRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxySettings), useProxySettings, rotationRow != -1);
+                    } else if (position == useWireGuardRow) {
+                        checkCell.setTextAndCheck(getString(R.string.UseWireGuardSettings), useWireGuardSettings, useProxyShadowRow != -1);
                     } else if (position == callsRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxyForCalls), useProxyForCalls, false);
                     } else if (position == rotationRow) {
@@ -931,6 +1226,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     cell.setChecked(SharedConfig.currentProxy == info);
                     cell.setItemSelected(selectedItems.contains(proxyList.get(position - proxyStartRow)), false);
                     cell.setSelectionEnabled(!selectedItems.isEmpty(), false);
+                    break;
+                }
+                case VIEW_TYPE_WIREGUARD_DETAIL: {
+                    TextDetailWireGuardCell cell = (TextDetailWireGuardCell) holder.itemView;
+                    WireGuardProfile info = wireGuardProfiles.get(position - wireGuardStartRow);
+                    WireGuardProfile activeProfile = WireGuardManager.getActiveProfile();
+                    cell.setProfile(info);
+                    cell.setChecked(useWireGuardSettings && activeProfile != null && info.id.equals(activeProfile.id));
                     break;
                 }
                 case VIEW_TYPE_SLIDE_CHOOSER: {
@@ -967,6 +1270,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 TextCheckCell checkCell = (TextCheckCell) holder.itemView;
                 if (position == useProxyRow) {
                     checkCell.setChecked(useProxySettings);
+                } else if (position == useWireGuardRow) {
+                    checkCell.setChecked(useWireGuardSettings);
                 } else if (position == callsRow) {
                     checkCell.setChecked(useProxyForCalls);
                 } else if (position == rotationRow) {
@@ -985,6 +1290,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 int position = holder.getAdapterPosition();
                 if (position == useProxyRow) {
                     checkCell.setChecked(useProxySettings);
+                } else if (position == useWireGuardRow) {
+                    checkCell.setChecked(useWireGuardSettings);
                 } else if (position == callsRow) {
                     checkCell.setChecked(useProxyForCalls);
                 } else if (position == rotationRow) {
@@ -996,7 +1303,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == useProxyRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position >= proxyStartRow && position < proxyEndRow;
+            return position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
         }
 
         @Override
@@ -1026,8 +1333,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
                 case VIEW_TYPE_PROXY_DETAIL:
-                default:
                     view = new TextDetailProxyCell(mContext);
+                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    break;
+                case VIEW_TYPE_WIREGUARD_DETAIL:
+                default:
+                    view = new TextDetailWireGuardCell(mContext);
                     view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
             }
@@ -1046,10 +1357,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -3;
             } else if (position == useProxyRow) {
                 return -4;
+            } else if (position == useWireGuardRow) {
+                return -12;
             } else if (position == callsRow) {
                 return -5;
             } else if (position == connectionsHeaderRow) {
                 return -6;
+            } else if (position == wireGuardHeaderRow) {
+                return -13;
+            } else if (position == wireGuardAddRow) {
+                return -14;
+            } else if (position == wireGuardImportRow) {
+                return -15;
+            } else if (position == wireGuardShadowRow) {
+                return -16;
             } else if (position == deleteAllRow) {
                 return -8;
             } else if (position == rotationRow) {
@@ -1060,6 +1381,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -11;
             } else if (position >= proxyStartRow && position < proxyEndRow) {
                 return proxyList.get(position - proxyStartRow).hashCode();
+            } else if (wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow) {
+                return wireGuardProfiles.get(position - wireGuardStartRow).id.hashCode();
             } else {
                 return -7;
             }
@@ -1067,18 +1390,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
         @Override
         public int getItemViewType(int position) {
-            if (position == useProxyShadowRow || position == proxyShadowRow) {
+            if (position == useProxyShadowRow || position == proxyShadowRow || position == wireGuardShadowRow) {
                 return VIEW_TYPE_SHADOW;
-            } else if (position == proxyAddRow || position == deleteAllRow) {
+            } else if (position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow) {
                 return VIEW_TYPE_TEXT_SETTING;
-            } else if (position == useProxyRow || position == rotationRow || position == callsRow) {
+            } else if (position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow) {
                 return VIEW_TYPE_TEXT_CHECK;
-            } else if (position == connectionsHeaderRow) {
+            } else if (position == connectionsHeaderRow || position == wireGuardHeaderRow) {
                 return VIEW_TYPE_HEADER;
             } else if (position == rotationTimeoutRow) {
                 return VIEW_TYPE_SLIDE_CHOOSER;
             } else if (position >= proxyStartRow && position < proxyEndRow) {
                 return VIEW_TYPE_PROXY_DETAIL;
+            } else if (wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow) {
+                return VIEW_TYPE_WIREGUARD_DETAIL;
             } else {
                 return VIEW_TYPE_INFO;
             }

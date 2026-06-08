@@ -153,6 +153,27 @@ final class WireGuardController {
         }
     }
 
+    void restart(int accountCount) {
+        if (!config.isEnabled()) {
+            disable(accountCount);
+            return;
+        }
+        synchronized (lock) {
+            applyBlockedProxyForAccountsLocked(accountCount);
+            stopRuntimeLocked();
+            startLocked();
+            applyProxySettingsForAccountsLocked(accountCount);
+        }
+    }
+
+    void disable(int accountCount) {
+        synchronized (lock) {
+            stopRuntimeLocked();
+            failureReason = null;
+            applyDirectProxyForAccountsLocked(accountCount);
+        }
+    }
+
     boolean isRunningForTests() {
         synchronized (lock) {
             return running;
@@ -167,6 +188,21 @@ final class WireGuardController {
             logger.error(throwable);
         }
         logger.error("WireGuard runtime disabled: " + reason);
+    }
+
+    private void stopRuntimeLocked() {
+        if (running || startAttempted) {
+            try {
+                nativeRuntime.stop();
+            } catch (Throwable e) {
+                logger.error(e);
+            }
+        }
+        running = false;
+        socksPort = 0;
+        socksUsername = null;
+        socksPassword = null;
+        startAttempted = false;
     }
 
     private void startLocked() {
@@ -211,6 +247,18 @@ final class WireGuardController {
     private void applyProxySettingsForAccountsLocked(int accountCount) {
         for (int account = 0; account < accountCount; account++) {
             applyProxySettingsLocked(account);
+        }
+    }
+
+    private void applyBlockedProxyForAccountsLocked(int accountCount) {
+        for (int account = 0; account < accountCount; account++) {
+            proxySettingsSink.apply(account, config.socksHost(), config.blockedProxyPort(), "", "", "");
+        }
+    }
+
+    private void applyDirectProxyForAccountsLocked(int accountCount) {
+        for (int account = 0; account < accountCount; account++) {
+            proxySettingsSink.apply(account, "", 1080, "", "", "");
         }
     }
 

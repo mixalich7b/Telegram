@@ -117,6 +117,8 @@ android {
 
         multiDexEnabled true
 
+        buildConfigField "boolean", "TG_WIREGUARD_ENABLED", String.valueOf(tgWireGuardNativeEnabled)
+
         externalNativeBuild {
             cmake {
                 version '3.10.2'
@@ -311,9 +313,64 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (file("jni/tg_wg/go/build").exists()) {
             throw new GradleException("TMessagesProj/jni/tg_wg/go/build must not exist; Go caches under jni are packaged as native libs")
         }
+        def buildGradleText = file("build.gradle").text
+        if (!buildGradleText.contains("TG_WIREGUARD_ENABLED")) {
+            throw new GradleException("BuildConfig must expose TG_WIREGUARD_ENABLED for WireGuard UI availability")
+        }
         def connectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
         if (!connectionsManagerText.contains("WireGuardManager.applyProxySettingsForAccount")) {
             throw new GradleException("ConnectionsManager.setProxySettings must preserve WireGuard proxy settings when WireGuard is enabled")
+        }
+        def networkRouteSettingsText = file("src/main/java/org/telegram/messenger/NetworkRouteSettings.java").text
+        ["WireGuardManager.enable", "WireGuardManager.disable", "proxy_enabled", "ConnectionsManager.setProxySettings"].each { token ->
+            if (!networkRouteSettingsText.contains(token)) {
+                throw new GradleException("NetworkRouteSettings must enforce proxy/WireGuard mutual exclusion token '${token}'")
+            }
+        }
+        ["public static boolean enableWireGuard", "WireGuardManager.isBuildSupported", "return false", "proxy_enabled_calls", "proxyRotationEnabled"].each { token ->
+            if (!networkRouteSettingsText.contains(token)) {
+                throw new GradleException("NetworkRouteSettings must guard WireGuard build support and disable proxy state token '${token}'")
+            }
+        }
+        if (!(networkRouteSettingsText =~ /disableWireGuard\(\)[\s\S]*putBoolean\("proxy_enabled", false\)[\s\S]*putBoolean\("proxy_enabled_calls", false\)/)) {
+            throw new GradleException("NetworkRouteSettings.disableWireGuard must leave ordinary proxy and proxy-for-calls disabled")
+        }
+        def proxyListActivityText = file("src/main/java/org/telegram/ui/ProxyListActivity.java").text
+        ["WireGuardManager.isBuildSupported", "WireGuardUnavailableInThisBuild", "showWireGuardUnavailable", "!useWireGuardSettings &&"].each { token ->
+            if (!proxyListActivityText.contains(token)) {
+                throw new GradleException("ProxyListActivity must gate WireGuard UI and hide proxy-calls UI in WireGuard mode token '${token}'")
+            }
+        }
+        def wireGuardSettingsActivityText = file("src/main/java/org/telegram/ui/WireGuardSettingsActivity.java").text
+        ["WireGuardManager.isBuildSupported", "WireGuardUnavailableInThisBuild", "showWireGuardUnavailable"].each { token ->
+            if (!wireGuardSettingsActivityText.contains(token)) {
+                throw new GradleException("WireGuardSettingsActivity must gate new profiles when native WireGuard support is unavailable token '${token}'")
+            }
+        }
+        [
+                "src/main/java/org/telegram/ui/ProxyListActivity.java",
+                "src/main/java/org/telegram/ui/ProxySettingsActivity.java",
+                "src/main/java/org/telegram/messenger/AndroidUtilities.java",
+                "src/main/java/org/telegram/messenger/ProxyRotationController.java"
+        ].each { path ->
+            def text = file(path).text
+            if (!text.contains("NetworkRouteSettings")) {
+                throw new GradleException("${path} must use NetworkRouteSettings for route changes")
+            }
+        }
+        ["src/main/java/org/telegram/ui/LoginActivity.java", "src/main/java/org/telegram/ui/DialogsActivity.java"].each { path ->
+            def text = file(path).text
+            if (!text.contains("WireGuardManager.isUserEnabled")) {
+                throw new GradleException("${path} must include WireGuard route status")
+            }
+        }
+        def loginActivityText = file("src/main/java/org/telegram/ui/LoginActivity.java").text
+        if (!loginActivityText.contains("showProxyButton(true, animated);")) {
+            throw new GradleException("LoginActivity must keep the proxy/WireGuard settings entry visible before authorization")
+        }
+        def wireGuardParserText = file("src/main/java/org/telegram/messenger/WireGuardConfigParser.java").text
+        if (!wireGuardParserText.contains("peerSections != 1")) {
+            throw new GradleException("WireGuardConfigParser must reject multiple peers for this UI stage")
         }
         def voipServiceText = file("src/main/java/org/telegram/messenger/voip/VoIPService.java").text
         ["WireGuardManager.getProxySettings", "WireGuardVoipRouting.shouldEnableP2p", "WireGuardVoipRouting.selectEndpointType", "PROTOCOL_HTTP_CONNECT"].each { token ->

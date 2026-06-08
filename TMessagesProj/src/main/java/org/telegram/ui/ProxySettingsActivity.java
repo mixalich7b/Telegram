@@ -46,12 +46,12 @@ import androidx.core.graphics.ColorUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NetworkRouteSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Utilities;
-import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -224,28 +224,32 @@ public class ProxySettingsActivity extends BaseFragment {
                     }
 
                     SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-                    SharedPreferences.Editor editor = preferences.edit();
-                    boolean enabled;
+                    boolean routeChanged = false;
                     if (addingNewProxy) {
-                        SharedConfig.addProxy(currentProxyInfo);
-                        SharedConfig.currentProxy = currentProxyInfo;
-                        editor.putBoolean("proxy_enabled", true);
-                        enabled = true;
+                        NetworkRouteSettings.enableProxy(currentProxyInfo);
+                        routeChanged = true;
                     } else {
-                        enabled = preferences.getBoolean("proxy_enabled", false);
                         SharedConfig.saveProxyList();
                     }
                     if (addingNewProxy || SharedConfig.currentProxy == currentProxyInfo) {
-                        editor.putString("proxy_ip", currentProxyInfo.address);
-                        editor.putString("proxy_pass", currentProxyInfo.password);
-                        editor.putString("proxy_user", currentProxyInfo.username);
-                        editor.putInt("proxy_port", currentProxyInfo.port);
-                        editor.putString("proxy_secret", currentProxyInfo.secret);
-                        ConnectionsManager.setProxySettings(enabled, currentProxyInfo.address, currentProxyInfo.port, currentProxyInfo.username, currentProxyInfo.password, currentProxyInfo.secret);
+                        boolean enabled = preferences.getBoolean("proxy_enabled", false);
+                        if (enabled && !routeChanged) {
+                            NetworkRouteSettings.enableProxy(currentProxyInfo);
+                            routeChanged = true;
+                        } else if (!routeChanged) {
+                            SharedPreferences.Editor editor = preferences.edit();
+                            editor.putString("proxy_ip", currentProxyInfo.address);
+                            editor.putString("proxy_pass", currentProxyInfo.password);
+                            editor.putString("proxy_user", currentProxyInfo.username);
+                            editor.putInt("proxy_port", currentProxyInfo.port);
+                            editor.putString("proxy_secret", currentProxyInfo.secret);
+                            editor.commit();
+                        }
                     }
-                    editor.commit();
 
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                    if (!routeChanged) {
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                    }
 
                     finishFragment();
                 }

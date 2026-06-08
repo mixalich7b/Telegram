@@ -1,6 +1,5 @@
 package org.telegram.messenger;
 
-import android.content.SharedPreferences;
 import android.os.SystemClock;
 
 import org.telegram.tgnet.ConnectionsManager;
@@ -70,23 +69,8 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
                 continue;
             }
 
-            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-            editor.putString("proxy_ip", info.address);
-            editor.putString("proxy_pass", info.password);
-            editor.putString("proxy_user", info.username);
-            editor.putInt("proxy_port", info.port);
-            editor.putString("proxy_secret", info.secret);
-            editor.putBoolean("proxy_enabled", true);
-
-            if (!info.secret.isEmpty()) {
-                editor.putBoolean("proxy_enabled_calls", false);
-            }
-            editor.apply();
-
-            SharedConfig.currentProxy = info;
-            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+            NetworkRouteSettings.enableProxy(info);
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyChangedByRotation);
-            ConnectionsManager.setProxySettings(true, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
             break;
         }
     }

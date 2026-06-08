@@ -144,6 +144,7 @@ import org.telegram.messenger.SRPHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.WireGuardManager;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.SerializedData;
@@ -524,12 +525,14 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         }
         getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateConnectionState);
         getNotificationCenter().removeObserver(this, NotificationCenter.newSuggestionsAvailable);
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.proxySettingsChanged);
     }
 
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.didUpdateConnectionState);
         getNotificationCenter().addObserver(this, NotificationCenter.newSuggestionsAvailable);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxySettingsChanged);
         return super.onFragmentCreate();
     }
 
@@ -8773,17 +8776,13 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
         String proxyAddress = preferences.getString("proxy_ip", "");
         final boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress);
-        final boolean connected = currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating;
+        final boolean wireGuardEnabled = WireGuardManager.isUserEnabled();
+        final boolean routeEnabled = proxyEnabled || wireGuardEnabled;
+        final boolean connected = (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) && (!wireGuardEnabled || WireGuardManager.getFailureReason() == null);
         final boolean connecting = currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateWaitingForNetwork || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy;
-        if (proxyEnabled) {
-            proxyDrawable.setConnected(true, connected, animated);
-            showProxyButton(true, animated);
-        } else if (getMessagesController().blockedCountry && !SharedConfig.proxyList.isEmpty() || connecting) {
-            proxyDrawable.setConnected(true, connected, animated);
-            showProxyButtonDelayed();
-        } else {
-            showProxyButton(false, animated);
-        }
+        final boolean highlighted = routeEnabled || getMessagesController().blockedCountry && !SharedConfig.proxyList.isEmpty() || connecting;
+        proxyDrawable.setConnected(highlighted, connected, animated);
+        showProxyButton(true, animated);
     }
     
     private boolean proxyButtonVisible;
@@ -8829,6 +8828,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.didUpdateConnectionState) {
             updateProxyButton(true, false);
+        } else if (id == NotificationCenter.proxySettingsChanged) {
+            updateProxyButton(true, true);
         } else if (id == NotificationCenter.newSuggestionsAvailable) {
             if (emailChangeIsSuggestion && !getMessagesController().hasSetupEmailSuggestion()) {
                 finishFragment();

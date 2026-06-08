@@ -4763,38 +4763,16 @@ public class AndroidUtilities {
         final ButtonWithCounterView buttonView = new ButtonWithCounterView(activity, null).setRound();
         buttonView.setText(getString(R.string.ConnectingConnectProxy));
         buttonView.setOnClickListener(v -> {
-            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-            editor.putBoolean("proxy_enabled", true);
-            editor.putString("proxy_ip", address);
             int p = Utilities.parseInt(port);
-            editor.putInt("proxy_port", p);
 
             SharedConfig.ProxyInfo info;
             if (TextUtils.isEmpty(secret)) {
-                editor.remove("proxy_secret");
-                if (TextUtils.isEmpty(password)) {
-                    editor.remove("proxy_pass");
-                } else {
-                    editor.putString("proxy_pass", password);
-                }
-                if (TextUtils.isEmpty(user)) {
-                    editor.remove("proxy_user");
-                } else {
-                    editor.putString("proxy_user", user);
-                }
                 info = new SharedConfig.ProxyInfo(address, p, user, password, "");
             } else {
-                editor.remove("proxy_pass");
-                editor.remove("proxy_user");
-                editor.putString("proxy_secret", secret);
                 info = new SharedConfig.ProxyInfo(address, p, "", "", secret);
             }
-            editor.commit();
 
-            SharedConfig.currentProxy = SharedConfig.addProxy(info);
-
-            ConnectionsManager.setProxySettings(true, address, p, user, password, secret);
-            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+            NetworkRouteSettings.enableProxy(info);
             if (activity instanceof LaunchActivity) {
                 INavigationLayout layout = ((LaunchActivity) activity).getActionBarLayout();
                 BaseFragment fragment = layout.getLastFragment();

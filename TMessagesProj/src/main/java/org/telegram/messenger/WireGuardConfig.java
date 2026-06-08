@@ -17,18 +17,11 @@ public final class WireGuardConfig {
     public static final String PEER_ENDPOINT = "";
     public static final int PERSISTENT_KEEPALIVE_SECONDS = 25;
 
-    public static final String[] LOCAL_ADDRESSES = new String[]{
+    public static final String[] LOCAL_ADDRESSES = new String[0];
 
-    };
+    public static final String[] DNS_SERVERS = new String[0];
 
-    public static final String[] DNS_SERVERS = new String[]{
-
-    };
-
-    public static final String[] ALLOWED_IPS = new String[]{
-            "0.0.0.0/0",
-            "::/0",
-    };
+    public static final String[] ALLOWED_IPS = new String[0];
 
     private WireGuardConfig() {
     }

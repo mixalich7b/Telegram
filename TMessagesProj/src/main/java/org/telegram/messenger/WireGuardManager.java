@@ -12,32 +12,37 @@ public final class WireGuardManager {
             new WireGuardController.Config() {
                 @Override
                 public boolean isEnabled() {
-                    return WireGuardConfig.ENABLED;
+                    return WireGuardSettings.isEnabled();
                 }
 
                 @Override
                 public String validate() {
-                    return WireGuardConfig.validate();
+                    WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
+                    return profile == null ? "missing active WireGuard profile" : profile.validate();
                 }
 
                 @Override
                 public String buildUserspaceConfig() {
-                    return WireGuardConfig.buildUserspaceConfig();
+                    WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
+                    return profile == null ? "" : profile.buildUserspaceConfig();
                 }
 
                 @Override
                 public String[] localAddresses() {
-                    return WireGuardConfig.LOCAL_ADDRESSES;
+                    WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
+                    return profile == null ? new String[0] : profile.localAddresses;
                 }
 
                 @Override
                 public String[] dnsServers() {
-                    return WireGuardConfig.DNS_SERVERS;
+                    WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
+                    return profile == null ? new String[0] : profile.dnsServers;
                 }
 
                 @Override
                 public int mtu() {
-                    return WireGuardConfig.MTU;
+                    WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
+                    return profile == null ? WireGuardConfig.MTU : profile.mtu;
                 }
 
                 @Override
@@ -112,8 +117,66 @@ public final class WireGuardManager {
         return controller.isEnabled();
     }
 
+    public static boolean isBuildSupported() {
+        return BuildConfig.TG_WIREGUARD_ENABLED;
+    }
+
+    public static boolean isUserEnabled() {
+        return WireGuardSettings.isEnabled();
+    }
+
+    public static boolean hasActiveProfile() {
+        return WireGuardSettings.getCurrentProfile() != null;
+    }
+
+    public static WireGuardProfile getActiveProfile() {
+        return WireGuardSettings.getCurrentProfile();
+    }
+
+    public static java.util.ArrayList<WireGuardProfile> getProfiles() {
+        return WireGuardSettings.getProfiles();
+    }
+
     public static void startIfEnabled() {
         controller.startIfEnabled();
+    }
+
+    public static void enable(String profileId) {
+        WireGuardSettings.setCurrentProfileId(profileId);
+        WireGuardSettings.setEnabled(true);
+        controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+    }
+
+    public static void disable() {
+        WireGuardSettings.setEnabled(false);
+        controller.disable(UserConfig.MAX_ACCOUNT_COUNT);
+    }
+
+    public static void selectProfile(String profileId) {
+        WireGuardSettings.setCurrentProfileId(profileId);
+        if (WireGuardSettings.isEnabled()) {
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+        }
+    }
+
+    public static WireGuardProfile saveProfile(WireGuardProfile profile) {
+        WireGuardProfile saved = WireGuardSettings.saveProfile(profile);
+        if (WireGuardSettings.isEnabled() && saved.id.equals(WireGuardSettings.getCurrentProfileId())) {
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+        }
+        return saved;
+    }
+
+    public static void deleteProfile(String profileId) {
+        boolean deletingActive = profileId != null && profileId.equals(WireGuardSettings.getCurrentProfileId());
+        WireGuardSettings.deleteProfile(profileId);
+        if (deletingActive) {
+            controller.disable(UserConfig.MAX_ACCOUNT_COUNT);
+        }
+    }
+
+    public static WireGuardProfile importProfile(String configText, String fallbackName) {
+        return WireGuardSettings.importProfile(configText, fallbackName);
     }
 
     public static boolean applyProxySettingsForAccount(int account) {

@@ -223,6 +223,48 @@ public class WireGuardControllerTest {
         assertEquals("", proxySink.calls.get(2).password);
     }
 
+    @Test
+    public void restartAppliesBlockedProxyBeforeStartingNewRuntime() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        FakeProxySink proxySink = new FakeProxySink();
+        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+
+        controller.applyProxySettingsForAccount(1);
+        nativeRuntime.port = 39002;
+        controller.restart(2);
+
+        assertEquals(2, nativeRuntime.startCalls);
+        assertEquals(1, nativeRuntime.stopCalls);
+        assertEquals(5, proxySink.calls.size());
+        assertEquals(23456, proxySink.calls.get(0).port);
+        assertEquals(1, proxySink.calls.get(1).port);
+        assertEquals(1, proxySink.calls.get(2).port);
+        assertEquals(39002, proxySink.calls.get(3).port);
+        assertEquals(39002, proxySink.calls.get(4).port);
+    }
+
+    @Test
+    public void disableStopsRuntimeAndClearsNativeProxy() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        FakeProxySink proxySink = new FakeProxySink();
+        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+
+        controller.applyProxySettingsForAccount(1);
+        controller.disable(2);
+
+        assertEquals(1, nativeRuntime.startCalls);
+        assertEquals(1, nativeRuntime.stopCalls);
+        assertFalse(controller.isRunningForTests());
+        assertNull(controller.getFailureReason());
+        assertEquals(3, proxySink.calls.size());
+        assertEquals("", proxySink.calls.get(1).host);
+        assertEquals(1080, proxySink.calls.get(1).port);
+        assertEquals("", proxySink.calls.get(2).host);
+        assertEquals(1080, proxySink.calls.get(2).port);
+    }
+
     private static WireGuardController newController(FakeConfig config, FakeNativeRuntime nativeRuntime, FakeProxySink proxySink) {
         return new WireGuardController(
                 config,

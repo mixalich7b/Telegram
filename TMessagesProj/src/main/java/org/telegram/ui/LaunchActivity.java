@@ -130,6 +130,7 @@ import org.telegram.messenger.TopicsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.WireGuardManager;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.PipActivityController;
 import org.telegram.messenger.pip.activity.IPipActivity;
@@ -6054,13 +6055,14 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         }
                         localeDialog = null;
                     } else if (dialog == proxyErrorDialog) {
-                        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-                        SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                        editor.putBoolean("proxy_enabled", false);
-                        editor.putBoolean("proxy_enabled_calls", false);
-                        editor.commit();
-                        ConnectionsManager.setProxySettings(false, "", 1080, "", "", "");
-                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                        if (!WireGuardManager.isUserEnabled()) {
+                            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+                            editor.putBoolean("proxy_enabled", false);
+                            editor.putBoolean("proxy_enabled_calls", false);
+                            editor.commit();
+                            ConnectionsManager.setProxySettings(false, "", 1080, "", "", "");
+                            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                        }
                         proxyErrorDialog = null;
                     }
                 }
@@ -7246,8 +7248,14 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
                 }
             } else if (reason == 3) {
-                builder.setTitle(LocaleController.getString(R.string.Proxy));
-                builder.setMessage(LocaleController.getString(R.string.UseProxyTelegramError));
+                if (WireGuardManager.isUserEnabled()) {
+                    builder.setTitle(LocaleController.getString(R.string.UseWireGuardSettings));
+                    String failureReason = WireGuardManager.getFailureReason();
+                    builder.setMessage(failureReason == null ? LocaleController.getString(R.string.WireGuardFailed) : failureReason);
+                } else {
+                    builder.setTitle(LocaleController.getString(R.string.Proxy));
+                    builder.setMessage(LocaleController.getString(R.string.UseProxyTelegramError));
+                }
                 builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
                 proxyErrorDialog = showAlertDialog(builder);
                 return;
