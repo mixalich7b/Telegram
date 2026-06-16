@@ -8,8 +8,10 @@ import java.util.UUID;
 
 public final class WireGuardSettings {
 
-    private static final String PREF_ENABLED = "wireguard_enabled";
-    private static final String PREF_CURRENT_PROFILE_ID = "wireguard_current_profile_id";
+    private static final String PREF_ENABLED = "tunnel_enabled";
+    private static final String PREF_CURRENT_PROFILE_ID = "tunnel_current_profile_id";
+    private static final String PREF_LEGACY_ENABLED = "wireguard_enabled";
+    private static final String PREF_LEGACY_CURRENT_PROFILE_ID = "wireguard_current_profile_id";
 
     private static boolean loaded;
     private static boolean enabled;
@@ -24,10 +26,14 @@ public final class WireGuardSettings {
             return;
         }
         SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        enabled = preferences.getBoolean(PREF_ENABLED, false);
-        currentProfileId = preferences.getString(PREF_CURRENT_PROFILE_ID, "");
         profiles.clear();
         profiles.addAll(WireGuardSecureStore.loadProfiles());
+        enabled = preferences.contains(PREF_ENABLED)
+                ? preferences.getBoolean(PREF_ENABLED, false)
+                : preferences.getBoolean(PREF_LEGACY_ENABLED, false);
+        currentProfileId = preferences.contains(PREF_CURRENT_PROFILE_ID)
+                ? preferences.getString(PREF_CURRENT_PROFILE_ID, "")
+                : preferences.getString(PREF_LEGACY_CURRENT_PROFILE_ID, "");
         loaded = true;
     }
 
@@ -44,6 +50,8 @@ public final class WireGuardSettings {
         SharedPreferences.Editor editor = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE).edit();
         editor.putBoolean(PREF_ENABLED, enabled);
         editor.putString(PREF_CURRENT_PROFILE_ID, currentProfileId == null ? "" : currentProfileId);
+        editor.putBoolean(PREF_LEGACY_ENABLED, enabled);
+        editor.putString(PREF_LEGACY_CURRENT_PROFILE_ID, currentProfileId == null ? "" : currentProfileId);
         editor.apply();
     }
 
@@ -151,7 +159,7 @@ public final class WireGuardSettings {
     }
 
     public static WireGuardProfile importProfile(String configText, String fallbackName) {
-        WireGuardProfile profile = WireGuardConfigParser.parse(configText, fallbackName);
+        WireGuardProfile profile = TunnelConfigParser.parse(configText, fallbackName);
         return saveProfile(profile);
     }
 

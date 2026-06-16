@@ -1,19 +1,19 @@
-# Repository Notes for WireGuard Integration
+# Repository Notes for Tunnel Integration
 
-This repository contains an Android Telegram client with an in-process
-WireGuard integration.
+This repository contains an Android Telegram client with in-process WireGuard
+and AmneziaWG integrations.
 
 ## Feature Goal
 
-Route Telegram traffic through a WireGuard server without using Android
-`VpnService`, without creating a TUN interface on the device, and without a
-device-level VPN session.
+Route Telegram traffic through a WireGuard or AmneziaWG server without using
+Android `VpnService`, without creating a TUN interface on the device, and
+without a device-level VPN session.
 
-The current implementation supports UI-managed WireGuard profiles in the
-existing proxy settings flow. Users can add profiles manually, import standard
-WireGuard config files, scan WireGuard config QR codes, persist settings across
-app restarts, enable WireGuard before authorization, switch between multiple
-WireGuard profiles, and delete saved profiles.
+The current implementation supports UI-managed WireGuard and AmneziaWG profiles
+in the existing proxy settings flow. Users can add profiles manually, import
+standard WireGuard or AmneziaWG config files, scan config QR codes, persist
+settings across app restarts, enable a tunnel before authorization, switch
+between multiple tunnel profiles, and delete saved profiles.
 
 Current routing shape:
 
@@ -31,28 +31,37 @@ WebRTC VoIP TCP relay traffic
   -> Telegram relay/datacenter
 ```
 
+AmneziaWG uses the same local SOCKS5 and HTTP CONNECT shape through
+`amneziawg-go` tun/netstack, then sends obfuscated UDP to the configured
+AmneziaWG peer.
+
 ## Hard Constraints
 
 - Do not introduce Android `VpnService`, `Builder.establish()`, `/dev/tun`, or a
   device-level VPN session for this feature.
 - Do not commit real WireGuard keys, endpoints, Telegram `APP_ID`, or Telegram
   `APP_HASH`.
-- When WireGuard is user-enabled, traffic must fail closed. Do not add a silent
+- When a tunnel is user-enabled, traffic must fail closed. Do not add a silent
   direct fallback.
-- Existing proxy behavior must stay mutually exclusive with WireGuard through
-  `NetworkRouteSettings`.
-- WireGuard profiles must be stored with Android Keystore-backed encryption on
+- Existing proxy behavior must stay mutually exclusive with WireGuard and
+  AmneziaWG through `NetworkRouteSettings`.
+- Tunnel profiles must be stored with Android Keystore-backed encryption on
   supported devices. Do not add plaintext SharedPreferences fallback for
-  profile private keys or preshared keys.
-- On devices without Keystore-backed WireGuard profile storage, UI must not
-  enable/add/import/scan WireGuard profiles. Stale enabled settings should
-  remain fail-closed and disable-able.
+  profile private keys, preshared keys, endpoints, or AmneziaWG masking fields.
+- On devices without Keystore-backed tunnel profile storage, UI must not
+  enable/add/import/scan tunnel profiles. Stale enabled settings should remain
+  fail-closed and disable-able.
 - UDP ASSOCIATE is not implemented. Current VoIP safe mode is TCP relay through
   HTTP CONNECT; do not assume UDP relay works through WireGuard yet.
 
 ## Code Map
 
 - Java configuration and orchestration:
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelProtocol.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelConfigParser.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelManager.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelProxySettings.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelVoipRouting.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardUserspaceConfig.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardManager.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardController.java`
@@ -78,6 +87,12 @@ WebRTC VoIP TCP relay traffic
   - `TMessagesProj/jni/tg_wg/go/`
   - `TMessagesProj/jni/tg_wg/tg_wg_jni.cpp`
   - `TMessagesProj/jni/CMakeLists.txt`
+- Go/JNI AmneziaWG runtime:
+  - `TMessagesProj/jni/tg_awg/go/`
+  - `TMessagesProj/jni/tg_awg/tg_awg_jni.cpp`
+  - pinned upstream module: `github.com/amnezia-vpn/amneziawg-go v0.2.18`
+  - upstream Go requirement: `go 1.24.4`
+  - `TMessagesProj/jni/CMakeLists.txt`
 - Private VoIP routing:
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/Instance.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/NativeInstance.java`
@@ -97,19 +112,20 @@ WebRTC VoIP TCP relay traffic
   - `TMessagesProj/build.gradle`
   - `TMessagesProj_App/build.gradle`
 - Docs:
-  - `docs/wireguard-integration-plan.md`
-  - `docs/wireguard-ui-configuration-plan.md`
-  - `docs/wireguard-testing-plan.md`
+  - `docs/tunnel-integration.md`
+  - `docs/tunnel-ui-configuration.md`
+  - `docs/tunnel-testing.md`
 
 ## Runtime Invariants
 
-- `WireGuardManager` is the Java entry point. Keep runtime proxy selection
-  centralized there and in `WireGuardController`.
-- `NetworkRouteSettings` is the route-mode policy layer for proxy/WireGuard
-  mutual exclusion.
+- `TunnelManager` is the Java entry point. `WireGuardManager` is a compatibility
+  facade. Keep runtime proxy selection centralized in `TunnelManager` and
+  `WireGuardController`.
+- `NetworkRouteSettings` is the route-mode policy layer for proxy/tunnel mutual
+  exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the
-  internal WireGuard proxy while WireGuard is enabled.
-- If WireGuard startup, restart, or network-refresh recovery fails, apply the
+  internal tunnel proxy while a tunnel is enabled.
+- If tunnel startup, restart, or network-refresh recovery fails, apply the
   blocked local proxy to all accounts instead of going direct.
 - Network changes should call the native refresh path. If native bind refresh
   fails, restart the runtime and reapply proxy settings; if restart fails, fail
@@ -117,39 +133,41 @@ WebRTC VoIP TCP relay traffic
 - The internal proxy binds to `127.0.0.1` with generated credentials.
 - Profile contents are encrypted separately from `mainconfig`; only route state
   such as enabled/current profile id belongs in global preferences.
+- AmneziaWG `Jc/Jmin/Jmax`, `S1..S4`, `H1..H4`, and `I1..I5` fields are profile
+  contents and must stay inside the encrypted profile blob.
 - Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
   scans JNI folders recursively and may otherwise package dependency `.so`
   files.
 
 ## UI Invariants
 
-- WireGuard settings live in the combined proxy settings flow.
-- The login/start screen must expose the proxy/WireGuard settings entry before
+- Tunnel settings live in the combined proxy settings flow.
+- The login/start screen must expose the proxy/tunnel settings entry before
   authorization.
-- Enabling WireGuard disables ordinary proxy, proxy-for-calls, and proxy
-  rotation.
-- Enabling ordinary proxy disables WireGuard first.
-- Disabling WireGuard leaves ordinary proxy, proxy-for-calls, and proxy rotation
+- Enabling WireGuard or AmneziaWG disables ordinary proxy, proxy-for-calls, and
+  proxy rotation.
+- Enabling ordinary proxy disables the active tunnel first.
+- Disabling a tunnel leaves ordinary proxy, proxy-for-calls, and proxy rotation
   disabled.
-- `Use Proxy For Calls` must not be available while WireGuard is active.
+- `Use Proxy For Calls` must not be available while a tunnel is active.
 - Manual entry, config-file import, and QR-code import must use the same
   validation rules.
-- Deleting a saved WireGuard profile requires user confirmation.
-- Deleting the active WireGuard profile must stop WireGuard.
+- Deleting a saved tunnel profile requires user confirmation.
+- Deleting the active tunnel profile must stop the active runtime.
 - Multiple `[Peer]` sections remain unsupported until runtime and UI support them
   deliberately.
 
 ## VoIP Invariants
 
-- WireGuard-enabled private calls must ignore user proxy preferences, disable
-  P2P, and force TCP relay safe mode.
-- WireGuard-created VoIP proxies use HTTP CONNECT. Keep default/user
+- Tunnel-enabled private calls must ignore user proxy preferences, disable P2P,
+  and force TCP relay safe mode.
+- Tunnel-created VoIP proxies use HTTP CONNECT. Keep default/user
   `Instance.Proxy` behavior as SOCKS5 unless deliberately changing user proxy
   semantics.
 - Native WebRTC paths must call `BasicPortAllocator::set_proxy(...)` when a
-  WireGuard proxy is present.
+  tunnel proxy is present.
 - Native WebRTC paths must disable UDP/STUN and filter direct ICE candidates in
-  WireGuard HTTP CONNECT mode:
+  tunnel HTTP CONNECT mode:
   - clear `CF_REFLEXIVE`;
   - clear `CF_HOST`;
   - keep TCP candidates enabled when a proxy is present.
@@ -161,14 +179,14 @@ WebRTC VoIP TCP relay traffic
 - Private V2 reference networking must retain TCP TURN servers with
   `?transport=tcp` when a proxy is present.
 - Active VoIP sessions are not dynamically rerouted by UI toggles. New sessions
-  read the current WireGuard settings at creation time.
+  read the current tunnel settings at creation time.
 
 ## Tests and Verification
 
 Fast no-emulator checks:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:verifyWireGuardStaticGuards
+env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
 ```
 
 Packaging check:
@@ -179,14 +197,16 @@ env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assem
 
 Important details:
 
-- `:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests, Go
-  tests, static guards, and APK packaging verification.
+- `:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests,
+  WireGuard Go tests, AmneziaWG Go tests, static guards, and APK packaging
+  verification.
 - Static guards are part of the safety net. If an invariant intentionally
   changes, update tests, guards, docs, and this file together.
 - Long Gradle builds can take many minutes. Do not kill a running Gradle build
   unless explicitly asked.
-- Prefer no-emulator coverage for glue logic. Real WireGuard server validation,
-  packet captures, and active call checks belong to manual/device smoke testing.
+- Prefer no-emulator coverage for glue logic. Real WireGuard/AmneziaWG server
+  validation, packet captures, and active call checks belong to manual/device
+  smoke testing.
 
 ## Documentation Policy
 

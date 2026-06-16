@@ -6,14 +6,14 @@ public final class WireGuardVoipRouting {
     }
 
     public static boolean shouldUseWireGuard(WireGuardProxySettings proxySettings) {
-        return proxySettings != null;
+        return TunnelVoipRouting.shouldUseTunnel(proxySettings);
     }
 
     public static boolean shouldEnableP2p(boolean requestedEnableP2p, WireGuardProxySettings proxySettings) {
-        return proxySettings == null && requestedEnableP2p;
+        return TunnelVoipRouting.shouldEnableP2p(requestedEnableP2p, proxySettings);
     }
 
     public static int selectEndpointType(boolean requestedTcpRelay, WireGuardProxySettings proxySettings, int udpRelayType, int tcpRelayType) {
-        return requestedTcpRelay || proxySettings != null ? tcpRelayType : udpRelayType;
+        return TunnelVoipRouting.selectEndpointType(requestedTcpRelay, proxySettings, udpRelayType, tcpRelayType);
     }
 }

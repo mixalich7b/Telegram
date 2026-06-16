@@ -193,7 +193,7 @@ public class ApplicationLoader extends Application {
         }
         applicationInited = true;
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
-        WireGuardManager.startIfEnabled();
+        TunnelManager.startIfEnabled();
 
         try {
             LocaleController.getInstance(); //TODO improve
@@ -213,7 +213,7 @@ public class ApplicationLoader extends Application {
                     }
 
                     boolean isSlow = isConnectionSlow();
-                    WireGuardManager.onNetworkChanged();
+                    TunnelManager.onNetworkChanged();
                     for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
                         ConnectionsManager.getInstance(a).checkConnection();
                         FileLoader.getInstance(a).onNetworkChanged(isSlow);

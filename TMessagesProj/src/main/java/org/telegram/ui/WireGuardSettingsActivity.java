@@ -21,8 +21,9 @@ import org.telegram.messenger.NetworkRouteSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.WireGuardConfigParser;
-import org.telegram.messenger.WireGuardManager;
+import org.telegram.messenger.TunnelConfigParser;
+import org.telegram.messenger.TunnelManager;
+import org.telegram.messenger.TunnelProtocol;
 import org.telegram.messenger.WireGuardProfile;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -48,6 +49,24 @@ public class WireGuardSettingsActivity extends BaseFragment {
     private static final int FIELD_ENDPOINT = 7;
     private static final int FIELD_ALLOWED_IPS = 8;
     private static final int FIELD_KEEPALIVE = 9;
+    private static final int FIELD_AMNEZIA_JC = 10;
+    private static final int FIELD_AMNEZIA_JMIN = 11;
+    private static final int FIELD_AMNEZIA_JMAX = 12;
+    private static final int FIELD_AMNEZIA_S1 = 13;
+    private static final int FIELD_AMNEZIA_S2 = 14;
+    private static final int FIELD_AMNEZIA_S3 = 15;
+    private static final int FIELD_AMNEZIA_S4 = 16;
+    private static final int FIELD_AMNEZIA_H1 = 17;
+    private static final int FIELD_AMNEZIA_H2 = 18;
+    private static final int FIELD_AMNEZIA_H3 = 19;
+    private static final int FIELD_AMNEZIA_H4 = 20;
+    private static final int FIELD_AMNEZIA_I1 = 21;
+    private static final int FIELD_AMNEZIA_I2 = 22;
+    private static final int FIELD_AMNEZIA_I3 = 23;
+    private static final int FIELD_AMNEZIA_I4 = 24;
+    private static final int FIELD_AMNEZIA_I5 = 25;
+    private static final int FIELD_COUNT_COMMON = 10;
+    private static final int FIELD_COUNT_AMNEZIA = 26;
 
     private static final int DONE_BUTTON = 1;
 
@@ -62,6 +81,12 @@ public class WireGuardSettingsActivity extends BaseFragment {
         addingNewProfile = true;
     }
 
+    public WireGuardSettingsActivity(TunnelProtocol protocol) {
+        currentProfile = new WireGuardProfile();
+        currentProfile.protocol = protocol == null ? TunnelProtocol.WIREGUARD : protocol;
+        addingNewProfile = true;
+    }
+
     public WireGuardSettingsActivity(WireGuardProfile profile) {
         currentProfile = profile == null ? new WireGuardProfile() : profile.copy();
         addingNewProfile = currentProfile.id == null || currentProfile.id.isEmpty();
@@ -69,7 +94,7 @@ public class WireGuardSettingsActivity extends BaseFragment {
 
     @Override
     public View createView(Context context) {
-        actionBar.setTitle(getString(R.string.WireGuardDetails));
+        actionBar.setTitle(currentProfile.protocol == TunnelProtocol.AMNEZIA_WG ? getString(R.string.AmneziaWGDetails) : getString(R.string.WireGuardDetails));
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(false);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
@@ -98,7 +123,7 @@ public class WireGuardSettingsActivity extends BaseFragment {
         fieldsContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         scrollView.addView(fieldsContainer, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        inputFields = new EditTextBoldCursor[10];
+        inputFields = new EditTextBoldCursor[currentProfile.protocol == TunnelProtocol.AMNEZIA_WG ? FIELD_COUNT_AMNEZIA : FIELD_COUNT_COMMON];
         addField(context, fieldsContainer, FIELD_NAME, getString(R.string.WireGuardName), currentProfile.name, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
         addField(context, fieldsContainer, FIELD_PRIVATE_KEY, getString(R.string.WireGuardPrivateKey), currentProfile.privateKey, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, true);
         addField(context, fieldsContainer, FIELD_ADDRESSES, getString(R.string.WireGuardInterfaceAddresses), join(currentProfile.localAddresses), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
@@ -109,6 +134,24 @@ public class WireGuardSettingsActivity extends BaseFragment {
         addField(context, fieldsContainer, FIELD_ENDPOINT, getString(R.string.WireGuardEndpoint), currentProfile.peerEndpoint, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_URI, false);
         addField(context, fieldsContainer, FIELD_ALLOWED_IPS, getString(R.string.WireGuardAllowedIps), join(currentProfile.allowedIps), InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
         addField(context, fieldsContainer, FIELD_KEEPALIVE, getString(R.string.WireGuardPersistentKeepalive), String.valueOf(currentProfile.persistentKeepaliveSeconds), InputType.TYPE_CLASS_NUMBER, false);
+        if (currentProfile.protocol == TunnelProtocol.AMNEZIA_WG) {
+            addField(context, fieldsContainer, FIELD_AMNEZIA_JC, getString(R.string.AmneziaWGJc), intValue(currentProfile.amneziaJc), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_JMIN, getString(R.string.AmneziaWGJmin), intValue(currentProfile.amneziaJmin), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_JMAX, getString(R.string.AmneziaWGJmax), intValue(currentProfile.amneziaJmax), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_S1, getString(R.string.AmneziaWGS1), intValue(currentProfile.amneziaS1), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_S2, getString(R.string.AmneziaWGS2), intValue(currentProfile.amneziaS2), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_S3, getString(R.string.AmneziaWGS3), intValue(currentProfile.amneziaS3), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_S4, getString(R.string.AmneziaWGS4), intValue(currentProfile.amneziaS4), InputType.TYPE_CLASS_NUMBER, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_H1, getString(R.string.AmneziaWGH1), currentProfile.amneziaH1, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_H2, getString(R.string.AmneziaWGH2), currentProfile.amneziaH2, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_H3, getString(R.string.AmneziaWGH3), currentProfile.amneziaH3, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_H4, getString(R.string.AmneziaWGH4), currentProfile.amneziaH4, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I1, getString(R.string.AmneziaWGI1), currentProfile.amneziaI1, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I2, getString(R.string.AmneziaWGI2), currentProfile.amneziaI2, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I3, getString(R.string.AmneziaWGI3), currentProfile.amneziaI3, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I4, getString(R.string.AmneziaWGI4), currentProfile.amneziaI4, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I5, getString(R.string.AmneziaWGI5), currentProfile.amneziaI5, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+        }
 
         checkDoneEnabled();
         return fragmentView;
@@ -187,28 +230,47 @@ public class WireGuardSettingsActivity extends BaseFragment {
     }
 
     private void saveProfile() {
-        if (addingNewProfile && !WireGuardManager.isSupported()) {
+        if (addingNewProfile && !TunnelManager.isSupported()) {
             showWireGuardUnsupported();
             return;
         }
 
         WireGuardProfile profile = currentProfile.copy();
+        profile.protocol = currentProfile.protocol;
         profile.name = text(FIELD_NAME);
         profile.privateKey = text(FIELD_PRIVATE_KEY);
-        profile.localAddresses = WireGuardConfigParser.parseList(text(FIELD_ADDRESSES));
-        profile.dnsServers = WireGuardConfigParser.parseList(text(FIELD_DNS));
+        profile.localAddresses = TunnelConfigParser.parseList(text(FIELD_ADDRESSES));
+        profile.dnsServers = TunnelConfigParser.parseList(text(FIELD_DNS));
         profile.mtu = TextUtils.isEmpty(text(FIELD_MTU)) ? WireGuardProfile.DEFAULT_MTU : Utilities.parseInt(text(FIELD_MTU));
         profile.peerPublicKey = text(FIELD_PEER_PUBLIC_KEY);
         profile.presharedKey = text(FIELD_PRESHARED_KEY);
         profile.peerEndpoint = text(FIELD_ENDPOINT);
-        profile.allowedIps = WireGuardConfigParser.parseList(text(FIELD_ALLOWED_IPS));
+        profile.allowedIps = TunnelConfigParser.parseList(text(FIELD_ALLOWED_IPS));
         profile.persistentKeepaliveSeconds = TextUtils.isEmpty(text(FIELD_KEEPALIVE)) ? WireGuardProfile.DEFAULT_PERSISTENT_KEEPALIVE_SECONDS : Utilities.parseInt(text(FIELD_KEEPALIVE));
+        if (profile.protocol == TunnelProtocol.AMNEZIA_WG) {
+            profile.amneziaJc = intText(FIELD_AMNEZIA_JC);
+            profile.amneziaJmin = intText(FIELD_AMNEZIA_JMIN);
+            profile.amneziaJmax = intText(FIELD_AMNEZIA_JMAX);
+            profile.amneziaS1 = intText(FIELD_AMNEZIA_S1);
+            profile.amneziaS2 = intText(FIELD_AMNEZIA_S2);
+            profile.amneziaS3 = intText(FIELD_AMNEZIA_S3);
+            profile.amneziaS4 = intText(FIELD_AMNEZIA_S4);
+            profile.amneziaH1 = text(FIELD_AMNEZIA_H1);
+            profile.amneziaH2 = text(FIELD_AMNEZIA_H2);
+            profile.amneziaH3 = text(FIELD_AMNEZIA_H3);
+            profile.amneziaH4 = text(FIELD_AMNEZIA_H4);
+            profile.amneziaI1 = text(FIELD_AMNEZIA_I1);
+            profile.amneziaI2 = text(FIELD_AMNEZIA_I2);
+            profile.amneziaI3 = text(FIELD_AMNEZIA_I3);
+            profile.amneziaI4 = text(FIELD_AMNEZIA_I4);
+            profile.amneziaI5 = text(FIELD_AMNEZIA_I5);
+        }
         profile.normalize();
 
         String validationError = profile.validate();
         if (validationError != null) {
             showDialog(new AlertDialog.Builder(getParentActivity())
-                    .setTitle(getString(R.string.WireGuardInvalidConfig))
+                    .setTitle(getString(R.string.TunnelInvalidConfig))
                     .setMessage(validationError)
                     .setPositiveButton(getString(R.string.OK), null)
                     .create());
@@ -217,14 +279,14 @@ public class WireGuardSettingsActivity extends BaseFragment {
 
         WireGuardProfile saved;
         try {
-            saved = WireGuardManager.saveProfile(profile);
+            saved = TunnelManager.saveProfile(profile);
         } catch (Throwable e) {
             FileLog.e(e);
             showWireGuardUnsupported();
             return;
         }
         if (addingNewProfile) {
-            if (!NetworkRouteSettings.enableWireGuard(saved.id)) {
+            if (!NetworkRouteSettings.enableTunnel(saved.id)) {
                 showWireGuardUnsupported();
                 return;
             }
@@ -236,14 +298,26 @@ public class WireGuardSettingsActivity extends BaseFragment {
 
     private void showWireGuardUnsupported() {
         showDialog(new AlertDialog.Builder(getParentActivity())
-                .setTitle(getString(R.string.UseWireGuardSettings))
-                .setMessage(getString(R.string.WireGuardUnsupportedOnThisDevice))
+                .setTitle(getString(R.string.UseTunnelSettings))
+                .setMessage(getString(R.string.TunnelUnsupportedOnThisDevice))
                 .setPositiveButton(getString(R.string.OK), null)
                 .create());
     }
 
     private String text(int index) {
+        if (index < 0 || inputFields == null || index >= inputFields.length || inputFields[index] == null) {
+            return "";
+        }
         return inputFields[index].getText().toString().trim();
+    }
+
+    private int intText(int index) {
+        String value = text(index);
+        return TextUtils.isEmpty(value) ? 0 : Utilities.parseInt(value);
+    }
+
+    private static String intValue(int value) {
+        return value == 0 ? "" : String.valueOf(value);
     }
 
     private static String join(String[] values) {

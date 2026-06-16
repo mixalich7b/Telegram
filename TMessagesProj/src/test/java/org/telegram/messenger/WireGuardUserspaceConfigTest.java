@@ -78,6 +78,36 @@ public class WireGuardUserspaceConfigTest {
         assertTrue(config.contains("preshared_key=0303030303030303030303030303030303030303030303030303030303030303\n"));
     }
 
+    @Test
+    public void buildAddsAmneziaWGDeviceKeysBeforePeer() {
+        WireGuardProfile profile = new WireGuardProfile();
+        profile.protocol = TunnelProtocol.AMNEZIA_WG;
+        profile.privateKey = key(1);
+        profile.localAddresses = new String[]{"10.0.0.2/32"};
+        profile.peerPublicKey = key(2);
+        profile.peerEndpoint = "127.0.0.1:51820";
+        profile.allowedIps = new String[]{"0.0.0.0/0"};
+        profile.amneziaJc = 4;
+        profile.amneziaJmin = 50;
+        profile.amneziaJmax = 100;
+        profile.amneziaS1 = 87;
+        profile.amneziaS4 = 21;
+        profile.amneziaH1 = "1000000000-1000000001";
+        profile.amneziaI1 = "<b f6ab><d ignored><ds ignored><dz 2><t ignored>";
+
+        String config = profile.buildUserspaceConfig();
+
+        assertTrue(config.contains("jc=4\n"));
+        assertTrue(config.contains("jmin=50\n"));
+        assertTrue(config.contains("jmax=100\n"));
+        assertTrue(config.contains("s1=87\n"));
+        assertTrue(config.contains("s4=21\n"));
+        assertTrue(config.contains("h1=1000000000-1000000001\n"));
+        assertTrue(config.contains("i1=<b f6ab><d ignored><ds ignored><dz 2><t ignored>\n"));
+        assertTrue(config.indexOf("jc=4\n") < config.indexOf("public_key="));
+        assertFalse(config.contains("s2=0"));
+    }
+
     private static String key(int value) {
         byte[] key = new byte[32];
         for (int i = 0; i < key.length; i++) {

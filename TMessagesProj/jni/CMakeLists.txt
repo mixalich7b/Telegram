@@ -266,6 +266,45 @@ target_link_libraries(tg-wg
         log
         dl)
 
+set(TG_AWG_OUTPUT_DIR "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+if ("${TG_AWG_OUTPUT_DIR}" STREQUAL "")
+    set(TG_AWG_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+set(TG_AWG_GO_SO "${TG_AWG_OUTPUT_DIR}/libtg-awg-go.so")
+add_custom_command(
+        OUTPUT ${TG_AWG_GO_SO}
+        COMMAND ${CMAKE_COMMAND} -E env
+                ANDROID_ABI=${ANDROID_ABI}
+                ANDROID_NDK=${ANDROID_NDK}
+                ANDROID_PLATFORM=${ANDROID_PLATFORM}
+                TG_AWG_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/tg_awg_go_build
+                CC=${CMAKE_C_COMPILER}
+                CXX=${CMAKE_CXX_COMPILER}
+                ${CMAKE_HOME_DIRECTORY}/tg_awg/go/build-android.sh ${TG_AWG_GO_SO}
+        WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tg_awg/go
+        DEPENDS
+                tg_awg/go/build-android.sh
+                tg_awg/go/go.mod
+                tg_awg/go/go.sum
+                tg_awg/go/tg_wg.go
+                tg_awg/go/exports_android.go
+                tg_awg/go/log_android.go
+        COMMENT "Building libtg-awg-go.so for ${ANDROID_ABI}"
+        VERBATIM)
+add_custom_target(tg-awg-go ALL DEPENDS ${TG_AWG_GO_SO})
+add_library(tg-awg-go-lib SHARED IMPORTED GLOBAL)
+set_target_properties(tg-awg-go-lib PROPERTIES
+        IMPORTED_LOCATION ${TG_AWG_GO_SO}
+        IMPORTED_NO_SONAME TRUE)
+
+add_library(tg-awg SHARED
+        tg_awg/tg_awg_jni.cpp)
+add_dependencies(tg-awg tg-awg-go tg-awg-go-lib)
+target_link_libraries(tg-awg
+        tg-awg-go-lib
+        log
+        dl)
+
 #rlottie
 add_library(rlottie STATIC
         rlottie/src/lottie/lottieanimation.cpp

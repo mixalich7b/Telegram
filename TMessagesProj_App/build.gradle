@@ -201,13 +201,13 @@ android {
 apply plugin: 'com.google.gms.google-services'
 
 tasks.register("verifyWireGuardAfatDebugPackaging") {
-    description = "Verifies WireGuard native libraries and Go cache entries in afat debug APK."
+    description = "Verifies tunnel native libraries and Go cache entries in afat debug APK."
     group = "verification"
     dependsOn "packageAfatDebug"
     doLast {
         def apkFile = file("build/outputs/apk/afat/debug/app.apk")
         if (!apkFile.exists()) {
-            throw new GradleException("APK not found for WireGuard packaging verification: ${apkFile}")
+            throw new GradleException("APK not found for tunnel packaging verification: ${apkFile}")
         }
         def entries = [] as Set
         new java.util.zip.ZipFile(apkFile).withCloseable { zip ->
@@ -216,7 +216,7 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
             }
         }
 
-        ["gomod/", "gocache/", "tg_wg/go/build", "vdso_"].each { forbidden ->
+        ["gomod/", "gocache/", "tg_wg/go/build", "tg_awg/go/build", "vdso_"].each { forbidden ->
             def match = entries.find { it.contains(forbidden) }
             if (match != null) {
                 throw new GradleException("APK contains forbidden Go build/cache entry: ${match}")
@@ -225,10 +225,10 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
 
         def abis = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
         abis.each { abi ->
-            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-wg-go.so"].each { lib ->
+            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-wg-go.so", "lib/${abi}/libtg-awg.so", "lib/${abi}/libtg-awg-go.so"].each { lib ->
                 def libName = lib.toString()
                 if (!entries.contains(libName)) {
-                    throw new GradleException("APK is missing required WireGuard library ${libName}")
+                    throw new GradleException("APK is missing required tunnel library ${libName}")
                 }
             }
         }
@@ -239,7 +239,8 @@ afterEvaluate {
     tasks.matching { it.name == "assembleAfatDebug" }.configureEach {
         dependsOn ":TMessagesProj:testDebugUnitTest"
         dependsOn ":TMessagesProj:testWireGuardGo"
-        dependsOn ":TMessagesProj:verifyWireGuardStaticGuards"
+        dependsOn ":TMessagesProj:testAmneziaWGGo"
+        dependsOn ":TMessagesProj:verifyTunnelStaticGuards"
         finalizedBy "verifyWireGuardAfatDebugPackaging"
     }
     tasks.named("verifyWireGuardAfatDebugPackaging").configure {

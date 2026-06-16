@@ -150,13 +150,28 @@ public class WireGuardControllerTest {
         FakeProxySink proxySink = new FakeProxySink();
         WireGuardController controller = newController(config, nativeRuntime, proxySink);
 
-        WireGuardProxySettings proxySettings = controller.getProxySettings();
+        TunnelProxySettings proxySettings = controller.getProxySettings();
 
         assertTrue(proxySettings.blocked);
         assertEquals("127.0.0.1", proxySettings.host);
         assertEquals(1, proxySettings.port);
         assertEquals("", proxySettings.username);
         assertEquals("", proxySettings.password);
+    }
+
+    @Test
+    public void getProxySettingsPreservesAmneziaWGProtocol() {
+        FakeConfig config = new FakeConfig();
+        config.protocol = TunnelProtocol.AMNEZIA_WG;
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        FakeProxySink proxySink = new FakeProxySink();
+        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+
+        TunnelProxySettings proxySettings = controller.getProxySettings();
+
+        assertEquals(TunnelProtocol.AMNEZIA_WG, proxySettings.protocol);
+        assertFalse(proxySettings.blocked);
+        assertEquals(23456, proxySettings.port);
     }
 
     @Test
@@ -294,10 +309,21 @@ public class WireGuardControllerTest {
     private static final class FakeConfig implements WireGuardController.Config {
         boolean enabled = true;
         String validationError;
+        TunnelProtocol protocol = TunnelProtocol.WIREGUARD;
 
         @Override
         public boolean isEnabled() {
             return enabled;
+        }
+
+        @Override
+        public TunnelProtocol protocol() {
+            return protocol;
+        }
+
+        @Override
+        public String protocolLabel() {
+            return protocol.displayName();
         }
 
         @Override

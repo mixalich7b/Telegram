@@ -16,7 +16,7 @@ public final class NetworkRouteSettings {
         proxyInfo = SharedConfig.addProxy(proxyInfo);
         SharedConfig.currentProxy = proxyInfo;
 
-        WireGuardManager.disable();
+        TunnelManager.disable();
 
         SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
         editor.putBoolean("proxy_enabled", true);
@@ -45,7 +45,11 @@ public final class NetworkRouteSettings {
     }
 
     public static boolean enableWireGuard(String profileId) {
-        if (!WireGuardManager.isSupported()) {
+        return enableTunnel(profileId);
+    }
+
+    public static boolean enableTunnel(String profileId) {
+        if (!TunnelManager.isSupported()) {
             return false;
         }
 
@@ -59,12 +63,16 @@ public final class NetworkRouteSettings {
             SharedConfig.saveConfig();
         }
 
-        WireGuardManager.enable(profileId);
+        TunnelManager.enable(profileId);
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
         return true;
     }
 
     public static void disableWireGuard() {
+        disableTunnel();
+    }
+
+    public static void disableTunnel() {
         SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
         editor.putBoolean("proxy_enabled", false);
         editor.putBoolean("proxy_enabled_calls", false);
@@ -75,7 +83,7 @@ public final class NetworkRouteSettings {
             SharedConfig.saveConfig();
         }
 
-        WireGuardManager.disable();
+        TunnelManager.disable();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
     }
 }

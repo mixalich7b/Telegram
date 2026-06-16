@@ -25,8 +25,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.WireGuardManager;
-import org.telegram.messenger.WireGuardProxySettings;
+import org.telegram.messenger.TunnelManager;
+import org.telegram.messenger.TunnelProxySettings;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.messenger.voip.GroupCallMessagesController;
 import org.telegram.messenger.voip.Instance;
@@ -234,8 +234,8 @@ public class LivePlayer implements NotificationCenter.NotificationCenterDelegate
     private void init() {
         if (destroyed) return;
 
-        final WireGuardProxySettings wireGuardProxySettings = WireGuardManager.getProxySettings();
-        final Instance.Proxy wireGuardProxy = wireGuardProxySettings == null ? null : new Instance.Proxy(wireGuardProxySettings.host, wireGuardProxySettings.port, wireGuardProxySettings.username, wireGuardProxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
+        final TunnelProxySettings tunnelProxySettings = TunnelManager.getProxySettings();
+        final Instance.Proxy wireGuardProxy = tunnelProxySettings == null ? null : new Instance.Proxy(tunnelProxySettings.host, tunnelProxySettings.port, tunnelProxySettings.username, tunnelProxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
         instance = NativeInstance.makeGroup(
                 VoIPHelper.getLogFilePath("live_" + inputCall.id),
                 0,

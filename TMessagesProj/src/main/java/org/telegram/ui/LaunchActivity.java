@@ -130,7 +130,7 @@ import org.telegram.messenger.TopicsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.WireGuardManager;
+import org.telegram.messenger.TunnelManager;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.PipActivityController;
 import org.telegram.messenger.pip.activity.IPipActivity;
@@ -6055,7 +6055,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         }
                         localeDialog = null;
                     } else if (dialog == proxyErrorDialog) {
-                        if (!WireGuardManager.isUserEnabled()) {
+                        if (!TunnelManager.isUserEnabled()) {
                             SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
                             editor.putBoolean("proxy_enabled", false);
                             editor.putBoolean("proxy_enabled_calls", false);
@@ -7248,10 +7248,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
                 }
             } else if (reason == 3) {
-                if (WireGuardManager.isUserEnabled()) {
-                    builder.setTitle(LocaleController.getString(R.string.UseWireGuardSettings));
-                    String failureReason = WireGuardManager.getFailureReason();
-                    builder.setMessage(failureReason == null ? LocaleController.getString(R.string.WireGuardFailed) : failureReason);
+                if (TunnelManager.isUserEnabled()) {
+                    builder.setTitle(LocaleController.getString(R.string.UseTunnelSettings));
+                    String failureReason = TunnelManager.getFailureReason();
+                    builder.setMessage(failureReason == null ? LocaleController.getString(R.string.TunnelFailed) : failureReason);
                 } else {
                     builder.setTitle(LocaleController.getString(R.string.Proxy));
                     builder.setMessage(LocaleController.getString(R.string.UseProxyTelegramError));

@@ -7,7 +7,7 @@
 
 namespace {
 
-constexpr const char *kTag = "Telegram/WireGuard";
+constexpr const char *kTag = "Telegram/AmneziaWG";
 
 using StartFunc = int (*)(const char *, const char **, int, const char **, int, int, const char *, int, const char *, const char *);
 using VoidFunc = void (*)();
@@ -26,17 +26,17 @@ bool loadGoBridge() {
     if (goHandle != nullptr) {
         return true;
     }
-    goHandle = dlopen("libtg-wg-go.so", RTLD_NOW);
+    goHandle = dlopen("libtg-awg-go.so", RTLD_NOW);
     if (goHandle == nullptr) {
         const char *error = dlerror();
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-wg-go.so failed: %s", error != nullptr ? error : "unknown");
+        __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-awg-go.so failed: %s", error != nullptr ? error : "unknown");
         return false;
     }
-    startFunc = reinterpret_cast<StartFunc>(dlsym(goHandle, "tgWgStart"));
-    stopFunc = reinterpret_cast<VoidFunc>(dlsym(goHandle, "tgWgStop"));
-    networkChangedFunc = reinterpret_cast<NetworkChangedFunc>(dlsym(goHandle, "tgWgOnNetworkChanged"));
+    startFunc = reinterpret_cast<StartFunc>(dlsym(goHandle, "tgAwgStart"));
+    stopFunc = reinterpret_cast<VoidFunc>(dlsym(goHandle, "tgAwgStop"));
+    networkChangedFunc = reinterpret_cast<NetworkChangedFunc>(dlsym(goHandle, "tgAwgOnNetworkChanged"));
     if (startFunc == nullptr || stopFunc == nullptr || networkChangedFunc == nullptr) {
-        logError("required tg-wg-go symbols are missing");
+        logError("required tg-awg-go symbols are missing");
         dlclose(goHandle);
         goHandle = nullptr;
         startFunc = nullptr;
@@ -102,7 +102,7 @@ std::vector<const char *> toCStringVector(const std::vector<std::string> &values
 } // namespace
 
 extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_TunnelManager_nativeWireGuardStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu, jstring socksHost, jint socksPort, jstring socksUsername, jstring socksPassword) {
+Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu, jstring socksHost, jint socksPort, jstring socksUsername, jstring socksPassword) {
     if (!loadGoBridge()) {
         return -100;
     }
@@ -131,7 +131,7 @@ Java_org_telegram_messenger_TunnelManager_nativeWireGuardStart(JNIEnv *env, jcla
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_TunnelManager_nativeWireGuardOnNetworkChanged(JNIEnv *, jclass) {
+Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGOnNetworkChanged(JNIEnv *, jclass) {
     if (loadGoBridge()) {
         return static_cast<jint>(networkChangedFunc());
     }
@@ -139,7 +139,7 @@ Java_org_telegram_messenger_TunnelManager_nativeWireGuardOnNetworkChanged(JNIEnv
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_telegram_messenger_TunnelManager_nativeWireGuardStop(JNIEnv *, jclass) {
+Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGStop(JNIEnv *, jclass) {
     if (loadGoBridge()) {
         stopFunc();
     }

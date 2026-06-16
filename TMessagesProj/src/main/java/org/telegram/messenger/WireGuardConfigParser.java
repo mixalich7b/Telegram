@@ -8,16 +8,29 @@ public final class WireGuardConfigParser {
 
     private static final String SECTION_INTERFACE = "interface";
     private static final String SECTION_PEER = "peer";
+    private static final String[] AMNEZIA_INTERFACE_KEYS = new String[]{
+            "jc", "jmin", "jmax",
+            "s1", "s2", "s3", "s4",
+            "h1", "h2", "h3", "h4",
+            "i1", "i2", "i3", "i4", "i5"
+    };
 
     private WireGuardConfigParser() {
     }
 
     public static WireGuardProfile parse(String configText, String fallbackName) {
+        return parse(configText, fallbackName, null);
+    }
+
+    public static WireGuardProfile parse(String configText, String fallbackName, TunnelProtocol forcedProtocol) {
         if (configText == null) {
             throw new IllegalArgumentException("WireGuard config is empty");
         }
 
         WireGuardProfile profile = new WireGuardProfile();
+        if (forcedProtocol != null) {
+            profile.protocol = forcedProtocol;
+        }
         String currentSection = "";
         int interfaceSections = 0;
         int peerSections = 0;
@@ -49,8 +62,11 @@ public final class WireGuardConfigParser {
             String value = line.substring(equalsIndex + 1).trim();
 
             if (SECTION_INTERFACE.equals(currentSection)) {
-                applyInterfaceValue(profile, key, value);
+                applyInterfaceValue(profile, key, value, forcedProtocol);
             } else if (SECTION_PEER.equals(currentSection)) {
+                if (isAmneziaInterfaceKey(key)) {
+                    throw new IllegalArgumentException("AmneziaWG keys must be in Interface section");
+                }
                 applyPeerValue(profile, key, value);
             }
         }
@@ -62,7 +78,7 @@ public final class WireGuardConfigParser {
             throw new IllegalArgumentException("WireGuard config must contain exactly one Peer section");
         }
 
-        profile.name = normalizeName(fallbackName, profile.peerEndpoint);
+        profile.name = normalizeName(fallbackName, profile.peerEndpoint, profile.protocol);
         profile.normalize();
         String validationError = profile.validate();
         if (validationError != null) {
@@ -86,7 +102,7 @@ public final class WireGuardConfigParser {
         return values.toArray(new String[0]);
     }
 
-    private static void applyInterfaceValue(WireGuardProfile profile, String key, String value) {
+    private static void applyInterfaceValue(WireGuardProfile profile, String key, String value, TunnelProtocol forcedProtocol) {
         switch (key) {
             case "privatekey":
                 profile.privateKey = value;
@@ -100,7 +116,78 @@ public final class WireGuardConfigParser {
             case "mtu":
                 profile.mtu = parsePositiveInt(value, "invalid WireGuard MTU");
                 break;
+            case "jc":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaJc = parsePositiveInt(value, "invalid AmneziaWG Jc");
+                break;
+            case "jmin":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaJmin = parsePositiveInt(value, "invalid AmneziaWG Jmin");
+                break;
+            case "jmax":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaJmax = parsePositiveInt(value, "invalid AmneziaWG Jmax");
+                break;
+            case "s1":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaS1 = parsePositiveInt(value, "invalid AmneziaWG S1");
+                break;
+            case "s2":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaS2 = parsePositiveInt(value, "invalid AmneziaWG S2");
+                break;
+            case "s3":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaS3 = parsePositiveInt(value, "invalid AmneziaWG S3");
+                break;
+            case "s4":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaS4 = parsePositiveInt(value, "invalid AmneziaWG S4");
+                break;
+            case "h1":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaH1 = value;
+                break;
+            case "h2":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaH2 = value;
+                break;
+            case "h3":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaH3 = value;
+                break;
+            case "h4":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaH4 = value;
+                break;
+            case "i1":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaI1 = value;
+                break;
+            case "i2":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaI2 = value;
+                break;
+            case "i3":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaI3 = value;
+                break;
+            case "i4":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaI4 = value;
+                break;
+            case "i5":
+                markAmneziaWG(profile, forcedProtocol);
+                profile.amneziaI5 = value;
+                break;
         }
+    }
+
+    private static void markAmneziaWG(WireGuardProfile profile, TunnelProtocol forcedProtocol) {
+        if (forcedProtocol == TunnelProtocol.WIREGUARD) {
+            throw new IllegalArgumentException("AmneziaWG keys are not valid for WireGuard profiles");
+        }
+        profile.protocol = TunnelProtocol.AMNEZIA_WG;
     }
 
     private static void applyPeerValue(WireGuardProfile profile, String key, String value) {
@@ -148,7 +235,16 @@ public final class WireGuardConfigParser {
         return line;
     }
 
-    private static String normalizeName(String fallbackName, String endpoint) {
+    private static boolean isAmneziaInterfaceKey(String key) {
+        for (String candidate : AMNEZIA_INTERFACE_KEYS) {
+            if (candidate.equals(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeName(String fallbackName, String endpoint, TunnelProtocol protocol) {
         if (fallbackName != null) {
             fallbackName = fallbackName.trim();
             if (!fallbackName.isEmpty()) {
@@ -161,6 +257,6 @@ public final class WireGuardConfigParser {
         if (endpoint != null && !endpoint.trim().isEmpty()) {
             return endpoint.trim();
         }
-        return "WireGuard";
+        return protocol == TunnelProtocol.AMNEZIA_WG ? "AmneziaWG" : "WireGuard";
     }
 }

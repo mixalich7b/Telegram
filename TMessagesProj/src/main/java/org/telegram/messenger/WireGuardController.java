@@ -5,6 +5,10 @@ final class WireGuardController {
     interface Config {
         boolean isEnabled();
 
+        TunnelProtocol protocol();
+
+        String protocolLabel();
+
         String validate();
 
         String buildUserspaceConfig();
@@ -103,7 +107,7 @@ final class WireGuardController {
         }
     }
 
-    WireGuardProxySettings getProxySettings() {
+    TunnelProxySettings getProxySettings() {
         if (!config.isEnabled()) {
             return null;
         }
@@ -126,10 +130,10 @@ final class WireGuardController {
                 if (status >= 0) {
                     return;
                 }
-                logger.error("WireGuard network refresh failed with code " + status);
+                logger.error(config.protocolLabel() + " network refresh failed with code " + status);
             } catch (Throwable e) {
                 logger.error(e);
-                logger.error("WireGuard network refresh failed");
+                logger.error(config.protocolLabel() + " network refresh failed");
             }
 
             try {
@@ -140,7 +144,7 @@ final class WireGuardController {
             running = false;
             socksPort = 0;
             startAttempted = false;
-            failureReason = "WireGuard network refresh failed";
+            failureReason = config.protocolLabel() + " network refresh failed";
 
             startLocked();
             applyProxySettingsForAccountsLocked(accountCount);
@@ -187,7 +191,7 @@ final class WireGuardController {
         if (throwable != null) {
             logger.error(throwable);
         }
-        logger.error("WireGuard runtime disabled: " + reason);
+        logger.error(config.protocolLabel() + " runtime disabled: " + reason);
     }
 
     private void stopRuntimeLocked() {
@@ -238,9 +242,9 @@ final class WireGuardController {
             socksPort = port;
             running = true;
             failureReason = null;
-            logger.debug("WireGuard runtime started on " + config.socksHost() + ":" + socksPort);
+            logger.debug(config.protocolLabel() + " runtime started on " + config.socksHost() + ":" + socksPort);
         } catch (Throwable e) {
-            markFailed("unable to start WireGuard runtime", e);
+            markFailed("unable to start " + config.protocolLabel() + " runtime", e);
         }
     }
 
@@ -263,14 +267,14 @@ final class WireGuardController {
     }
 
     private void applyProxySettingsLocked(int account) {
-        WireGuardProxySettings proxySettings = buildProxySettingsLocked();
+        TunnelProxySettings proxySettings = buildProxySettingsLocked();
         proxySettingsSink.apply(account, proxySettings.host, proxySettings.port, proxySettings.username, proxySettings.password, "");
     }
 
-    private WireGuardProxySettings buildProxySettingsLocked() {
+    private TunnelProxySettings buildProxySettingsLocked() {
         if (running) {
-            return new WireGuardProxySettings(config.socksHost(), socksPort, socksUsername, socksPassword, false);
+            return new TunnelProxySettings(config.protocol(), config.socksHost(), socksPort, socksUsername, socksPassword, false);
         }
-        return new WireGuardProxySettings(config.socksHost(), config.blockedProxyPort(), "", "", true);
+        return new TunnelProxySettings(config.protocol(), config.socksHost(), config.blockedProxyPort(), "", "", true);
     }
 }

@@ -116,9 +116,9 @@ import org.telegram.messenger.StatsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.WireGuardManager;
-import org.telegram.messenger.WireGuardProxySettings;
-import org.telegram.messenger.WireGuardVoipRouting;
+import org.telegram.messenger.TunnelManager;
+import org.telegram.messenger.TunnelProxySettings;
+import org.telegram.messenger.TunnelVoipRouting;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.tgnet.ConnectionsManager;
@@ -1895,7 +1895,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		return ApplicationLoader.isRoaming() ? Instance.DATA_SAVING_MOBILE : Instance.DATA_SAVING_NEVER;
 	}
 
-	private Instance.Proxy createWireGuardVoipProxy(WireGuardProxySettings proxySettings) {
+	private Instance.Proxy createTunnelVoipProxy(TunnelProxySettings proxySettings) {
 		if (proxySettings == null) {
 			return null;
 		}
@@ -2926,7 +2926,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			}
 			final boolean[] first = new boolean[] { isFirst };
 			final String logFilePath = BuildVars.DEBUG_VERSION ? VoIPHelper.getLogFilePath("voip_" + type + "_" + logId) : VoIPHelper.getLogFilePath(logId, false);
-			final Instance.Proxy wireGuardProxy = createWireGuardVoipProxy(WireGuardManager.getProxySettings());
+			final Instance.Proxy wireGuardProxy = createTunnelVoipProxy(TunnelManager.getProxySettings());
 			tgVoip[type] = NativeInstance.makeGroup(logFilePath, captureDevice[type], type == CAPTURE_DEVICE_SCREEN, type == CAPTURE_DEVICE_CAMERA && SharedConfig.noiseSupression, (ssrc, json) -> {
 				if (type == CAPTURE_DEVICE_CAMERA) {
 					if (conference != null) {
@@ -3417,8 +3417,8 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 			final SharedPreferences preferences = MessagesController.getGlobalMainSettings();
 
-			final WireGuardProxySettings wireGuardProxySettings = WireGuardManager.getProxySettings();
-			final boolean routeVoipViaWireGuard = WireGuardVoipRouting.shouldUseWireGuard(wireGuardProxySettings);
+			final TunnelProxySettings tunnelProxySettings = TunnelManager.getProxySettings();
+			final boolean routeVoipViaTunnel = TunnelVoipRouting.shouldUseTunnel(tunnelProxySettings);
 
 			// config
 			final MessagesController messagesController = MessagesController.getInstance(currentAccount);
@@ -3430,7 +3430,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			final boolean enableNs = !(sysNsAvailable && serverConfig.useSystemNs);
 			final String logFilePath = BuildVars.DEBUG_VERSION ? VoIPHelper.getLogFilePath("voip" + privateCall.id) : VoIPHelper.getLogFilePath("" + privateCall.id, false);
 			final String statsLogFilePath = VoIPHelper.getLogFilePath("" + privateCall.id, true);
-			final Instance.Config config = new Instance.Config(initializationTimeout, receiveTimeout, voipDataSaving, WireGuardVoipRouting.shouldEnableP2p(privateCall.p2p_allowed, wireGuardProxySettings), enableAec, enableNs, true, false, serverConfig.enableStunMarking, logFilePath, statsLogFilePath, privateCall.protocol.max_layer, privateCall.custom_parameters == null ? "" : privateCall.custom_parameters.data);
+			final Instance.Config config = new Instance.Config(initializationTimeout, receiveTimeout, voipDataSaving, TunnelVoipRouting.shouldEnableP2p(privateCall.p2p_allowed, tunnelProxySettings), enableAec, enableNs, true, false, serverConfig.enableStunMarking, logFilePath, statsLogFilePath, privateCall.protocol.max_layer, privateCall.custom_parameters == null ? "" : privateCall.custom_parameters.data);
 			lastLogFilePath = logFilePath;
 
 			// persistent state
@@ -3438,7 +3438,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 			// endpoints
 			final boolean forceTcp = preferences.getBoolean("dbg_force_tcp_in_calls", false);
-			final int endpointType = WireGuardVoipRouting.selectEndpointType(forceTcp, wireGuardProxySettings, Instance.ENDPOINT_TYPE_UDP_RELAY, Instance.ENDPOINT_TYPE_TCP_RELAY);
+			final int endpointType = TunnelVoipRouting.selectEndpointType(forceTcp, tunnelProxySettings, Instance.ENDPOINT_TYPE_UDP_RELAY, Instance.ENDPOINT_TYPE_TCP_RELAY);
 			final Instance.Endpoint[] endpoints = new Instance.Endpoint[privateCall.connections.size()];
 			ArrayList<Long> reflectorIds = new ArrayList<>();
 			for (int i = 0; i < endpoints.length; i++) {
@@ -3458,14 +3458,14 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 					endpoints[i].reflectorId = reflectorIdMapping.getOrDefault(endpoints[i].id, 0);
 				}
 			}
-			if (forceTcp && !routeVoipViaWireGuard) {
+			if (forceTcp && !routeVoipViaTunnel) {
 				AndroidUtilities.runOnUIThread(() -> Toast.makeText(VoIPService.this, "This call uses TCP which will degrade its quality.", Toast.LENGTH_SHORT).show());
 			}
 
 			// proxy
 			Instance.Proxy proxy = null;
-			if (routeVoipViaWireGuard) {
-				proxy = createWireGuardVoipProxy(wireGuardProxySettings);
+			if (routeVoipViaTunnel) {
+				proxy = createTunnelVoipProxy(tunnelProxySettings);
 			} else if (preferences.getBoolean("proxy_enabled", false) && preferences.getBoolean("proxy_enabled_calls", false)) {
 				final String server = preferences.getString("proxy_ip", null);
 				final String secret = preferences.getString("proxy_secret", null);

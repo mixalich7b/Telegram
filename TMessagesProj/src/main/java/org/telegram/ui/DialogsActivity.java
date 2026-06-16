@@ -128,7 +128,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.WireGuardManager;
+import org.telegram.messenger.TunnelManager;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
@@ -10001,10 +10001,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         final SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
         boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false);
-        boolean wireGuardEnabled = WireGuardManager.isUserEnabled();
-        boolean routeEnabled = proxyEnabled || wireGuardEnabled;
-        final boolean connected = (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) && (!wireGuardEnabled || WireGuardManager.getFailureReason() == null);
-        proxyMenuSubItem.setSubtext(wireGuardEnabled ? getString(connected ? R.string.WireGuardConnected : R.string.WireGuardConnecting) : getString(proxyEnabled ? (connected ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting) : R.string.MenuProxyDisabled));
+        boolean tunnelEnabled = TunnelManager.isUserEnabled();
+        boolean routeEnabled = proxyEnabled || tunnelEnabled;
+        final boolean connected = (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) && (!tunnelEnabled || TunnelManager.getFailureReason() == null);
+        proxyMenuSubItem.setSubtext(tunnelEnabled ? getString(connected ? R.string.TunnelConnected : R.string.TunnelConnecting) : getString(proxyEnabled ? (connected ? R.string.MenuProxyConnected : R.string.MenuProxyConnecting) : R.string.MenuProxyDisabled));
         proxyDrawable.setConnected(routeEnabled, connected, animated);
     }
 
@@ -13446,7 +13446,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 final String proxyAddress = preferences.getString("proxy_ip", "");
                 final boolean proxyEnabled = preferences.getBoolean("proxy_enabled", false);
-                final boolean wireGuardEnabled = WireGuardManager.isUserEnabled();
+                final boolean wireGuardEnabled = TunnelManager.isUserEnabled();
                 final boolean proxyVisible = proxyEnabled && !TextUtils.isEmpty(proxyAddress)
                         || wireGuardEnabled
                         || getMessagesController().blockedCountry && !SharedConfig.proxyList.isEmpty();

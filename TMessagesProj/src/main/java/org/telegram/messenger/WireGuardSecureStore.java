@@ -22,7 +22,8 @@ final class WireGuardSecureStore {
 
     private static final int PROFILE_MARKER = -1;
     private static final int PROFILE_SCHEMA_V1 = 1;
-    private static final int PROFILE_CURRENT_SCHEMA_VERSION = PROFILE_SCHEMA_V1;
+    private static final int PROFILE_SCHEMA_V2 = 2;
+    private static final int PROFILE_CURRENT_SCHEMA_VERSION = PROFILE_SCHEMA_V2;
 
     private static final int ENCRYPTED_MARKER = -2;
     private static final int ENCRYPTED_SCHEMA_V1 = 1;
@@ -104,12 +105,12 @@ final class WireGuardSecureStore {
                 return result;
             }
             int version = data.readByte(false);
-            if (version != PROFILE_SCHEMA_V1) {
+            if (version != PROFILE_SCHEMA_V1 && version != PROFILE_SCHEMA_V2) {
                 return result;
             }
             int count = data.readInt32(false);
             for (int i = 0; i < count; i++) {
-                WireGuardProfile profile = readProfile(data);
+                WireGuardProfile profile = readProfile(data, version);
                 profile.normalize();
                 result.add(profile);
             }
@@ -203,6 +204,7 @@ final class WireGuardSecureStore {
         profile = profile == null ? new WireGuardProfile() : profile.copy();
         profile.normalize();
         data.writeString(profile.id);
+        data.writeString(profile.protocol.storageValue());
         data.writeString(profile.name);
         data.writeString(profile.privateKey);
         writeStringArray(data, profile.localAddresses);
@@ -213,13 +215,34 @@ final class WireGuardSecureStore {
         data.writeString(profile.peerEndpoint);
         writeStringArray(data, profile.allowedIps);
         data.writeInt32(profile.persistentKeepaliveSeconds);
+        data.writeInt32(profile.amneziaJc);
+        data.writeInt32(profile.amneziaJmin);
+        data.writeInt32(profile.amneziaJmax);
+        data.writeInt32(profile.amneziaS1);
+        data.writeInt32(profile.amneziaS2);
+        data.writeInt32(profile.amneziaS3);
+        data.writeInt32(profile.amneziaS4);
+        data.writeString(profile.amneziaH1);
+        data.writeString(profile.amneziaH2);
+        data.writeString(profile.amneziaH3);
+        data.writeString(profile.amneziaH4);
+        data.writeString(profile.amneziaI1);
+        data.writeString(profile.amneziaI2);
+        data.writeString(profile.amneziaI3);
+        data.writeString(profile.amneziaI4);
+        data.writeString(profile.amneziaI5);
         data.writeInt64(profile.createdAt);
         data.writeInt64(profile.updatedAt);
     }
 
-    private static WireGuardProfile readProfile(SerializedData data) {
+    private static WireGuardProfile readProfile(SerializedData data, int version) {
         WireGuardProfile profile = new WireGuardProfile();
         profile.id = data.readString(false);
+        if (version >= PROFILE_SCHEMA_V2) {
+            profile.protocol = TunnelProtocol.fromStorageValue(data.readString(false));
+        } else {
+            profile.protocol = TunnelProtocol.WIREGUARD;
+        }
         profile.name = data.readString(false);
         profile.privateKey = data.readString(false);
         profile.localAddresses = readStringArray(data);
@@ -230,6 +253,24 @@ final class WireGuardSecureStore {
         profile.peerEndpoint = data.readString(false);
         profile.allowedIps = readStringArray(data);
         profile.persistentKeepaliveSeconds = data.readInt32(false);
+        if (version >= PROFILE_SCHEMA_V2) {
+            profile.amneziaJc = data.readInt32(false);
+            profile.amneziaJmin = data.readInt32(false);
+            profile.amneziaJmax = data.readInt32(false);
+            profile.amneziaS1 = data.readInt32(false);
+            profile.amneziaS2 = data.readInt32(false);
+            profile.amneziaS3 = data.readInt32(false);
+            profile.amneziaS4 = data.readInt32(false);
+            profile.amneziaH1 = data.readString(false);
+            profile.amneziaH2 = data.readString(false);
+            profile.amneziaH3 = data.readString(false);
+            profile.amneziaH4 = data.readString(false);
+            profile.amneziaI1 = data.readString(false);
+            profile.amneziaI2 = data.readString(false);
+            profile.amneziaI3 = data.readString(false);
+            profile.amneziaI4 = data.readString(false);
+            profile.amneziaI5 = data.readString(false);
+        }
         profile.createdAt = data.readInt64(false);
         profile.updatedAt = data.readInt64(false);
         return profile;

@@ -276,15 +276,33 @@ tasks.register("testWireGuardGo", Exec) {
     commandLine "go", "test", "-count=1", "./..."
 }
 
+tasks.register("testAmneziaWGGo", Exec) {
+    description = "Runs host-side Go tests for the internal AmneziaWG bridge."
+    group = "verification"
+    workingDir file("jni/tg_awg/go")
+    def goTestBuildDir = rootProject.file(".gradle/amneziawg-go-test")
+    environment "GOCACHE", file("${goTestBuildDir}/gocache")
+    environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
+    doFirst {
+        file("${goTestBuildDir}/gocache").mkdirs()
+        file("${goTestBuildDir}/gomod").mkdirs()
+    }
+    commandLine "go", "test", "-count=1", "./..."
+}
+
 tasks.register("verifyWireGuardStaticGuards") {
-    description = "Checks static fail-closed and no-device-VPN invariants for WireGuard integration."
+    description = "Checks static fail-closed and no-device-VPN invariants for tunnel integration."
     group = "verification"
     doLast {
         def checkedFiles = fileTree(projectDir) {
             include "src/main/java/org/telegram/messenger/WireGuard*.java"
+            include "src/main/java/org/telegram/messenger/Tunnel*.java"
             include "jni/tg_wg/**"
+            include "jni/tg_awg/**"
             exclude "jni/tg_wg/go/go.sum"
             exclude "jni/tg_wg/go/go.mod"
+            exclude "jni/tg_awg/go/go.sum"
+            exclude "jni/tg_awg/go/go.mod"
         }
         checkedFiles.each { source ->
             def text = source.text
@@ -297,16 +315,19 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (file("jni/tg_wg/go/build").exists()) {
             throw new GradleException("TMessagesProj/jni/tg_wg/go/build must not exist; Go caches under jni are packaged as native libs")
         }
+        if (file("jni/tg_awg/go/build").exists()) {
+            throw new GradleException("TMessagesProj/jni/tg_awg/go/build must not exist; Go caches under jni are packaged as native libs")
+        }
         def wireGuardSecureStoreText = file("src/main/java/org/telegram/messenger/WireGuardSecureStore.java").text
-        ["AndroidKeyStore", "AES/GCM/NoPadding", "Build.VERSION_CODES.M", "wireguard_profiles_encrypted_v1"].each { token ->
+        ["AndroidKeyStore", "AES/GCM/NoPadding", "Build.VERSION_CODES.M", "wireguard_profiles_encrypted_v1", "PROFILE_SCHEMA_V2", "TunnelProtocol.fromStorageValue"].each { token ->
             if (!wireGuardSecureStoreText.contains(token)) {
-                throw new GradleException("WireGuard profiles must use Android Keystore-backed encrypted storage token '${token}'")
+                throw new GradleException("Tunnel profiles must use Android Keystore-backed encrypted storage token '${token}'")
             }
         }
         def wireGuardSettingsText = file("src/main/java/org/telegram/messenger/WireGuardSettings.java").text
-        ["WireGuardSecureStore.loadProfiles", "WireGuardSecureStore.saveProfiles", "saveSettingsLocked"].each { token ->
+        ["WireGuardSecureStore.loadProfiles", "WireGuardSecureStore.saveProfiles", "saveSettingsLocked", "tunnel_enabled", "wireguard_enabled"].each { token ->
             if (!wireGuardSettingsText.contains(token)) {
-                throw new GradleException("WireGuardSettings must keep profile storage encrypted and settings disable-able token '${token}'")
+                throw new GradleException("WireGuardSettings must keep tunnel profile storage encrypted and settings disable-able token '${token}'")
             }
         }
         def wireGuardManagerText = file("src/main/java/org/telegram/messenger/WireGuardManager.java").text
@@ -315,41 +336,48 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("WireGuardManager.isSupported must gate secure storage support token '${token}'")
             }
         }
+        def tunnelManagerText = file("src/main/java/org/telegram/messenger/TunnelManager.java").text
+        ["nativeWireGuardStart", "nativeAmneziaWGStart", "nativeAmneziaWGOnNetworkChanged", "nativeAmneziaWGStop", "missing active tunnel profile"].each { token ->
+            if (!tunnelManagerText.contains(token)) {
+                throw new GradleException("TunnelManager must select and fail-close active tunnel runtimes token '${token}'")
+            }
+        }
         fileTree("src/main/java/org/telegram/messenger") {
             include "WireGuard*.java"
+            include "Tunnel*.java"
         }.each { source ->
             if (source.text.contains("wireguard_profile_list")) {
-                throw new GradleException("WireGuard profiles must not be stored in plaintext mainconfig in ${source}")
+                throw new GradleException("Tunnel profiles must not be stored in plaintext mainconfig in ${source}")
             }
         }
         def connectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
-        if (!connectionsManagerText.contains("WireGuardManager.applyProxySettingsForAccount")) {
-            throw new GradleException("ConnectionsManager.setProxySettings must preserve WireGuard proxy settings when WireGuard is enabled")
+        if (!connectionsManagerText.contains("TunnelManager.applyProxySettingsForAccount")) {
+            throw new GradleException("ConnectionsManager.setProxySettings must preserve tunnel proxy settings when a tunnel is enabled")
         }
         def networkRouteSettingsText = file("src/main/java/org/telegram/messenger/NetworkRouteSettings.java").text
-        ["WireGuardManager.enable", "WireGuardManager.disable", "proxy_enabled", "ConnectionsManager.setProxySettings"].each { token ->
+        ["TunnelManager.enable", "TunnelManager.disable", "proxy_enabled", "ConnectionsManager.setProxySettings"].each { token ->
             if (!networkRouteSettingsText.contains(token)) {
-                throw new GradleException("NetworkRouteSettings must enforce proxy/WireGuard mutual exclusion token '${token}'")
+                throw new GradleException("NetworkRouteSettings must enforce proxy/tunnel mutual exclusion token '${token}'")
             }
         }
-        ["public static boolean enableWireGuard", "WireGuardManager.isSupported", "return false", "proxy_enabled_calls", "proxyRotationEnabled"].each { token ->
+        ["public static boolean enableTunnel", "TunnelManager.isSupported", "return false", "proxy_enabled_calls", "proxyRotationEnabled"].each { token ->
             if (!networkRouteSettingsText.contains(token)) {
-                throw new GradleException("NetworkRouteSettings must guard WireGuard support and disable proxy state token '${token}'")
+                throw new GradleException("NetworkRouteSettings must guard tunnel support and disable proxy state token '${token}'")
             }
         }
-        if (!(networkRouteSettingsText =~ /disableWireGuard\(\)[\s\S]*putBoolean\("proxy_enabled", false\)[\s\S]*putBoolean\("proxy_enabled_calls", false\)/)) {
-            throw new GradleException("NetworkRouteSettings.disableWireGuard must leave ordinary proxy and proxy-for-calls disabled")
+        if (!(networkRouteSettingsText =~ /disableTunnel\(\)[\s\S]*putBoolean\("proxy_enabled", false\)[\s\S]*putBoolean\("proxy_enabled_calls", false\)/)) {
+            throw new GradleException("NetworkRouteSettings.disableTunnel must leave ordinary proxy and proxy-for-calls disabled")
         }
         def proxyListActivityText = file("src/main/java/org/telegram/ui/ProxyListActivity.java").text
-        ["WireGuardManager.isSupported", "WireGuardUnsupportedOnThisDevice", "showWireGuardUnsupported", "!useWireGuardSettings &&"].each { token ->
+        ["TunnelManager.isSupported", "TunnelUnsupportedOnThisDevice", "showWireGuardUnsupported", "!useWireGuardSettings &&", "showAddTunnelProtocolDialog"].each { token ->
             if (!proxyListActivityText.contains(token)) {
-                throw new GradleException("ProxyListActivity must gate WireGuard support and hide proxy-calls UI in WireGuard mode token '${token}'")
+                throw new GradleException("ProxyListActivity must gate tunnel support and hide proxy-calls UI in tunnel mode token '${token}'")
             }
         }
         def wireGuardSettingsActivityText = file("src/main/java/org/telegram/ui/WireGuardSettingsActivity.java").text
-        ["WireGuardManager.isSupported", "WireGuardUnsupportedOnThisDevice", "showWireGuardUnsupported"].each { token ->
+        ["TunnelManager.isSupported", "TunnelUnsupportedOnThisDevice", "showWireGuardUnsupported", "TunnelProtocol.AMNEZIA_WG", "AmneziaWGJc"].each { token ->
             if (!wireGuardSettingsActivityText.contains(token)) {
-                throw new GradleException("WireGuardSettingsActivity must gate new profiles when secure storage is unavailable token '${token}'")
+                throw new GradleException("WireGuardSettingsActivity must gate new tunnel profiles when secure storage is unavailable token '${token}'")
             }
         }
         [
@@ -365,8 +393,8 @@ tasks.register("verifyWireGuardStaticGuards") {
         }
         ["src/main/java/org/telegram/ui/LoginActivity.java", "src/main/java/org/telegram/ui/DialogsActivity.java"].each { path ->
             def text = file(path).text
-            if (!text.contains("WireGuardManager.isUserEnabled")) {
-                throw new GradleException("${path} must include WireGuard route status")
+            if (!text.contains("TunnelManager.isUserEnabled")) {
+                throw new GradleException("${path} must include tunnel route status")
             }
         }
         def loginActivityText = file("src/main/java/org/telegram/ui/LoginActivity.java").text
@@ -377,10 +405,15 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (!wireGuardParserText.contains("peerSections != 1")) {
             throw new GradleException("WireGuardConfigParser must reject multiple peers for this UI stage")
         }
+        ["jc", "h1", "i1", "TunnelProtocol.AMNEZIA_WG"].each { token ->
+            if (!wireGuardParserText.contains(token)) {
+                throw new GradleException("WireGuardConfigParser must parse AmneziaWG configs token '${token}'")
+            }
+        }
         def voipServiceText = file("src/main/java/org/telegram/messenger/voip/VoIPService.java").text
-        ["WireGuardManager.getProxySettings", "WireGuardVoipRouting.shouldEnableP2p", "WireGuardVoipRouting.selectEndpointType", "PROTOCOL_HTTP_CONNECT"].each { token ->
+        ["TunnelManager.getProxySettings", "TunnelVoipRouting.shouldEnableP2p", "TunnelVoipRouting.selectEndpointType", "PROTOCOL_HTTP_CONNECT"].each { token ->
             if (!voipServiceText.contains(token)) {
-                throw new GradleException("VoIPService must route calls through WireGuard token '${token}'")
+                throw new GradleException("VoIPService must route calls through tunnel token '${token}'")
             }
         }
         def nativeInstanceText = file("src/main/java/org/telegram/messenger/voip/NativeInstance.java").text
@@ -388,9 +421,9 @@ tasks.register("verifyWireGuardStaticGuards") {
             throw new GradleException("NativeInstance.makeGroup must accept a proxy for WireGuard group-call routing")
         }
         def livePlayerText = file("src/main/java/org/telegram/ui/Stories/LivePlayer.java").text
-        ["WireGuardManager.getProxySettings", "PROTOCOL_HTTP_CONNECT"].each { token ->
+        ["TunnelManager.getProxySettings", "PROTOCOL_HTTP_CONNECT"].each { token ->
             if (!livePlayerText.contains(token)) {
-                throw new GradleException("LivePlayer group-call streaming must route through WireGuard token '${token}'")
+                throw new GradleException("LivePlayer group-call streaming must route through tunnel token '${token}'")
             }
         }
         def groupNetworkManagerText = file("jni/voip/tgcalls/group/GroupNetworkManager.cpp").text
@@ -421,5 +454,23 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (!wireGuardGoText.contains("httpConnectHandshake")) {
             throw new GradleException("WireGuard Go proxy must support HTTP CONNECT for WebRTC TCP routing")
         }
+        def amneziaWGGoText = file("jni/tg_awg/go/tg_wg.go").text
+        ["github.com/amnezia-vpn/amneziawg-go", "httpConnectHandshake"].each { token ->
+            if (!amneziaWGGoText.contains(token)) {
+                throw new GradleException("AmneziaWG Go proxy must use the pinned bridge and support HTTP CONNECT token '${token}'")
+            }
+        }
+        def amneziaWGModText = file("jni/tg_awg/go/go.mod").text
+        ["github.com/amnezia-vpn/amneziawg-go v0.2.18", "go 1.24.4"].each { token ->
+            if (!amneziaWGModText.contains(token)) {
+                throw new GradleException("AmneziaWG Go module must stay pinned token '${token}'")
+            }
+        }
     }
+}
+
+tasks.register("verifyTunnelStaticGuards") {
+    description = "Alias for tunnel static guards."
+    group = "verification"
+    dependsOn "verifyWireGuardStaticGuards"
 }
