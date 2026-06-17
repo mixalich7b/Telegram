@@ -16,9 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amnezia-vpn/amneziawg-go/conn"
-	"github.com/amnezia-vpn/amneziawg-go/device"
-	"github.com/amnezia-vpn/amneziawg-go/tun/netstack"
+	awgconn "github.com/amnezia-vpn/amneziawg-go/conn"
+	awgdevice "github.com/amnezia-vpn/amneziawg-go/device"
+	awgnetstack "github.com/amnezia-vpn/amneziawg-go/tun/netstack"
+	wgconn "golang.zx2c4.com/wireguard/conn"
+	wgdevice "golang.zx2c4.com/wireguard/device"
+	wgnetstack "golang.zx2c4.com/wireguard/tun/netstack"
 )
 
 type tcpDialer interface {
@@ -29,6 +32,8 @@ type wireGuardDevice interface {
 	BindUpdate() error
 	Close()
 }
+
+type runtimeFactory func(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error)
 
 type proxyProtocol int
 
@@ -48,6 +53,7 @@ type runtimeState struct {
 	cancel   context.CancelFunc
 	username string
 	password string
+	protocol string
 }
 
 var (
@@ -55,7 +61,15 @@ var (
 	state   *runtimeState
 )
 
-func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
+func startWireGuardRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
+	return startRuntime("WireGuard", userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword, newWireGuardRuntime)
+}
+
+func startAmneziaWGRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
+	return startRuntime("AmneziaWG", userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword, newAmneziaWGRuntime)
+}
+
+func startRuntime(protocolName string, userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string, factory runtimeFactory) int {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
@@ -72,7 +86,7 @@ func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []
 		return -2
 	}
 	if len(local) == 0 {
-		logError("at least one local AmneziaWG address is required")
+		logError("at least one local %s address is required", protocolName)
 		return -3
 	}
 	if mtu <= 0 {
@@ -85,23 +99,10 @@ func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []
 		return -10
 	}
 
-	tunDev, tnet, err := netstack.CreateNetTUN(local, dns, mtu)
+	device, dialer, status, err := factory(local, dns, mtu, userspaceConfig)
 	if err != nil {
-		logError("CreateNetTUN failed: %v", err)
-		return -4
-	}
-
-	logger := device.NewLogger(device.LogLevelError, "Telegram/AmneziaWG: ")
-	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), logger)
-	if err = dev.IpcSet(userspaceConfig); err != nil {
-		logError("IpcSet failed: %v", err)
-		dev.Close()
-		return -5
-	}
-	if err = dev.Up(); err != nil {
-		logError("device.Up failed: %v", err)
-		dev.Close()
-		return -6
+		logError("%s start failed: %v", protocolName, err)
+		return status
 	}
 
 	host := socksHost
@@ -111,18 +112,19 @@ func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(socksPort)))
 	if err != nil {
 		logError("SOCKS listen failed: %v", err)
-		dev.Close()
+		device.Close()
 		return -7
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	next := &runtimeState{
-		device:   dev,
-		dialer:   tnet,
+		device:   device,
+		dialer:   dialer,
 		listener: listener,
 		cancel:   cancel,
 		username: socksUsername,
 		password: socksPassword,
+		protocol: protocolName,
 	}
 	state = next
 	go acceptLoop(ctx, next)
@@ -139,8 +141,46 @@ func startRuntime(userspaceConfig string, localAddresses []string, dnsServers []
 		stopLocked()
 		return -9
 	}
-	logDebug("started on %s", listener.Addr().String())
+	logDebug("%s started on %s", protocolName, listener.Addr().String())
 	return port
+}
+
+func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error) {
+	tunDev, tnet, err := wgnetstack.CreateNetTUN(local, dns, mtu)
+	if err != nil {
+		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
+	}
+
+	logger := wgdevice.NewLogger(wgdevice.LogLevelError, "Telegram/WireGuard: ")
+	dev := wgdevice.NewDevice(tunDev, wgconn.NewDefaultBind(), logger)
+	if err = dev.IpcSet(userspaceConfig); err != nil {
+		dev.Close()
+		return nil, nil, -5, fmt.Errorf("IpcSet failed: %w", err)
+	}
+	if err = dev.Up(); err != nil {
+		dev.Close()
+		return nil, nil, -6, fmt.Errorf("device.Up failed: %w", err)
+	}
+	return dev, tnet, 0, nil
+}
+
+func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error) {
+	tunDev, tnet, err := awgnetstack.CreateNetTUN(local, dns, mtu)
+	if err != nil {
+		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
+	}
+
+	logger := awgdevice.NewLogger(awgdevice.LogLevelError, "Telegram/AmneziaWG: ")
+	dev := awgdevice.NewDevice(tunDev, awgconn.NewDefaultBind(), logger)
+	if err = dev.IpcSet(userspaceConfig); err != nil {
+		dev.Close()
+		return nil, nil, -5, fmt.Errorf("IpcSet failed: %w", err)
+	}
+	if err = dev.Up(); err != nil {
+		dev.Close()
+		return nil, nil, -6, fmt.Errorf("device.Up failed: %w", err)
+	}
+	return dev, tnet, 0, nil
 }
 
 func stopRuntime() {
@@ -158,10 +198,10 @@ func onNetworkChangedRuntime() int {
 		return 0
 	}
 	if err := state.device.BindUpdate(); err != nil {
-		logError("BindUpdate failed after network change: %v", err)
+		logError("%s BindUpdate failed after network change: %v", state.protocol, err)
 		return -1
 	}
-	logDebug("network bind updated")
+	logDebug("%s network bind updated", state.protocol)
 	return 0
 }
 
@@ -189,7 +229,7 @@ func acceptLoop(ctx context.Context, state *runtimeState) {
 			case <-ctx.Done():
 				return
 			default:
-				logError("SOCKS accept failed: %v", err)
+				logError("%s proxy accept failed: %v", state.protocol, err)
 				continue
 			}
 		}
@@ -218,7 +258,7 @@ func handleProxyConnection(ctx context.Context, state *runtimeState, client net.
 		} else {
 			writeHTTPConnectFailure(client)
 		}
-		logError("AmneziaWG dial failed for %s: %v", target, err)
+		logError("%s dial failed for %s: %v", state.protocol, target, err)
 		return
 	}
 	defer remote.Close()

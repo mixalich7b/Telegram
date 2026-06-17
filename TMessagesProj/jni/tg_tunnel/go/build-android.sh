@@ -8,8 +8,8 @@ fi
 
 output_so="$1"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-build_dir="${TG_AWG_BUILD_DIR:-"$script_dir/build"}"
-go_version="${TG_AWG_GO_VERSION:-1.24.4}"
+build_dir="${TG_TUNNEL_BUILD_DIR:-"$script_dir/build"}"
+go_version="${TG_TUNNEL_GO_VERSION:-1.24.4}"
 
 android_abi="${ANDROID_ABI:?ANDROID_ABI is required}"
 case "$android_abi" in
@@ -20,29 +20,28 @@ case "$android_abi" in
   *) echo "unsupported Android ABI: $android_abi" >&2; exit 3 ;;
 esac
 
-if command -v go >/dev/null 2>&1; then
-  go_bin="$(command -v go)"
-else
-  host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  host_machine="$(uname -m)"
-  case "$host_machine" in
-    arm64|aarch64) host_arch="arm64" ;;
-    x86_64|amd64) host_arch="amd64" ;;
-    *) echo "unsupported host arch: $host_machine" >&2; exit 4 ;;
-  esac
-  go_root="$build_dir/go-$go_version"
-  go_bin="$go_root/bin/go"
-  if [ ! -x "$go_bin" ]; then
-    tarball="go${go_version}.${host_os}-${host_arch}.tar.gz"
-    mkdir -p "$build_dir/downloads" "$go_root"
-    curl -L -o "$build_dir/downloads/$tarball" "https://dl.google.com/go/$tarball"
-    rm -rf "$go_root"
-    mkdir -p "$go_root"
-    tar -C "$go_root" --strip-components=1 -xzf "$build_dir/downloads/$tarball"
-  fi
+host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+host_machine="$(uname -m)"
+case "$host_machine" in
+  arm64|aarch64) host_arch="arm64" ;;
+  x86_64|amd64) host_arch="amd64" ;;
+  *) echo "unsupported host arch: $host_machine" >&2; exit 4 ;;
+esac
+go_root="$build_dir/go-$go_version"
+go_bin="$go_root/bin/go"
+if [ ! -x "$go_bin" ]; then
+  tarball="go${go_version}.${host_os}-${host_arch}.tar.gz"
+  mkdir -p "$build_dir/downloads" "$go_root"
+  curl -L -o "$build_dir/downloads/$tarball" "https://dl.google.com/go/$tarball"
+  rm -rf "$go_root"
+  mkdir -p "$go_root"
+  tar -C "$go_root" --strip-components=1 -xzf "$build_dir/downloads/$tarball"
 fi
 
+unset GOROOT
+
 mkdir -p "$(dirname "$output_so")" "$build_dir/gomod" "$build_dir/gocache"
+version_script="$script_dir/exports.map"
 
 export GOOS=android
 export GOARCH="$goarch"
@@ -52,6 +51,7 @@ fi
 export CGO_ENABLED=1
 export GOMODCACHE="$build_dir/gomod"
 export GOCACHE="$build_dir/gocache"
+export GOTOOLCHAIN=local
 
 android_api="${ANDROID_API:-}"
 if [ -z "$android_api" ] && [ -n "${ANDROID_PLATFORM:-}" ]; then
@@ -78,4 +78,4 @@ fi
 export CC="${CC:?CC is required for Android cgo builds}"
 
 cd "$script_dir"
-"$go_bin" build -tags linux -trimpath -buildvcs=false -buildmode c-shared -ldflags "-extldflags=-Wl,-soname,libtg-awg-go.so" -o "$output_so" .
+"$go_bin" build -tags linux -trimpath -buildvcs=false -buildmode c-shared -ldflags "-linkmode=external -extldflags=-Wl,-soname,libtg-tunnel-go.so,--version-script=${version_script}" -o "$output_so" .

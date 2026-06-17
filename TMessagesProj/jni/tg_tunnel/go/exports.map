@@ -1,0 +1,11 @@
+{
+    global:
+        tgWgStart;
+        tgWgStop;
+        tgWgOnNetworkChanged;
+        tgAwgStart;
+        tgAwgStop;
+        tgAwgOnNetworkChanged;
+    local:
+        *;
+};

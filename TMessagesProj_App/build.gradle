@@ -216,7 +216,7 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
             }
         }
 
-        ["gomod/", "gocache/", "tg_wg/go/build", "tg_awg/go/build", "vdso_"].each { forbidden ->
+        ["gomod/", "gocache/", "tg_wg/go/build", "tg_awg/go/build", "tg_tunnel/go/build", "vdso_", "libtg-wg-go.so", "libtg-awg-go.so"].each { forbidden ->
             def match = entries.find { it.contains(forbidden) }
             if (match != null) {
                 throw new GradleException("APK contains forbidden Go build/cache entry: ${match}")
@@ -225,7 +225,7 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
 
         def abis = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
         abis.each { abi ->
-            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-wg-go.so", "lib/${abi}/libtg-awg.so", "lib/${abi}/libtg-awg-go.so"].each { lib ->
+            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-tunnel-go.so", "lib/${abi}/libtg-awg.so"].each { lib ->
                 def libName = lib.toString()
                 if (!entries.contains(libName)) {
                     throw new GradleException("APK is missing required tunnel library ${libName}")

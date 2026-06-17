@@ -9,7 +9,7 @@ import "unsafe"
 
 //export tgWgStart
 func tgWgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int, socksHost *C.char, socksPort C.int, socksUsername *C.char, socksPassword *C.char) C.int {
-	return C.int(startRuntime(
+	return C.int(startWireGuardRuntime(
 		C.GoString(userspaceConfig),
 		cStringArray(localAddresses, localAddressCount),
 		cStringArray(dnsServers, dnsServerCount),
@@ -27,6 +27,29 @@ func tgWgStop() {
 
 //export tgWgOnNetworkChanged
 func tgWgOnNetworkChanged() C.int {
+	return C.int(onNetworkChangedRuntime())
+}
+
+//export tgAwgStart
+func tgAwgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int, socksHost *C.char, socksPort C.int, socksUsername *C.char, socksPassword *C.char) C.int {
+	return C.int(startAmneziaWGRuntime(
+		C.GoString(userspaceConfig),
+		cStringArray(localAddresses, localAddressCount),
+		cStringArray(dnsServers, dnsServerCount),
+		int(mtu),
+		C.GoString(socksHost),
+		int(socksPort),
+		C.GoString(socksUsername),
+		C.GoString(socksPassword)))
+}
+
+//export tgAwgStop
+func tgAwgStop() {
+	stopRuntime()
+}
+
+//export tgAwgOnNetworkChanged
+func tgAwgOnNetworkChanged() C.int {
 	return C.int(onNetworkChangedRuntime())
 }
 

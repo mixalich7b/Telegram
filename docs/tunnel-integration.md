@@ -200,10 +200,19 @@ therefore fail-closed.
 
 Native libraries:
 
-- `libtg-wg-go.so`: Go WireGuard bridge.
 - `libtg-wg.so`: JNI/C++ wrapper for WireGuard.
-- `libtg-awg-go.so`: Go AmneziaWG bridge.
+- `libtg-tunnel-go.so`: shared Go bridge for WireGuard and AmneziaWG.
 - `libtg-awg.so`: JNI/C++ wrapper for AmneziaWG.
+
+WireGuard and AmneziaWG share one Go `c-shared` library. Loading two independent
+Go shared libraries in the same Android process can corrupt the Go runtime when
+users switch between protocol profiles, so `libtg-wg-go.so` and
+`libtg-awg-go.so` must not be rebuilt or packaged. The shared bridge is built
+with a linker version script that exports only `tgWg*` and `tgAwg*` C API
+symbols; Go runtime and cgo helper symbols remain local.
+
+Android bridge builds use the managed Go 1.24.4 toolchain from the native build
+directory instead of whatever `go` binary is first on `PATH`.
 
 Bridge behavior shared by both protocols:
 
@@ -253,11 +262,11 @@ implemented.
   `DialogsActivity`, `LaunchActivity`, `CameraScanActivity`.
 - Tgnet enforcement:
   `ConnectionsManager`.
-- WireGuard native runtime:
-  `TMessagesProj/jni/tg_wg/go/`,
+- Shared Go native runtime:
+  `TMessagesProj/jni/tg_tunnel/go/`.
+- WireGuard JNI wrapper:
   `TMessagesProj/jni/tg_wg/tg_wg_jni.cpp`.
-- AmneziaWG native runtime:
-  `TMessagesProj/jni/tg_awg/go/`,
+- AmneziaWG JNI wrapper:
   `TMessagesProj/jni/tg_awg/tg_awg_jni.cpp`.
 - VoIP routing:
   `VoIPService`, `Instance`, `NativeInstance`, `LivePlayer`, native `tgcalls`

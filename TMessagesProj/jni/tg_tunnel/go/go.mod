@@ -1,8 +1,10 @@
-module org.telegram.messenger/tg_awg
+module org.telegram.messenger/tg_tunnel
 
 go 1.24.4
 
 require github.com/amnezia-vpn/amneziawg-go v0.2.18
+
+require golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 
 require (
 	github.com/google/btree v1.1.3 // indirect
@@ -11,5 +13,5 @@ require (
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
-	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
+	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c // indirect
 )

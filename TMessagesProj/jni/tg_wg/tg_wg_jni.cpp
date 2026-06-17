@@ -26,17 +26,17 @@ bool loadGoBridge() {
     if (goHandle != nullptr) {
         return true;
     }
-    goHandle = dlopen("libtg-wg-go.so", RTLD_NOW);
+    goHandle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
     if (goHandle == nullptr) {
         const char *error = dlerror();
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-wg-go.so failed: %s", error != nullptr ? error : "unknown");
+        __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-tunnel-go.so failed: %s", error != nullptr ? error : "unknown");
         return false;
     }
     startFunc = reinterpret_cast<StartFunc>(dlsym(goHandle, "tgWgStart"));
     stopFunc = reinterpret_cast<VoidFunc>(dlsym(goHandle, "tgWgStop"));
     networkChangedFunc = reinterpret_cast<NetworkChangedFunc>(dlsym(goHandle, "tgWgOnNetworkChanged"));
     if (startFunc == nullptr || stopFunc == nullptr || networkChangedFunc == nullptr) {
-        logError("required tg-wg-go symbols are missing");
+        logError("required tg-tunnel-go WireGuard symbols are missing");
         dlclose(goHandle);
         goHandle = nullptr;
         startFunc = nullptr;

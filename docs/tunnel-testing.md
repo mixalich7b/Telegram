@@ -63,6 +63,9 @@ accidentally:
   filtering behavior;
 - WireGuard and AmneziaWG Go cache/module artifacts stay out of
   `TMessagesProj/jni`;
+- WireGuard and AmneziaWG use one shared Go bridge with a linker version script
+  that hides non-API Go runtime symbols;
+- Android Go bridge builds use the pinned managed Go 1.24.4 toolchain;
 - AmneziaWG imports stay limited to the intended Go bridge dependency.
 
 ## Packaging Expectations
@@ -70,9 +73,8 @@ accidentally:
 APK verification requires these libraries for every supported ABI:
 
 - `libtg-wg.so`;
-- `libtg-wg-go.so`;
+- `libtg-tunnel-go.so`;
 - `libtg-awg.so`;
-- `libtg-awg-go.so`.
 
 APK verification rejects entries containing:
 
@@ -80,6 +82,9 @@ APK verification rejects entries containing:
 - `gocache/`;
 - `tg_wg/go/build`;
 - `tg_awg/go/build`;
+- `tg_tunnel/go/build`;
+- `libtg-wg-go.so`;
+- `libtg-awg-go.so`;
 - `vdso_`;
 - downloaded Go module shared objects accidentally packaged from build caches.
 

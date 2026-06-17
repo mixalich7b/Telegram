@@ -12,7 +12,7 @@ import (
 	"unsafe"
 )
 
-const logTag = "Telegram/AmneziaWG"
+const logTag = "Telegram/Tunnel"
 
 func logDebug(format string, args ...any) {
 	logAndroid(C.ANDROID_LOG_DEBUG, format, args...)

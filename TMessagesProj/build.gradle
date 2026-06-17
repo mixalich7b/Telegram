@@ -265,11 +265,11 @@ task checkVisibility {
 
 preBuild.dependsOn checkVisibility
 
-tasks.register("testWireGuardGo", Exec) {
-    description = "Runs host-side Go tests for the internal WireGuard bridge."
+tasks.register("testTunnelGo", Exec) {
+    description = "Runs host-side Go tests for the internal WireGuard/AmneziaWG bridge."
     group = "verification"
-    workingDir file("jni/tg_wg/go")
-    def goTestBuildDir = rootProject.file(".gradle/wireguard-go-test")
+    workingDir file("jni/tg_tunnel/go")
+    def goTestBuildDir = rootProject.file(".gradle/tunnel-go-test")
     environment "GOCACHE", file("${goTestBuildDir}/gocache")
     environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
     doFirst {
@@ -279,18 +279,16 @@ tasks.register("testWireGuardGo", Exec) {
     commandLine "go", "test", "-count=1", "./..."
 }
 
-tasks.register("testAmneziaWGGo", Exec) {
-    description = "Runs host-side Go tests for the internal AmneziaWG bridge."
+tasks.register("testWireGuardGo") {
+    description = "Runs host-side Go tests for the shared tunnel bridge."
     group = "verification"
-    workingDir file("jni/tg_awg/go")
-    def goTestBuildDir = rootProject.file(".gradle/amneziawg-go-test")
-    environment "GOCACHE", file("${goTestBuildDir}/gocache")
-    environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
-    doFirst {
-        file("${goTestBuildDir}/gocache").mkdirs()
-        file("${goTestBuildDir}/gomod").mkdirs()
-    }
-    commandLine "go", "test", "-count=1", "./..."
+    dependsOn "testTunnelGo"
+}
+
+tasks.register("testAmneziaWGGo") {
+    description = "Runs host-side Go tests for the shared tunnel bridge."
+    group = "verification"
+    dependsOn "testTunnelGo"
 }
 
 tasks.register("verifyWireGuardStaticGuards") {
@@ -302,10 +300,13 @@ tasks.register("verifyWireGuardStaticGuards") {
             include "src/main/java/org/telegram/messenger/Tunnel*.java"
             include "jni/tg_wg/**"
             include "jni/tg_awg/**"
+            include "jni/tg_tunnel/**"
             exclude "jni/tg_wg/go/go.sum"
             exclude "jni/tg_wg/go/go.mod"
             exclude "jni/tg_awg/go/go.sum"
             exclude "jni/tg_awg/go/go.mod"
+            exclude "jni/tg_tunnel/go/go.sum"
+            exclude "jni/tg_tunnel/go/go.mod"
         }
         checkedFiles.each { source ->
             def text = source.text
@@ -320,6 +321,49 @@ tasks.register("verifyWireGuardStaticGuards") {
         }
         if (file("jni/tg_awg/go/build").exists()) {
             throw new GradleException("TMessagesProj/jni/tg_awg/go/build must not exist; Go caches under jni are packaged as native libs")
+        }
+        if (file("jni/tg_tunnel/go/build").exists()) {
+            throw new GradleException("TMessagesProj/jni/tg_tunnel/go/build must not exist; Go caches under jni are packaged as native libs")
+        }
+        def tunnelBuildScriptText = file("jni/tg_tunnel/go/build-android.sh").text
+        ["--version-script", "libtg-tunnel-go.so", "TG_TUNNEL_GO_VERSION:-1.24.4", "unset GOROOT", "GOTOOLCHAIN=local"].each { token ->
+            if (!tunnelBuildScriptText.contains(token)) {
+                throw new GradleException("jni/tg_tunnel/go/build-android.sh must pin and hide the shared Go tunnel bridge token '${token}'")
+            }
+        }
+        if (tunnelBuildScriptText.contains("command -v go")) {
+            throw new GradleException("Android tunnel bridge builds must use the pinned managed Go toolchain, not an arbitrary system Go")
+        }
+        def exportMapText = file("jni/tg_tunnel/go/exports.map").text
+        ["tgWgStart", "tgWgStop", "tgWgOnNetworkChanged", "tgAwgStart", "tgAwgStop", "tgAwgOnNetworkChanged"].each { symbol ->
+            if (!exportMapText.contains(symbol)) {
+                throw new GradleException("jni/tg_tunnel/go/exports.map must export ${symbol}")
+            }
+        }
+        if (!exportMapText.contains("local:") || !exportMapText.contains("*;")) {
+            throw new GradleException("jni/tg_tunnel/go/exports.map must hide all non-API Go shared-library symbols")
+        }
+        def tunnelCMakeText = file("jni/CMakeLists.txt").text
+        ["libtg-tunnel-go.so", "tg_tunnel/go/build-android.sh", "tg-tunnel-go-lib"].each { token ->
+            if (!tunnelCMakeText.contains(token)) {
+                throw new GradleException("CMake must build one shared Go tunnel bridge token '${token}'")
+            }
+        }
+        ["libtg-wg-go.so", "libtg-awg-go.so", "tg-wg-go-lib", "tg-awg-go-lib"].each { token ->
+            if (tunnelCMakeText.contains(token)) {
+                throw new GradleException("CMake must not build separate Go tunnel runtimes token '${token}'")
+            }
+        }
+        [
+                [path: "jni/tg_wg/tg_wg_jni.cpp", symbols: ["libtg-tunnel-go.so", "tgWgStart", "tgWgStop", "tgWgOnNetworkChanged"]],
+                [path: "jni/tg_awg/tg_awg_jni.cpp", symbols: ["libtg-tunnel-go.so", "tgAwgStart", "tgAwgStop", "tgAwgOnNetworkChanged"]]
+        ].each { bridge ->
+            def bridgeText = file(bridge.path).text
+            bridge.symbols.each { symbol ->
+                if (!bridgeText.contains(symbol)) {
+                    throw new GradleException("${bridge.path} must load the shared Go bridge token '${symbol}'")
+                }
+            }
         }
         def wireGuardSecureStoreText = file("src/main/java/org/telegram/messenger/WireGuardSecureStore.java").text
         ["AndroidKeyStore", "AES/GCM/NoPadding", "Build.VERSION_CODES.M", "wireguard_profiles_encrypted_v1", "PROFILE_SCHEMA_V2", "TunnelProtocol.fromStorageValue"].each { token ->
@@ -453,17 +497,13 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("InstanceV2ReferenceImpl must enforce WireGuard private-call V2 reference proxy routing token '${token}'")
             }
         }
-        def wireGuardGoText = file("jni/tg_wg/go/tg_wg.go").text
-        if (!wireGuardGoText.contains("httpConnectHandshake")) {
-            throw new GradleException("WireGuard Go proxy must support HTTP CONNECT for WebRTC TCP routing")
-        }
-        def amneziaWGGoText = file("jni/tg_awg/go/tg_wg.go").text
-        ["github.com/amnezia-vpn/amneziawg-go", "httpConnectHandshake"].each { token ->
-            if (!amneziaWGGoText.contains(token)) {
-                throw new GradleException("AmneziaWG Go proxy must use the pinned bridge and support HTTP CONNECT token '${token}'")
+        def tunnelGoText = file("jni/tg_tunnel/go/tg_tunnel.go").text
+        ["golang.zx2c4.com/wireguard", "github.com/amnezia-vpn/amneziawg-go", "httpConnectHandshake", "startWireGuardRuntime", "startAmneziaWGRuntime"].each { token ->
+            if (!tunnelGoText.contains(token)) {
+                throw new GradleException("Shared Go tunnel bridge must support WireGuard, AmneziaWG, and HTTP CONNECT token '${token}'")
             }
         }
-        def amneziaWGModText = file("jni/tg_awg/go/go.mod").text
+        def amneziaWGModText = file("jni/tg_tunnel/go/go.mod").text
         ["github.com/amnezia-vpn/amneziawg-go v0.2.18", "go 1.24.4"].each { token ->
             if (!amneziaWGModText.contains(token)) {
                 throw new GradleException("AmneziaWG Go module must stay pinned token '${token}'")

@@ -83,15 +83,17 @@ AmneziaWG peer.
   - `TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java`
 - Startup hook:
   - `TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java`
-- Go/JNI WireGuard runtime:
-  - `TMessagesProj/jni/tg_wg/go/`
+- Shared Go tunnel runtime:
+  - `TMessagesProj/jni/tg_tunnel/go/`
+  - exports `tgWg*` and `tgAwg*` from one `libtg-tunnel-go.so`
+  - pinned AmneziaWG upstream module: `github.com/amnezia-vpn/amneziawg-go v0.2.18`
+  - upstream Go requirement: `go 1.24.4`
+  - `TMessagesProj/jni/CMakeLists.txt`
+- JNI WireGuard runtime:
   - `TMessagesProj/jni/tg_wg/tg_wg_jni.cpp`
   - `TMessagesProj/jni/CMakeLists.txt`
-- Go/JNI AmneziaWG runtime:
-  - `TMessagesProj/jni/tg_awg/go/`
+- JNI AmneziaWG runtime:
   - `TMessagesProj/jni/tg_awg/tg_awg_jni.cpp`
-  - pinned upstream module: `github.com/amnezia-vpn/amneziawg-go v0.2.18`
-  - upstream Go requirement: `go 1.24.4`
   - `TMessagesProj/jni/CMakeLists.txt`
 - Private VoIP routing:
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/Instance.java`
@@ -138,6 +140,9 @@ AmneziaWG peer.
 - Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
   scans JNI folders recursively and may otherwise package dependency `.so`
   files.
+- WireGuard and AmneziaWG must be built into one Go c-shared library
+  (`libtg-tunnel-go.so`) so the app process has a single Go runtime. Do not
+  reintroduce separate `libtg-wg-go.so` and `libtg-awg-go.so` libraries.
 
 ## UI Invariants
 
