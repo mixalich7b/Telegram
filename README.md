@@ -3,6 +3,14 @@
 [Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
 This repo contains the official source code for [Telegram App for Android](https://play.google.com/store/apps/details?id=org.telegram.messenger).
 
+### About this fork
+
+This is an unofficial fork of the official Telegram client for Android.
+It can route Telegram traffic through WireGuard or AmneziaWG directly inside the app,
+without Android `VpnService`, a device TUN interface, or a system-wide VPN connection. 
+Tunnel profiles can be added manually or imported from configuration files and QR codes, 
+and routing through the tunnel can be enabled separately for calls.
+
 ## Creating your Telegram Application
 
 We welcome all developers to use our API and source code to create applications on our platform.
