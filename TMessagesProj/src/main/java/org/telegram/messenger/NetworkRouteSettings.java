@@ -86,4 +86,9 @@ public final class NetworkRouteSettings {
         TunnelManager.disable();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
     }
+
+    public static void setTunnelVoipEnabled(boolean enabled) {
+        TunnelManager.setVoipRoutingEnabled(enabled);
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+    }
 }

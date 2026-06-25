@@ -29,6 +29,9 @@ WebRTC VoIP TCP relay traffic
   -> wireguard-go tun/netstack
   -> UDP to configured WireGuard peer
   -> Telegram relay/datacenter
+
+Private-call P2P traffic, when Telegram allows P2P
+  -> direct UDP outside the tunnel
 ```
 
 AmneziaWG uses the same local SOCKS5 and HTTP CONNECT shape through
@@ -41,8 +44,10 @@ AmneziaWG peer.
   device-level VPN session for this feature.
 - Do not commit real WireGuard keys, endpoints, Telegram `APP_ID`, or Telegram
   `APP_HASH`.
-- When a tunnel is user-enabled, traffic must fail closed. Do not add a silent
-  direct fallback.
+- When a tunnel is user-enabled, tgnet and VoIP relay traffic selected for
+  tunnel routing must fail closed. Do not add a silent direct fallback.
+  Explicitly disabled tunnel-for-calls routing and Telegram-authorized private
+  P2P are deliberate direct routes.
 - Existing proxy behavior must stay mutually exclusive with WireGuard and
   AmneziaWG through `NetworkRouteSettings`.
 - Tunnel profiles must be stored with Android Keystore-backed encryption on
@@ -51,8 +56,8 @@ AmneziaWG peer.
 - On devices without Keystore-backed tunnel profile storage, UI must not
   enable/add/import/scan tunnel profiles. Stale enabled settings should remain
   fail-closed and disable-able.
-- UDP ASSOCIATE is not implemented. Current VoIP safe mode is TCP relay through
-  HTTP CONNECT; do not assume UDP relay works through WireGuard yet.
+- UDP ASSOCIATE is not implemented. Tunnel-routed VoIP relay uses TCP through
+  HTTP CONNECT; direct private P2P may still use UDP outside the tunnel.
 
 ## Code Map
 
@@ -134,7 +139,8 @@ AmneziaWG peer.
   closed.
 - The internal proxy binds to `127.0.0.1` with generated credentials.
 - Profile contents are encrypted separately from `mainconfig`; only route state
-  such as enabled/current profile id belongs in global preferences.
+  such as enabled/current profile id and tunnel-for-calls belongs in global
+  preferences.
 - AmneziaWG `Jc/Jmin/Jmax`, `S1..S4`, `H1..H4`, and `I1..I5` fields are profile
   contents and must stay inside the encrypted profile blob.
 - Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
@@ -155,6 +161,8 @@ AmneziaWG peer.
 - Disabling a tunnel leaves ordinary proxy, proxy-for-calls, and proxy rotation
   disabled.
 - `Use Proxy For Calls` must not be available while a tunnel is active.
+- `Use Tunnel For Calls` must be available while a tunnel is active and must
+  default to enabled for existing and new installs.
 - Manual entry, config-file import, and QR-code import must use the same
   validation rules.
 - Deleting a saved tunnel profile requires user confirmation.
@@ -164,18 +172,27 @@ AmneziaWG peer.
 
 ## VoIP Invariants
 
-- Tunnel-enabled private calls must ignore user proxy preferences, disable P2P,
-  and force TCP relay safe mode.
+- Tunnel-enabled private calls must ignore user proxy preferences.
+- `Use Tunnel For Calls` controls tunnel HTTP CONNECT routing for private-call
+  relay, group/conference calls, and live/group streaming. It applies only to
+  newly created VoIP sessions.
+- Private-call P2P availability must follow Telegram's requested P2P value and
+  must not be disabled by tunnel routing. P2P host/reflexive UDP candidates are
+  direct and do not use the tunnel.
+- When tunnel-for-calls is enabled, private-call relay must use TCP through HTTP
+  CONNECT. UDP TURN/relay candidates must not bypass the tunnel.
 - Tunnel-created VoIP proxies use HTTP CONNECT. Keep default/user
   `Instance.Proxy` behavior as SOCKS5 unless deliberately changing user proxy
   semantics.
 - Native WebRTC paths must call `BasicPortAllocator::set_proxy(...)` when a
   tunnel proxy is present.
-- Native WebRTC paths must disable UDP/STUN and filter direct ICE candidates in
-  tunnel HTTP CONNECT mode:
-  - clear `CF_REFLEXIVE`;
-  - clear `CF_HOST`;
-  - keep TCP candidates enabled when a proxy is present.
+- Native private WebRTC paths must keep UDP/STUN and host/reflexive ICE
+  candidates available when P2P is enabled, while filtering non-TCP TURN
+  servers from tunnel HTTP CONNECT routing.
+- If P2P is disabled, native private WebRTC paths must retain relay-only
+  behavior by disabling UDP/STUN and filtering direct ICE candidates.
+- Native group/live WebRTC paths must remain proxy-only in tunnel mode: disable
+  UDP/STUN, clear `CF_REFLEXIVE` and `CF_HOST`, and keep TCP candidates enabled.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;

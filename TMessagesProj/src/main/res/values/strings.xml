@@ -2710,6 +2710,7 @@
     <string name="WireGuardProtocolName">WireGuard</string>
     <string name="AmneziaWGProtocolName">AmneziaWG</string>
     <string name="UseTunnelSettings">Use WireGuard / AmneziaWG</string>
+    <string name="UseTunnelForCalls">Use tunnel for calls</string>
     <string name="TunnelConnections">WireGuard / AmneziaWG Connections</string>
     <string name="AddTunnelConnection">Add Connection</string>
     <string name="ImportTunnelConfig">Import Config</string>

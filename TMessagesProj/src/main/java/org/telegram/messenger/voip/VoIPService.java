@@ -2927,7 +2927,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			}
 			final boolean[] first = new boolean[] { isFirst };
 			final String logFilePath = BuildVars.DEBUG_VERSION ? VoIPHelper.getLogFilePath("voip_" + type + "_" + logId) : VoIPHelper.getLogFilePath(logId, false);
-			final Instance.Proxy wireGuardProxy = createTunnelVoipProxy(TunnelManager.getProxySettings());
+			final Instance.Proxy tunnelProxy = createTunnelVoipProxy(TunnelManager.getVoipProxySettings());
 			tgVoip[type] = NativeInstance.makeGroup(logFilePath, captureDevice[type], type == CAPTURE_DEVICE_SCREEN, type == CAPTURE_DEVICE_CAMERA && SharedConfig.noiseSupression, (ssrc, json) -> {
 				if (type == CAPTURE_DEVICE_CAMERA) {
 					if (conference != null) {
@@ -3064,7 +3064,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 						tgVoip[type].onRequestTimeComplete(taskPtr, ConnectionsManager.getInstance(currentAccount).getCurrentTimeMillis());
 					}
 				}
-			}, wireGuardProxy, conference != null);
+			}, tunnelProxy, conference != null);
 			tgVoip[type].setOnStateUpdatedListener((state, inTransition) -> updateConnectionState(type, state, inTransition));
 //			if (captureDevice[type] != 0 && type == 0 && convertingVoip != null && convertingVoip.hasVideoCapturer()) {
 //				tgVoip[type].setupOutgoingVideoCreated(captureDevice[type]);
@@ -3418,7 +3418,8 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 			final SharedPreferences preferences = MessagesController.getGlobalMainSettings();
 
-			final TunnelProxySettings tunnelProxySettings = TunnelManager.getProxySettings();
+			final boolean tunnelEnabled = TunnelManager.isUserEnabled();
+			final TunnelProxySettings tunnelProxySettings = TunnelManager.getVoipProxySettings();
 			final boolean routeVoipViaTunnel = TunnelVoipRouting.shouldUseTunnel(tunnelProxySettings);
 
 			// config
@@ -3467,7 +3468,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			Instance.Proxy proxy = null;
 			if (routeVoipViaTunnel) {
 				proxy = createTunnelVoipProxy(tunnelProxySettings);
-			} else if (preferences.getBoolean("proxy_enabled", false) && preferences.getBoolean("proxy_enabled_calls", false)) {
+			} else if (!tunnelEnabled && preferences.getBoolean("proxy_enabled", false) && preferences.getBoolean("proxy_enabled_calls", false)) {
 				final String server = preferences.getString("proxy_ip", null);
 				final String secret = preferences.getString("proxy_secret", null);
 				if (!TextUtils.isEmpty(server) && TextUtils.isEmpty(secret)) {

@@ -228,8 +228,8 @@ public class LivePlayer implements NotificationCenter.NotificationCenterDelegate
     private void init() {
         if (destroyed) return;
 
-        final TunnelProxySettings tunnelProxySettings = TunnelManager.getProxySettings();
-        final Instance.Proxy wireGuardProxy = tunnelProxySettings == null ? null : new Instance.Proxy(tunnelProxySettings.host, tunnelProxySettings.port, tunnelProxySettings.username, tunnelProxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
+        final TunnelProxySettings tunnelProxySettings = TunnelManager.getVoipProxySettings();
+        final Instance.Proxy tunnelProxy = tunnelProxySettings == null ? null : new Instance.Proxy(tunnelProxySettings.host, tunnelProxySettings.port, tunnelProxySettings.username, tunnelProxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
         instance = NativeInstance.makeGroup(
                 VoIPHelper.getLogFilePath("live_" + inputCall.id),
                 0,
@@ -572,7 +572,7 @@ public class LivePlayer implements NotificationCenter.NotificationCenterDelegate
                         }
                     }
                 },
-                wireGuardProxy,
+                tunnelProxy,
                 false
         );
         instance.setOnStateUpdatedListener(new Instance.OnStateUpdatedListener() {

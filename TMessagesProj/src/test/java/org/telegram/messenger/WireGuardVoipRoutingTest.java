@@ -9,10 +9,10 @@ import static org.junit.Assert.assertTrue;
 public class WireGuardVoipRoutingTest {
 
     @Test
-    public void p2pIsDisabledWhenWireGuardProxyIsPresent() {
+    public void p2pPreservesRequestedValueWhenWireGuardProxyIsPresent() {
         WireGuardProxySettings proxySettings = new WireGuardProxySettings("127.0.0.1", 12345, "user", "pass", false);
 
-        assertFalse(WireGuardVoipRouting.shouldEnableP2p(true, proxySettings));
+        assertTrue(WireGuardVoipRouting.shouldEnableP2p(true, proxySettings));
         assertFalse(WireGuardVoipRouting.shouldEnableP2p(false, proxySettings));
     }
 
@@ -40,7 +40,7 @@ public class WireGuardVoipRoutingTest {
         WireGuardProxySettings proxySettings = new WireGuardProxySettings("127.0.0.1", 1, "", "", true);
 
         assertTrue(WireGuardVoipRouting.shouldUseWireGuard(proxySettings));
-        assertFalse(WireGuardVoipRouting.shouldEnableP2p(true, proxySettings));
+        assertTrue(WireGuardVoipRouting.shouldEnableP2p(true, proxySettings));
         assertEquals(3, WireGuardVoipRouting.selectEndpointType(false, proxySettings, 2, 3));
     }
 }

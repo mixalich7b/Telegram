@@ -10,11 +10,13 @@ public final class WireGuardSettings {
 
     private static final String PREF_ENABLED = "tunnel_enabled";
     private static final String PREF_CURRENT_PROFILE_ID = "tunnel_current_profile_id";
+    private static final String PREF_VOIP_ENABLED = "tunnel_voip_enabled";
     private static final String PREF_LEGACY_ENABLED = "wireguard_enabled";
     private static final String PREF_LEGACY_CURRENT_PROFILE_ID = "wireguard_current_profile_id";
 
     private static boolean loaded;
     private static boolean enabled;
+    private static boolean voipEnabled = true;
     private static String currentProfileId = "";
     private static final ArrayList<WireGuardProfile> profiles = new ArrayList<>();
 
@@ -34,6 +36,7 @@ public final class WireGuardSettings {
         currentProfileId = preferences.contains(PREF_CURRENT_PROFILE_ID)
                 ? preferences.getString(PREF_CURRENT_PROFILE_ID, "")
                 : preferences.getString(PREF_LEGACY_CURRENT_PROFILE_ID, "");
+        voipEnabled = preferences.getBoolean(PREF_VOIP_ENABLED, true);
         loaded = true;
     }
 
@@ -50,6 +53,7 @@ public final class WireGuardSettings {
         SharedPreferences.Editor editor = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE).edit();
         editor.putBoolean(PREF_ENABLED, enabled);
         editor.putString(PREF_CURRENT_PROFILE_ID, currentProfileId == null ? "" : currentProfileId);
+        editor.putBoolean(PREF_VOIP_ENABLED, voipEnabled);
         editor.putBoolean(PREF_LEGACY_ENABLED, enabled);
         editor.putString(PREF_LEGACY_CURRENT_PROFILE_ID, currentProfileId == null ? "" : currentProfileId);
         editor.apply();
@@ -68,6 +72,17 @@ public final class WireGuardSettings {
     public static synchronized void setEnabled(boolean value) {
         load();
         enabled = value;
+        saveSettingsLocked();
+    }
+
+    public static synchronized boolean isVoipEnabled() {
+        load();
+        return voipEnabled;
+    }
+
+    public static synchronized void setVoipEnabled(boolean value) {
+        load();
+        voipEnabled = value;
         saveSettingsLocked();
     }
 

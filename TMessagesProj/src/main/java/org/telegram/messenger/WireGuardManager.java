@@ -17,6 +17,14 @@ public final class WireGuardManager {
         return TunnelManager.isUserEnabled();
     }
 
+    public static boolean isVoipRoutingEnabled() {
+        return TunnelManager.isVoipRoutingEnabled();
+    }
+
+    public static void setVoipRoutingEnabled(boolean enabled) {
+        TunnelManager.setVoipRoutingEnabled(enabled);
+    }
+
     public static boolean hasActiveProfile() {
         return TunnelManager.hasActiveProfile();
     }
@@ -67,6 +75,10 @@ public final class WireGuardManager {
 
     public static WireGuardProxySettings getProxySettings() {
         return WireGuardProxySettings.from(TunnelManager.getProxySettings());
+    }
+
+    public static WireGuardProxySettings getVoipProxySettings() {
+        return WireGuardProxySettings.from(TunnelManager.getVoipProxySettings());
     }
 
     public static void onNetworkChanged() {

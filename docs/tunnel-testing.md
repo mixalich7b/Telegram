@@ -29,7 +29,8 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
   legacy WireGuard profile migration;
 - controller startup, restart, network refresh, and fail-closed behavior;
 - tunnel proxy protocol metadata;
-- VoIP route policy for direct, active tunnel, and blocked tunnel cases.
+- VoIP route policy for direct, enabled/disabled tunnel-for-calls, active
+  tunnel, blocked tunnel, and direct P2P cases.
 
 Go bridge tests cover:
 
@@ -51,7 +52,7 @@ accidentally:
 
 - no Android `VpnService`, `Builder.establish()`, or `/dev/tun` in tunnel
   integration files;
-- no silent direct fallback while any tunnel protocol is enabled;
+- no silent direct fallback for tgnet or VoIP relay selected for tunnel routing;
 - profile storage uses Android Keystore-backed AES-GCM and does not write
   plaintext profile contents to `mainconfig`;
 - all route-mode changes go through `NetworkRouteSettings`;
@@ -59,8 +60,9 @@ accidentally:
   tunnel proxy;
 - unsupported-device UI checks exist for add/import/scan/enable/select;
 - parser rejects multiple peers;
-- VoIP paths keep HTTP CONNECT, TCP relay, disabled UDP/STUN, and direct ICE
-  filtering behavior;
+- VoIP paths keep HTTP CONNECT and TCP-only tunnel relay, preserve direct
+  private P2P UDP/STUN/ICE candidates, filter non-TCP TURN from private tunnel
+  routing, and retain proxy-only group/live filtering;
 - WireGuard and AmneziaWG Go cache/module artifacts stay out of
   `TMessagesProj/jni`;
 - WireGuard and AmneziaWG use one shared Go bridge with a linker version script
@@ -108,6 +110,10 @@ Cover these flows:
 - switch Wi-Fi/LTE while each protocol is active;
 - send messages/media while each protocol is active;
 - start new private and group/live VoIP sessions while each protocol is active;
+- repeat private and group/live session creation with `Use tunnel for calls`
+  enabled and disabled;
+- verify allowed private P2P remains direct while fallback relay uses tunnel
+  HTTP CONNECT when enabled;
 - verify Telegram datacenter traffic does not go direct while either protocol is
   enabled.
 

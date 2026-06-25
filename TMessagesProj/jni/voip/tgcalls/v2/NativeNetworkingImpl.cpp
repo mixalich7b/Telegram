@@ -611,7 +611,7 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
     }
     
-    if (_proxy || !_enableP2P) {
+    if (!_enableP2P || (_proxy && !httpConnectProxy)) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
@@ -635,6 +635,9 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
 
     for (auto &server : _rtcServers) {
         if (server.isTurn) {
+            if (httpConnectProxy && !server.isTcp) {
+                continue;
+            }
             turnServers.push_back(cricket::RelayServerConfig(
                 rtc::SocketAddress(server.host, server.port),
                 server.login,

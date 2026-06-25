@@ -42,10 +42,15 @@ WebRTC VoIP TCP relay traffic
   -> wireguard-go or amneziawg-go tun/netstack
   -> UDP to the configured peer
   -> Telegram relay/datacenter
+
+Private-call P2P traffic, when Telegram allows P2P
+  -> direct UDP outside the tunnel
 ```
 
 The app never creates an Android VPN session. When a tunnel is user-enabled,
-traffic must fail closed; there is no silent direct fallback.
+tgnet and VoIP relay traffic selected for tunnel routing fail closed. Explicitly
+disabled tunnel-for-calls routing and Telegram-authorized private P2P are
+deliberate direct routes, not fallback behavior.
 
 ## Route Policy
 
@@ -57,6 +62,7 @@ traffic must fail closed; there is no silent direct fallback.
 - Enabling ordinary proxy disables the active tunnel first.
 - Disabling a tunnel leaves ordinary proxy, proxy-for-calls, and proxy rotation
   disabled.
+- `Use Tunnel For Calls` is persisted independently and defaults to enabled.
 - If startup, restart, or native network refresh fails while a tunnel is enabled,
   the app applies a blocked local proxy instead of going direct.
 - On devices without Keystore-backed profile storage, add/import/scan/enable and
@@ -96,6 +102,7 @@ Route state lives in global `mainconfig`:
 
 - `tunnel_enabled`
 - `tunnel_current_profile_id`
+- `tunnel_voip_enabled`
 
 Legacy `wireguard_enabled` and `wireguard_current_profile_id` are still read and
 written during the compatibility period.
@@ -233,22 +240,30 @@ APK.
 
 ## VoIP
 
-New private/group/live VoIP sessions read `TunnelManager.getProxySettings()` at
-creation time.
+New private/group/live VoIP sessions read
+`TunnelManager.getVoipProxySettings()` at creation time.
 
 Tunnel VoIP behavior:
 
 - internal tunnel proxies use HTTP CONNECT;
 - private calls ignore user proxy preferences while a tunnel is active;
-- P2P is disabled;
-- TCP relay safe mode is forced;
+- `Use Tunnel For Calls` controls private relay, group/conference, and
+  live/group streaming routing and defaults to enabled;
+- Telegram-authorized private P2P remains enabled and uses direct host/reflexive
+  UDP candidates outside the tunnel;
+- private relay is forced to TCP while tunnel-for-calls is enabled;
 - native WebRTC paths call `BasicPortAllocator::set_proxy(...)`;
-- UDP/STUN and direct host/reflexive ICE candidates are disabled or filtered;
+- private paths keep UDP/STUN and direct host/reflexive ICE candidates when P2P
+  is enabled, but exclude non-TCP TURN servers so relay cannot bypass the
+  tunnel;
+- private paths retain relay-only filtering when P2P is disabled;
+- group/live paths continue to disable UDP/STUN and direct host/reflexive ICE
+  candidates while using the tunnel;
 - V2 reference networking keeps TCP TURN servers with `?transport=tcp` when a
   proxy is present.
 
 Active sessions are not dynamically rerouted by UI changes. UDP ASSOCIATE is not
-implemented.
+implemented for tunnel relay; direct private P2P can use UDP.
 
 ## Key Files
 

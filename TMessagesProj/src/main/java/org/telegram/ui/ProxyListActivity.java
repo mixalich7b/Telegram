@@ -106,11 +106,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private boolean useProxySettings;
     private boolean useProxyForCalls;
     private boolean useWireGuardSettings;
+    private boolean useTunnelForCalls;
 
     private int rowCount;
     @Keep
     private int useProxyRow;
     private int useWireGuardRow;
+    private int tunnelCallsRow;
     private int useProxyShadowRow;
     private int connectionsHeaderRow;
     private int proxyStartRow;
@@ -490,6 +492,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         useProxySettings = preferences.getBoolean("proxy_enabled", false) && !SharedConfig.proxyList.isEmpty();
         useProxyForCalls = preferences.getBoolean("proxy_enabled_calls", false);
         useWireGuardSettings = TunnelManager.isUserEnabled();
+        useTunnelForCalls = TunnelManager.isVoipRoutingEnabled();
 
         updateRows(true);
 
@@ -619,6 +622,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 useProxySettings = false;
                 useProxyForCalls = false;
                 updateRows(true);
+            } else if (position == tunnelCallsRow) {
+                useTunnelForCalls = !useTunnelForCalls;
+                ((TextCheckCell) view).setChecked(useTunnelForCalls);
+                NetworkRouteSettings.setTunnelVoipEnabled(useTunnelForCalls);
             } else if (position == rotationRow) {
                 SharedConfig.proxyRotationEnabled = !SharedConfig.proxyRotationEnabled;
                 TextCheckCell textCheckCell = (TextCheckCell) view;
@@ -1050,6 +1057,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         useWireGuardSettings = TunnelManager.isUserEnabled();
         useProxySettings = preferences.getBoolean("proxy_enabled", false) && !SharedConfig.proxyList.isEmpty();
         useProxyForCalls = preferences.getBoolean("proxy_enabled_calls", false);
+        useTunnelForCalls = TunnelManager.isVoipRoutingEnabled();
         if (useWireGuardSettings) {
             useProxySettings = false;
             useProxyForCalls = false;
@@ -1057,6 +1065,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         rowCount = 0;
         useProxyRow = rowCount++;
         useWireGuardRow = rowCount++;
+        if (useWireGuardSettings) {
+            tunnelCallsRow = rowCount++;
+        } else {
+            tunnelCallsRow = -1;
+        }
         if (useProxySettings && SharedConfig.currentProxy != null && SharedConfig.proxyList.size() > 1 && IS_PROXY_ROTATION_AVAILABLE) {
             rotationRow = rowCount++;
             if (SharedConfig.proxyRotationEnabled) {
@@ -1376,7 +1389,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     if (position == useProxyRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxySettings), useProxySettings, rotationRow != -1);
                     } else if (position == useWireGuardRow) {
-                        checkCell.setTextAndCheck(getString(R.string.UseTunnelSettings), useWireGuardSettings, useProxyShadowRow != -1);
+                        checkCell.setTextAndCheck(getString(R.string.UseTunnelSettings), useWireGuardSettings, tunnelCallsRow != -1 || useProxyShadowRow != -1);
+                    } else if (position == tunnelCallsRow) {
+                        checkCell.setTextAndCheck(getString(R.string.UseTunnelForCalls), useTunnelForCalls, useProxyShadowRow != -1);
                     } else if (position == callsRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxyForCalls), useProxyForCalls, false);
                     } else if (position == rotationRow) {
@@ -1446,6 +1461,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     checkCell.setChecked(useProxySettings);
                 } else if (position == useWireGuardRow) {
                     checkCell.setChecked(useWireGuardSettings);
+                } else if (position == tunnelCallsRow) {
+                    checkCell.setChecked(useTunnelForCalls);
                 } else if (position == callsRow) {
                     checkCell.setChecked(useProxyForCalls);
                 } else if (position == rotationRow) {
@@ -1466,6 +1483,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     checkCell.setChecked(useProxySettings);
                 } else if (position == useWireGuardRow) {
                     checkCell.setChecked(useWireGuardSettings);
+                } else if (position == tunnelCallsRow) {
+                    checkCell.setChecked(useTunnelForCalls);
                 } else if (position == callsRow) {
                     checkCell.setChecked(useProxyForCalls);
                 } else if (position == rotationRow) {
@@ -1477,7 +1496,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
+            return position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
         }
 
         @Override
@@ -1533,6 +1552,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -4;
             } else if (position == useWireGuardRow) {
                 return -12;
+            } else if (position == tunnelCallsRow) {
+                return -18;
             } else if (position == callsRow) {
                 return -5;
             } else if (position == connectionsHeaderRow) {
@@ -1570,7 +1591,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return VIEW_TYPE_SHADOW;
             } else if (position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow) {
                 return VIEW_TYPE_TEXT_SETTING;
-            } else if (position == useProxyRow || position == useWireGuardRow || position == rotationRow || position == callsRow) {
+            } else if (position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow) {
                 return VIEW_TYPE_TEXT_CHECK;
             } else if (position == connectionsHeaderRow || position == wireGuardHeaderRow) {
                 return VIEW_TYPE_HEADER;

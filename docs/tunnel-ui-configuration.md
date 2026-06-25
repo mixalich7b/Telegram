@@ -13,6 +13,7 @@ proxy controls and tunnel controls:
 
 - `Use Proxy`;
 - `Use WireGuard / AmneziaWG`;
+- `Use tunnel for calls` while a tunnel is active;
 - proxy list, add, rotation, and delete controls;
 - tunnel profile list;
 - `Add Connection`;
@@ -22,6 +23,12 @@ proxy controls and tunnel controls:
 When a tunnel is active, ordinary proxy rows remain visible but inactive,
 `Use Proxy For Calls` is hidden, and selecting or enabling an ordinary proxy
 disables the active tunnel first.
+
+`Use tunnel for calls` defaults to enabled and is persisted independently from
+the selected tunnel profile. It controls private-call relay, group/conference
+calls, and live/group streaming for newly created sessions. Telegram-authorized
+private P2P remains direct regardless of this setting. Existing active sessions
+are not rerouted when the setting changes.
 
 Each saved tunnel profile row shows the display name, protocol label, endpoint
 or status, active/connecting/failed state when relevant, and edit/delete actions.

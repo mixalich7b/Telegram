@@ -684,23 +684,25 @@ public:
         auto portAllocator = std::make_unique<cricket::BasicPortAllocator>(_networkManager.get(), _socketFactory.get(), nullptr, _relayPortFactory.get());
         const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
         if (_proxy) {
-            uint32_t flags = portAllocator->flags();
-            flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
-            flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
-            portAllocator->set_flags(flags);
+            if (!_enableP2P || !httpConnectProxy) {
+                uint32_t flags = portAllocator->flags();
+                flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
+                flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
+                portAllocator->set_flags(flags);
 
-            uint32_t candidateFilter = portAllocator->candidate_filter();
-            candidateFilter &= ~(cricket::CF_REFLEXIVE);
-            if (httpConnectProxy) {
-                candidateFilter &= ~(cricket::CF_HOST);
+                uint32_t candidateFilter = portAllocator->candidate_filter();
+                candidateFilter &= ~(cricket::CF_REFLEXIVE);
+                if (httpConnectProxy) {
+                    candidateFilter &= ~(cricket::CF_HOST);
+                }
+                portAllocator->SetCandidateFilter(candidateFilter);
             }
-            portAllocator->SetCandidateFilter(candidateFilter);
             portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
         }
         peerConnectionDependencies.allocator = std::move(portAllocator);
 
         webrtc::PeerConnectionInterface::RTCConfiguration peerConnectionConfiguration;
-        if (_enableP2P && !_proxy) {
+        if (_enableP2P && (!_proxy || httpConnectProxy)) {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kAll;
         } else {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kRelay;
@@ -717,6 +719,9 @@ public:
 
         for (auto &server : _rtcServers) {
             if (server.isTcp && !_proxy) {
+                continue;
+            }
+            if (httpConnectProxy && server.isTurn && !server.isTcp) {
                 continue;
             }
 

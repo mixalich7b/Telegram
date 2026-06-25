@@ -128,6 +128,14 @@ public final class TunnelManager {
         return WireGuardSettings.isEnabled();
     }
 
+    public static boolean isVoipRoutingEnabled() {
+        return WireGuardSettings.isVoipEnabled();
+    }
+
+    public static void setVoipRoutingEnabled(boolean enabled) {
+        WireGuardSettings.setVoipEnabled(enabled);
+    }
+
     public static TunnelProtocol getActiveProtocol() {
         WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
         return profile == null ? TunnelProtocol.WIREGUARD : profile.protocol;
@@ -197,6 +205,10 @@ public final class TunnelManager {
 
     public static TunnelProxySettings getProxySettings() {
         return controller.getProxySettings();
+    }
+
+    public static TunnelProxySettings getVoipProxySettings() {
+        return TunnelVoipRouting.selectProxySettings(isVoipRoutingEnabled(), getProxySettings());
     }
 
     public static void onNetworkChanged() {

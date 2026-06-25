@@ -131,7 +131,7 @@ void NetworkManager::start() {
         flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
     }
     const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
-    if (!_enableP2P || httpConnectProxy) {
+    if (!_enableP2P) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
@@ -160,16 +160,19 @@ void NetworkManager::start() {
     std::vector<cricket::RelayServerConfig> turnServers;
 
     for (auto &server : _rtcServers) {
-        if (server.isTcp) {
+        if (server.isTcp && !httpConnectProxy) {
             continue;
         }
         
         if (server.isTurn) {
+            if (httpConnectProxy && !server.isTcp) {
+                continue;
+            }
             turnServers.push_back(cricket::RelayServerConfig(
                 rtc::SocketAddress(server.host, server.port),
                 server.login,
                 server.password,
-                cricket::PROTO_UDP
+                server.isTcp ? cricket::PROTO_TCP : cricket::PROTO_UDP
             ));
         } else {
             rtc::SocketAddress stunAddress = rtc::SocketAddress(server.host, server.port);

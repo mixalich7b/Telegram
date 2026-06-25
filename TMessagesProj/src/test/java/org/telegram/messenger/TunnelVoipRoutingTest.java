@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class TunnelVoipRoutingTest {
@@ -21,13 +22,21 @@ public class TunnelVoipRoutingTest {
     }
 
     @Test
-    public void wireGuardTunnelDisablesP2pAndForcesTcpRelay() {
+    public void wireGuardTunnelPreservesP2pAndForcesTcpRelay() {
         assertTunnelForcesTcpRelay(new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false));
     }
 
     @Test
-    public void amneziaWGTunnelDisablesP2pAndForcesTcpRelay() {
+    public void amneziaWGTunnelPreservesP2pAndForcesTcpRelay() {
         assertTunnelForcesTcpRelay(new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 39002, "user", "pass", false));
+    }
+
+    @Test
+    public void disabledTunnelVoipRoutingRemovesProxy() {
+        TunnelProxySettings proxySettings = new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false);
+
+        assertEquals(proxySettings, TunnelVoipRouting.selectProxySettings(true, proxySettings));
+        assertNull(TunnelVoipRouting.selectProxySettings(false, proxySettings));
     }
 
     @Test
@@ -40,7 +49,7 @@ public class TunnelVoipRoutingTest {
 
     private static void assertTunnelForcesTcpRelay(TunnelProxySettings proxySettings) {
         assertTrue(TunnelVoipRouting.shouldUseTunnel(proxySettings));
-        assertFalse(TunnelVoipRouting.shouldEnableP2p(true, proxySettings));
+        assertTrue(TunnelVoipRouting.shouldEnableP2p(true, proxySettings));
         assertFalse(TunnelVoipRouting.shouldEnableP2p(false, proxySettings));
         assertEquals(TCP_RELAY, TunnelVoipRouting.selectEndpointType(false, proxySettings, UDP_RELAY, TCP_RELAY));
         assertEquals(TCP_RELAY, TunnelVoipRouting.selectEndpointType(true, proxySettings, UDP_RELAY, TCP_RELAY));
