@@ -24,6 +24,7 @@
 #include "rtc_base/byte_order.h"
 
 #include "RawTcpSocket.h"
+#include "TunnelPacketSocketFactory.h"
 
 namespace tgcalls {
 
@@ -370,6 +371,7 @@ bool ReflectorPort::CreateReflectorClientSocket() {
                 rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
                 proxy(), user_agent(), tcp_options);
         } else {
+            tcp_options.opts |= kTunnelTcpRawReflectorOption;
             socket_ = socket_factory()->CreateClientTcpSocket(
                 rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
                 proxy(), user_agent(), tcp_options);

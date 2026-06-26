@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"strconv"
@@ -76,25 +77,35 @@ func (n amneziaWGNet) LocalAddresses() []netip.Addr {
 type tunnelSocketRegistry struct {
 	mu        sync.Mutex
 	nextID    int64
-	tcp       map[int64]net.Conn
-	udp       map[int64]net.PacketConn
+	tcp       map[int64]tunnelTCPConn
+	udp       map[int64]tunnelUDPConn
 	localAddr map[int64]net.Addr
+}
+
+type tunnelTCPConn struct {
+	conn       net.Conn
+	generation uint64
+}
+
+type tunnelUDPConn struct {
+	conn       net.PacketConn
+	generation uint64
 }
 
 var sockets = tunnelSocketRegistry{
 	nextID:    1,
-	tcp:       make(map[int64]net.Conn),
-	udp:       make(map[int64]net.PacketConn),
+	tcp:       make(map[int64]tunnelTCPConn),
+	udp:       make(map[int64]tunnelUDPConn),
 	localAddr: make(map[int64]net.Addr),
 }
 
-func activeTunnelNetwork() (tunnelNetwork, error) {
+func activeTunnelNetwork() (tunnelNetwork, uint64, error) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 	if state == nil || state.network == nil {
-		return nil, errTunnelRuntimeUnavailable
+		return nil, 0, errTunnelRuntimeUnavailable
 	}
-	return state.network, nil
+	return state.network, state.generation, nil
 }
 
 func tunnelIsRunning() bool {
@@ -112,8 +123,38 @@ func tunnelLocalAddresses() []netip.Addr {
 	return state.network.LocalAddresses()
 }
 
+func tunnelGeneration() uint64 {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	if state == nil || state.network == nil {
+		return 0
+	}
+	return state.generation
+}
+
+func tunnelLookupHost(host string) ([]netip.Addr, error) {
+	network, _, err := activeTunnelNetwork()
+	if err != nil {
+		return nil, err
+	}
+	values, err := network.LookupHost(host)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]netip.Addr, 0, len(values))
+	for _, value := range values {
+		if addr, err := netip.ParseAddr(value); err == nil {
+			result = append(result, addr)
+		}
+	}
+	if len(result) == 0 {
+		return nil, errTunnelNoSuitableAddress
+	}
+	return result, nil
+}
+
 func openTunnelTCP(host string, port int) (int64, error) {
-	network, err := activeTunnelNetwork()
+	network, generation, err := activeTunnelNetwork()
 	if err != nil {
 		return 0, err
 	}
@@ -123,7 +164,7 @@ func openTunnelTCP(host string, port int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return sockets.registerTCP(conn), nil
+	return sockets.registerTCP(conn, generation), nil
 }
 
 func tunnelTCPRead(id int64, buffer []byte) (int, error) {
@@ -139,7 +180,20 @@ func tunnelTCPWrite(id int64, buffer []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return conn.Write(buffer)
+	written := 0
+	for written < len(buffer) {
+		n, err := conn.Write(buffer[written:])
+		if n > 0 {
+			written += n
+		}
+		if err != nil {
+			return written, err
+		}
+		if n == 0 {
+			return written, io.ErrShortWrite
+		}
+	}
+	return written, nil
 }
 
 func closeTunnelTCP(id int64) {
@@ -147,7 +201,7 @@ func closeTunnelTCP(id int64) {
 }
 
 func openTunnelUDP(host string, port int) (int64, error) {
-	network, err := activeTunnelNetwork()
+	network, generation, err := activeTunnelNetwork()
 	if err != nil {
 		return 0, err
 	}
@@ -155,7 +209,7 @@ func openTunnelUDP(host string, port int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return sockets.registerUDP(packetConn), nil
+	return sockets.registerUDP(packetConn, generation), nil
 }
 
 func tunnelUDPSendTo(id int64, buffer []byte, host string, port int) (int, error) {
@@ -202,49 +256,58 @@ func closeTunnelSocketsLocked() {
 	sockets.closeAll()
 }
 
-func (r *tunnelSocketRegistry) registerTCP(conn net.Conn) int64 {
+func (r *tunnelSocketRegistry) registerTCP(conn net.Conn, generation uint64) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	id := r.nextID
 	r.nextID++
-	r.tcp[id] = conn
+	r.tcp[id] = tunnelTCPConn{conn: conn, generation: generation}
 	r.localAddr[id] = conn.LocalAddr()
 	return id
 }
 
-func (r *tunnelSocketRegistry) registerUDP(conn net.PacketConn) int64 {
+func (r *tunnelSocketRegistry) registerUDP(conn net.PacketConn, generation uint64) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	id := r.nextID
 	r.nextID++
-	r.udp[id] = conn
+	r.udp[id] = tunnelUDPConn{conn: conn, generation: generation}
 	r.localAddr[id] = conn.LocalAddr()
 	return id
 }
 
 func (r *tunnelSocketRegistry) getTCP(id int64) (net.Conn, error) {
+	generation := tunnelGeneration()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	conn := r.tcp[id]
-	if conn == nil {
+	entry, ok := r.tcp[id]
+	if !ok || entry.conn == nil || entry.generation != generation {
 		return nil, errTunnelSocketNotFound
 	}
-	return conn, nil
+	return entry.conn, nil
 }
 
 func (r *tunnelSocketRegistry) getUDP(id int64) (net.PacketConn, error) {
+	generation := tunnelGeneration()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	conn := r.udp[id]
-	if conn == nil {
+	entry, ok := r.udp[id]
+	if !ok || entry.conn == nil || entry.generation != generation {
 		return nil, errTunnelSocketNotFound
 	}
-	return conn, nil
+	return entry.conn, nil
 }
 
 func (r *tunnelSocketRegistry) getLocalAddr(id int64) (net.Addr, error) {
+	generation := tunnelGeneration()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if entry, ok := r.tcp[id]; ok && entry.generation != generation {
+		return nil, errTunnelSocketNotFound
+	}
+	if entry, ok := r.udp[id]; ok && entry.generation != generation {
+		return nil, errTunnelSocketNotFound
+	}
 	addr := r.localAddr[id]
 	if addr == nil {
 		return nil, errTunnelSocketNotFound
@@ -254,23 +317,23 @@ func (r *tunnelSocketRegistry) getLocalAddr(id int64) (net.Addr, error) {
 
 func (r *tunnelSocketRegistry) closeTCP(id int64) {
 	r.mu.Lock()
-	conn := r.tcp[id]
+	entry := r.tcp[id]
 	delete(r.tcp, id)
 	delete(r.localAddr, id)
 	r.mu.Unlock()
-	if conn != nil {
-		_ = conn.Close()
+	if entry.conn != nil {
+		_ = entry.conn.Close()
 	}
 }
 
 func (r *tunnelSocketRegistry) closeUDP(id int64) {
 	r.mu.Lock()
-	conn := r.udp[id]
+	entry := r.udp[id]
 	delete(r.udp, id)
 	delete(r.localAddr, id)
 	r.mu.Unlock()
-	if conn != nil {
-		_ = conn.Close()
+	if entry.conn != nil {
+		_ = entry.conn.Close()
 	}
 }
 
@@ -278,15 +341,19 @@ func (r *tunnelSocketRegistry) closeAll() {
 	r.mu.Lock()
 	tcp := r.tcp
 	udp := r.udp
-	r.tcp = make(map[int64]net.Conn)
-	r.udp = make(map[int64]net.PacketConn)
+	r.tcp = make(map[int64]tunnelTCPConn)
+	r.udp = make(map[int64]tunnelUDPConn)
 	r.localAddr = make(map[int64]net.Addr)
 	r.mu.Unlock()
-	for _, conn := range tcp {
-		_ = conn.Close()
+	for _, entry := range tcp {
+		if entry.conn != nil {
+			_ = entry.conn.Close()
+		}
 	}
-	for _, conn := range udp {
-		_ = conn.Close()
+	for _, entry := range udp {
+		if entry.conn != nil {
+			_ = entry.conn.Close()
+		}
 	}
 }
 
@@ -319,7 +386,7 @@ func resolveRemoteUDPAddr(host string, port int) (*net.UDPAddr, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return &net.UDPAddr{IP: net.IP(addr.AsSlice()), Port: port}, nil
 	}
-	network, err := activeTunnelNetwork()
+	network, _, err := activeTunnelNetwork()
 	if err != nil {
 		return nil, err
 	}

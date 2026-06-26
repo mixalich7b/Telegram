@@ -226,6 +226,7 @@ Bridge behavior shared by both protocols:
 - authenticated SOCKS5 CONNECT for tgnet;
 - authenticated HTTP CONNECT support for compatibility tests;
 - direct TCP/UDP tunnel socket exports for WebRTC VoIP;
+- tunnel DNS lookup export for native WebRTC hostname resolution;
 - endpoint DNS preprocessing;
 - bind refresh on network change;
 - host-side endpoint/proxy/network tests.
@@ -257,15 +258,20 @@ Tunnel VoIP behavior:
 - native WebRTC paths use `TunnelPacketSocketFactory` and a synthetic tunnel
   `NetworkManager` instead of `BasicPortAllocator::set_proxy(...)` for tunnel
   proxies;
+- WebRTC hostname resolution in tunnel mode uses the Go tunnel netstack DNS via
+  `tgTunnelLookupHost`;
 - private paths keep UDP/STUN and host/reflexive ICE candidates when P2P is
   enabled, with all sockets opened through the tunnel bridge;
 - private paths retain relay-only filtering when P2P is disabled;
 - group/live paths use the same tunnel socket factory in tunnel mode;
+- reflector TCP over tunnel uses Telegram raw TCP framing, while TURN TCP keeps
+  STUN/TURN framing;
 - V2 reference networking keeps TCP TURN servers with `?transport=tcp` when a
   tunnel or ordinary proxy is present.
 
 Active sessions are not dynamically rerouted by UI changes. UDP ASSOCIATE is not
 implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
+WebRTC TLS socket wrapping over tunnel TCP is not implemented and fails closed.
 
 ## Key Files
 

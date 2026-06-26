@@ -54,18 +54,20 @@ const endpointResolveTimeout = 10 * time.Second
 type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, error)
 
 type runtimeState struct {
-	device   wireGuardDevice
-	network  tunnelNetwork
-	listener net.Listener
-	cancel   context.CancelFunc
-	username string
-	password string
-	protocol string
+	device     wireGuardDevice
+	network    tunnelNetwork
+	listener   net.Listener
+	cancel     context.CancelFunc
+	username   string
+	password   string
+	protocol   string
+	generation uint64
 }
 
 var (
-	stateMu sync.Mutex
-	state   *runtimeState
+	stateMu        sync.Mutex
+	state          *runtimeState
+	nextGeneration uint64
 )
 
 func startWireGuardRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
@@ -124,14 +126,21 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	nextGeneration++
+	generation := nextGeneration
+	if generation == 0 {
+		nextGeneration++
+		generation = nextGeneration
+	}
 	next := &runtimeState{
-		device:   device,
-		network:  network,
-		listener: listener,
-		cancel:   cancel,
-		username: socksUsername,
-		password: socksPassword,
-		protocol: protocolName,
+		device:     device,
+		network:    network,
+		listener:   listener,
+		cancel:     cancel,
+		username:   socksUsername,
+		password:   socksPassword,
+		protocol:   protocolName,
+		generation: generation,
 	}
 	state = next
 	go acceptLoop(ctx, next)

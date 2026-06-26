@@ -189,7 +189,11 @@ void NetworkManager::start() {
 
     _portAllocator->SetConfiguration(stunServers, turnServers, 2, webrtc::NO_PRUNE, _turnCustomizer.get());
 
-    _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    if (tunnelProxy) {
+        _asyncResolverFactory = CreateTunnelAsyncDnsResolverFactory(_thread);
+    } else {
+        _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    }
 
     webrtc::IceTransportInit iceTransportInit;
     iceTransportInit.set_port_allocator(_portAllocator.get());

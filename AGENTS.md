@@ -153,6 +153,10 @@ obfuscated UDP to the configured AmneziaWG peer.
 - WireGuard and AmneziaWG must be built into one Go c-shared library
   (`libtg-tunnel-go.so`) so the app process has a single Go runtime. Do not
   reintroduce separate `libtg-wg-go.so` and `libtg-awg-go.so` libraries.
+- Direct tunnel socket handles must be tied to the active runtime generation;
+  stale handles from a stopped/restarted runtime must fail closed.
+- Tunnel TCP writes must write complete protocol frames or fail; do not treat
+  partial TCP writes as successful VoIP sends.
 
 ## UI Invariants
 
@@ -192,12 +196,19 @@ obfuscated UDP to the configured AmneziaWG peer.
 - Native WebRTC paths must use `TunnelPacketSocketFactory` and the synthetic
   tunnel `NetworkManager` when a tunnel proxy is present. They must not call
   `BasicPortAllocator::set_proxy(...)` for tunnel proxies.
+- Native WebRTC DNS resolution in tunnel mode must use the `tgTunnelLookupHost`
+  bridge and tunnel netstack DNS, not the device/system resolver.
 - Native private WebRTC paths must keep UDP/STUN and host/reflexive ICE
   candidates available when P2P is enabled, while routing their sockets through
   the tunnel socket API.
 - If P2P is disabled, native private WebRTC paths must retain relay-only
   behavior by disabling UDP/STUN and filtering direct ICE candidates.
 - Native group/live WebRTC paths must use tunnel sockets in tunnel mode.
+- Telegram reflector TCP over tunnel must use the raw reflector framing
+  (`0xeeeeeeee` prologue and little-endian 32-bit packet lengths), not generic
+  WebRTC 16-bit TCP packet framing.
+- WebRTC TLS socket wrapping is not implemented for tunnel TCP sockets and must
+  fail closed unless deliberately implemented.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;

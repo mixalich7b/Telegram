@@ -7,7 +7,10 @@ package main
 // #include <string.h>
 import "C"
 
-import "unsafe"
+import (
+	"strings"
+	"unsafe"
+)
 
 //export tgWgStart
 func tgWgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int, socksHost *C.char, socksPort C.int, socksUsername *C.char, socksPassword *C.char) C.int {
@@ -79,6 +82,28 @@ func tgTunnelGetLocalAddress(index C.int, host *C.char, hostLen C.int) C.int {
 		return 4
 	}
 	return 6
+}
+
+//export tgTunnelLookupHost
+func tgTunnelLookupHost(host *C.char, addresses *C.char, addressesLen C.int) C.int {
+	if host == nil || addresses == nil || addressesLen <= 0 {
+		return -1
+	}
+	resolved, err := tunnelLookupHost(C.GoString(host))
+	if err != nil {
+		logError("tunnel DNS lookup failed: %v", err)
+		return -1
+	}
+	values := make([]string, 0, len(resolved))
+	for _, address := range resolved {
+		values = append(values, address.String())
+	}
+	joined := strings.Join(values, "\n")
+	if len(joined) >= int(addressesLen) {
+		return -2
+	}
+	copyCString(addresses, addressesLen, joined)
+	return C.int(len(values))
 }
 
 //export tgTunnelTcpConnect

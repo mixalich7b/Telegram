@@ -8,6 +8,7 @@
         tgAwgOnNetworkChanged;
         tgTunnelIsRunning;
         tgTunnelGetLocalAddress;
+        tgTunnelLookupHost;
         tgTunnelTcpConnect;
         tgTunnelTcpRead;
         tgTunnelTcpWrite;

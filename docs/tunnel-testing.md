@@ -38,6 +38,8 @@ Go bridge tests cover:
 - domain endpoint preprocessing to `IP:port` and DNS failure reporting;
 - SOCKS5 and HTTP CONNECT proxy behavior;
 - direct TCP/UDP tunnel socket exports for WebRTC VoIP;
+- tunnel DNS lookup, complete TCP writes, and stale runtime-generation socket
+  rejection;
 - proxy byte-copy paths through fake dialers;
 - network-change handling through fake bind refreshes;
 - AmneziaWG `device.IpcSet` acceptance for generated AWG UAPI, including
@@ -64,6 +66,8 @@ accidentally:
 - VoIP paths use `PROTOCOL_TUNNEL`, `TunnelPacketSocketFactory`, and the
   direct Go TCP/UDP tunnel socket bridge; private P2P UDP/STUN/ICE candidates
   remain available when Telegram allows P2P, but their sockets use the tunnel;
+- tunnel VoIP DNS uses `tgTunnelLookupHost`, reflector TCP uses raw reflector
+  framing, and WebRTC TLS socket wrapping fails closed unless implemented;
 - WireGuard and AmneziaWG Go cache/module artifacts stay out of
   `TMessagesProj/jni`;
 - WireGuard and AmneziaWG use one shared Go bridge with a linker version script

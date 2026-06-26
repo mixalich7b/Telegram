@@ -529,7 +529,8 @@ _dataChannelMessageReceived(configuration.dataChannelMessageReceived) {
     _underlyingSocketFactory = _threads->getNetworkThread()->socketserver();
     
     _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
-    if (IsTunnelProxy(_proxy)) {
+    const bool tunnelProxy = IsTunnelProxy(_proxy);
+    if (tunnelProxy) {
         _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
         _networkManager = CreateTunnelNetworkManager();
         _underlyingSocketFactory = nullptr;
@@ -541,7 +542,11 @@ _dataChannelMessageReceived(configuration.dataChannelMessageReceived) {
         _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
     }
     
-    _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    if (tunnelProxy) {
+        _asyncResolverFactory = CreateTunnelAsyncDnsResolverFactory(_threads->getNetworkThread());
+    } else {
+        _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    }
     
     if (getCustomParameterBool(_customParameters, "network_use_mtproto")) {
         

@@ -400,7 +400,11 @@ _proxy(std::move(proxy)) {
         _socketFactory.reset(new rtc::BasicPacketSocketFactory(_threads->getNetworkThread()->socketserver()));
         _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
     }
-    _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    if (tunnelProxy) {
+        _asyncResolverFactory = CreateTunnelAsyncDnsResolverFactory(_threads->getNetworkThread());
+    } else {
+        _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
+    }
 
     _dtlsSrtpTransport = std::make_unique<WrappedDtlsSrtpTransport>(true, fieldTrials, [this](webrtc::RtpPacketReceived const &packet, bool isUnresolved) {
         this->RtpPacketReceived_n(packet, isUnresolved);

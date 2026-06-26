@@ -683,6 +683,7 @@ public:
             _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
             _networkManager = CreateTunnelNetworkManager();
             _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, nullptr);
+            peerConnectionDependencies.async_dns_resolver_factory = CreateTunnelAsyncDnsResolverFactory(_threads->getNetworkThread());
         } else {
             _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
             _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
