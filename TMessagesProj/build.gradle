@@ -478,7 +478,7 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def tunnelPacketSocketFactoryText = file("jni/voip/tgcalls/TunnelPacketSocketFactory.cpp").text
-        ["tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "ADAPTER_TYPE_VPN", "CreateClientTcpSocket", "CreateUdpSocket", "kTunnelTcpRawReflectorOption", "kRawTcpPrologue", "RawReflector", "does not support WebRTC TLS socket wrapping"].each { token ->
+        ["tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "ADAPTER_TYPE_VPN", "CreateClientTcpSocket", "CreateUdpSocket", "TunnelTcpAsyncSocket", "SSLAdapter::Create", "StartSSL", "AsyncSSLSocket", "AsyncStunTCPSocket", "OPT_TLS_INSECURE", "kTunnelTcpRawReflectorOption", "kRawTcpPrologue", "RawReflector"].each { token ->
             if (!tunnelPacketSocketFactoryText.contains(token)) {
                 throw new GradleException("TunnelPacketSocketFactory must provide VPN-like VoIP sockets token '${token}'")
             }

@@ -266,12 +266,13 @@ Tunnel VoIP behavior:
 - group/live paths use the same tunnel socket factory in tunnel mode;
 - reflector TCP over tunnel uses Telegram raw TCP framing, while TURN TCP keeps
   STUN/TURN framing;
+- WebRTC TLS socket wrapping in tunnel mode uses `SSLAdapter` over the Go
+  tunnel TCP handle; raw reflector TCP does not use TLS wrapping;
 - V2 reference networking keeps TCP TURN servers with `?transport=tcp` when a
   tunnel or ordinary proxy is present.
 
 Active sessions are not dynamically rerouted by UI changes. UDP ASSOCIATE is not
 implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
-WebRTC TLS socket wrapping over tunnel TCP is not implemented and fails closed.
 
 ## Key Files
 

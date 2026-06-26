@@ -207,8 +207,9 @@ obfuscated UDP to the configured AmneziaWG peer.
 - Telegram reflector TCP over tunnel must use the raw reflector framing
   (`0xeeeeeeee` prologue and little-endian 32-bit packet lengths), not generic
   WebRTC 16-bit TCP packet framing.
-- WebRTC TLS socket wrapping is not implemented for tunnel TCP sockets and must
-  fail closed unless deliberately implemented.
+- WebRTC TLS socket wrapping for tunnel TCP sockets must use `SSLAdapter`
+  over the Go tunnel TCP handle, not a device socket or a separate Go TLS stack.
+  Raw reflector TCP does not use TLS wrapping.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;

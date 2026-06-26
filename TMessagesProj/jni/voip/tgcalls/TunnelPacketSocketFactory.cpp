@@ -1,11 +1,15 @@
 #include "TunnelPacketSocketFactory.h"
 
 #include "api/async_dns_resolver.h"
+#include "p2p/base/async_stun_tcp_socket.h"
+#include "rtc_base/async_tcp_socket.h"
 #include "rtc_base/async_dns_resolver.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/network/sent_packet.h"
+#include "rtc_base/socket_adapters.h"
+#include "rtc_base/ssl_adapter.h"
 #include "rtc_base/time_utils.h"
 
 #include <android/log.h>
@@ -14,9 +18,11 @@
 #include <errno.h>
 #include <netdb.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -371,6 +377,259 @@ enum class TunnelTcpFraming {
     RawReflector,
 };
 
+class TunnelTcpAsyncSocket final : public rtc::Socket {
+public:
+    explicit TunnelTcpAsyncSocket(rtc::Thread *thread) :
+    _thread(thread),
+    _alive(std::make_shared<std::atomic<bool>>(true)) {
+    }
+
+    ~TunnelTcpAsyncSocket() override {
+        _alive->store(false);
+        Close();
+    }
+
+    rtc::SocketAddress GetLocalAddress() const override {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _localAddress;
+    }
+
+    rtc::SocketAddress GetRemoteAddress() const override {
+        std::lock_guard<std::mutex> lock(_mutex);
+        return _remoteAddress;
+    }
+
+    int Bind(const rtc::SocketAddress &addr) override {
+        if (GetState() != rtc::Socket::CS_CLOSED) {
+            SetError(EINVAL);
+            return -1;
+        }
+        std::lock_guard<std::mutex> lock(_mutex);
+        _localAddress = addr;
+        return 0;
+    }
+
+    int Connect(const rtc::SocketAddress &addr) override {
+        if (GetState() != rtc::Socket::CS_CLOSED) {
+            SetError(EALREADY);
+            return -1;
+        }
+        if (!TunnelBridge::Shared().running()) {
+            SetError(ENETDOWN);
+            return -1;
+        }
+        const std::string host = SocketHost(addr);
+        int64_t handle = TunnelBridge::Shared().tcpConnect(host.c_str(), addr.port());
+        if (handle <= 0) {
+            SetError(EHOSTUNREACH);
+            return -1;
+        }
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _remoteAddress = addr;
+        }
+        _handle.store(handle);
+        _state.store(rtc::Socket::CS_CONNECTED);
+        _reader = std::thread([this] {
+            readLoop();
+        });
+        postConnectAndWritable();
+        return 0;
+    }
+
+    int Send(const void *data, size_t size) override {
+        if (size == 0) {
+            return 0;
+        }
+        if (size > static_cast<size_t>(INT32_MAX)) {
+            SetError(EMSGSIZE);
+            return -1;
+        }
+        int64_t handle = _handle.load();
+        if (handle == 0 || GetState() != rtc::Socket::CS_CONNECTED || !TunnelBridge::Shared().load()) {
+            SetError(ENOTCONN);
+            return -1;
+        }
+        int written = TunnelBridge::Shared().tcpWrite(handle, data, static_cast<int>(size));
+        if (written != static_cast<int>(size)) {
+            SetError(EIO);
+            closeHandle(EIO, true);
+            return -1;
+        }
+        postWritable();
+        return static_cast<int>(size);
+    }
+
+    int SendTo(const void *data, size_t size, const rtc::SocketAddress &addr) override {
+        if (addr == GetRemoteAddress()) {
+            return Send(data, size);
+        }
+        SetError(ENOTCONN);
+        return -1;
+    }
+
+    int Recv(void *data, size_t size, int64_t *) override {
+        if (size == 0) {
+            return 0;
+        }
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_input.empty()) {
+            if (_state.load() == rtc::Socket::CS_CLOSED) {
+                _error.store(ENOTCONN);
+                return 0;
+            }
+            _error.store(EWOULDBLOCK);
+            return -1;
+        }
+        const size_t available = std::min(size, _input.size());
+        memcpy(data, _input.data(), available);
+        if (available < _input.size()) {
+            memmove(_input.data(), _input.data() + available, _input.size() - available);
+        }
+        _input.resize(_input.size() - available);
+        _error.store(0);
+        return static_cast<int>(available);
+    }
+
+    int RecvFrom(void *data, size_t size, rtc::SocketAddress *addr, int64_t *timestamp) override {
+        int read = Recv(data, size, timestamp);
+        if (read >= 0 && addr != nullptr) {
+            *addr = GetRemoteAddress();
+        }
+        return read;
+    }
+
+    int Listen(int) override {
+        SetError(EOPNOTSUPP);
+        return -1;
+    }
+
+    rtc::Socket *Accept(rtc::SocketAddress *) override {
+        SetError(EOPNOTSUPP);
+        return nullptr;
+    }
+
+    int Close() override {
+        _alive->store(false);
+        closeHandle(0, false);
+        if (_reader.joinable() && _reader.get_id() != std::this_thread::get_id()) {
+            _reader.join();
+        }
+        return 0;
+    }
+
+    int GetError() const override {
+        return _error.load();
+    }
+
+    void SetError(int error) override {
+        _error.store(error);
+    }
+
+    rtc::Socket::ConnState GetState() const override {
+        return static_cast<rtc::Socket::ConnState>(_state.load());
+    }
+
+    int GetOption(rtc::Socket::Option, int *value) override {
+        if (value != nullptr) {
+            *value = 0;
+        }
+        return 0;
+    }
+
+    int SetOption(rtc::Socket::Option, int) override {
+        return 0;
+    }
+
+private:
+    void readLoop() {
+        std::vector<uint8_t> buffer(4096);
+        while (_handle.load() != 0) {
+            int read = TunnelBridge::Shared().tcpRead(_handle.load(), buffer.data(), static_cast<int>(buffer.size()));
+            if (read <= 0) {
+                break;
+            }
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                _input.insert(_input.end(), buffer.begin(), buffer.begin() + read);
+            }
+            postRead();
+        }
+        closeHandle(0, true);
+    }
+
+    void closeHandle(int error, bool notify) {
+        int64_t handle = _handle.exchange(0);
+        _state.store(rtc::Socket::CS_CLOSED);
+        if (error != 0) {
+            _error.store(error);
+        }
+        if (handle != 0 && TunnelBridge::Shared().load()) {
+            TunnelBridge::Shared().tcpClose(handle);
+        }
+        if (notify && !_closeNotified.exchange(true)) {
+            postClose(error);
+        }
+    }
+
+    void postConnectAndWritable() {
+        auto alive = _alive;
+        rtc::Thread *thread = _thread;
+        thread->PostTask([alive, this] {
+            if (!alive->load()) {
+                return;
+            }
+            SignalConnectEvent(this);
+            SignalWriteEvent(this);
+        });
+    }
+
+    void postWritable() {
+        auto alive = _alive;
+        rtc::Thread *thread = _thread;
+        thread->PostTask([alive, this] {
+            if (!alive->load()) {
+                return;
+            }
+            SignalWriteEvent(this);
+        });
+    }
+
+    void postRead() {
+        auto alive = _alive;
+        rtc::Thread *thread = _thread;
+        thread->PostTask([alive, this] {
+            if (!alive->load()) {
+                return;
+            }
+            SignalReadEvent(this);
+        });
+    }
+
+    void postClose(int error) {
+        auto alive = _alive;
+        rtc::Thread *thread = _thread;
+        thread->PostTask([alive, this, error] {
+            if (!alive->load()) {
+                return;
+            }
+            SignalCloseEvent(this, error);
+        });
+    }
+
+    rtc::Thread *_thread = nullptr;
+    std::shared_ptr<std::atomic<bool>> _alive;
+    std::atomic<int64_t> _handle{0};
+    std::atomic<int> _state{rtc::Socket::CS_CLOSED};
+    std::atomic<int> _error{0};
+    std::atomic<bool> _closeNotified{false};
+    mutable std::mutex _mutex;
+    rtc::SocketAddress _localAddress;
+    rtc::SocketAddress _remoteAddress;
+    std::thread _reader;
+    std::vector<uint8_t> _input;
+};
+
 class TunnelTcpPacketSocket final : public TunnelAsyncPacketSocket {
 public:
     TunnelTcpPacketSocket(rtc::Thread *thread, int64_t handle, rtc::SocketAddress localAddress, rtc::SocketAddress remoteAddress, TunnelTcpFraming framing) :
@@ -678,8 +937,13 @@ public:
             return nullptr;
         }
         const int tlsOptions = tcpOptions.opts & (rtc::PacketSocketFactory::OPT_TLS | rtc::PacketSocketFactory::OPT_TLS_FAKE | rtc::PacketSocketFactory::OPT_TLS_INSECURE);
+        RTC_DCHECK((tlsOptions & (tlsOptions - 1)) == 0);
+        const bool rawReflector = (tcpOptions.opts & kTunnelTcpRawReflectorOption) != 0;
+        if (!rawReflector) {
+            return CreateWebRtcTcpSocket(localAddress, remoteAddress, tcpOptions, tlsOptions);
+        }
         if (tlsOptions != 0) {
-            RTC_LOG(LS_ERROR) << "Tunnel TCP socket does not support WebRTC TLS socket wrapping; failing closed";
+            RTC_LOG(LS_ERROR) << "Tunnel raw reflector TCP does not support TLS wrapping; failing closed";
             return nullptr;
         }
         const std::string host = SocketHost(remoteAddress);
@@ -688,12 +952,7 @@ public:
             RTC_LOG(LS_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString();
             return nullptr;
         }
-        TunnelTcpFraming framing = TunnelTcpFraming::Length16;
-        if ((tcpOptions.opts & kTunnelTcpRawReflectorOption) != 0) {
-            framing = TunnelTcpFraming::RawReflector;
-        } else if ((tcpOptions.opts & rtc::PacketSocketFactory::OPT_STUN) != 0) {
-            framing = TunnelTcpFraming::StunTurn;
-        }
+        TunnelTcpFraming framing = TunnelTcpFraming::RawReflector;
         RTC_LOG(LS_INFO) << "Tunnel TCP socket opened for " << remoteAddress.ToSensitiveString() << " framing=" << static_cast<int>(framing);
         return new TunnelTcpPacketSocket(_thread, handle, localAddress, remoteAddress, framing);
     }
@@ -703,6 +962,51 @@ public:
     }
 
 private:
+    rtc::AsyncPacketSocket *CreateWebRtcTcpSocket(const rtc::SocketAddress &localAddress, const rtc::SocketAddress &remoteAddress, const rtc::PacketSocketTcpOptions &tcpOptions, int tlsOptions) {
+        rtc::Socket *socket = new TunnelTcpAsyncSocket(_thread);
+        if (socket->Bind(localAddress) < 0) {
+            RTC_LOG(LS_ERROR) << "Tunnel TCP bind failed with error " << socket->GetError();
+            delete socket;
+            return nullptr;
+        }
+        if (socket->SetOption(rtc::Socket::OPT_NODELAY, 1) != 0) {
+            RTC_LOG(LS_WARNING) << "Tunnel TCP_NODELAY option ignored with error " << socket->GetError();
+        }
+        if ((tlsOptions & rtc::PacketSocketFactory::OPT_TLS) != 0 || (tlsOptions & rtc::PacketSocketFactory::OPT_TLS_INSECURE) != 0) {
+            rtc::SSLAdapter *sslAdapter = rtc::SSLAdapter::Create(socket);
+            if (sslAdapter == nullptr) {
+                RTC_LOG(LS_ERROR) << "Tunnel TCP SSLAdapter creation failed";
+                delete socket;
+                return nullptr;
+            }
+            if ((tlsOptions & rtc::PacketSocketFactory::OPT_TLS_INSECURE) != 0) {
+                sslAdapter->SetIgnoreBadCert(true);
+            }
+            sslAdapter->SetAlpnProtocols(tcpOptions.tls_alpn_protocols);
+            sslAdapter->SetEllipticCurves(tcpOptions.tls_elliptic_curves);
+            sslAdapter->SetCertVerifier(tcpOptions.tls_cert_verifier);
+            socket = sslAdapter;
+            if (sslAdapter->StartSSL(remoteAddress.hostname().c_str()) != 0) {
+                RTC_LOG(LS_ERROR) << "Tunnel TCP StartSSL failed for " << remoteAddress.ToSensitiveString();
+                delete sslAdapter;
+                return nullptr;
+            }
+        } else if ((tlsOptions & rtc::PacketSocketFactory::OPT_TLS_FAKE) != 0) {
+            socket = new rtc::AsyncSSLSocket(socket);
+        }
+        if (socket->Connect(remoteAddress) < 0) {
+            RTC_LOG(LS_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString() << " error=" << socket->GetError();
+            delete socket;
+            return nullptr;
+        }
+        if ((tcpOptions.opts & rtc::PacketSocketFactory::OPT_STUN) != 0) {
+            RTC_LOG(LS_INFO) << "Tunnel TCP STUN/TURN socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
+            return new cricket::AsyncStunTCPSocket(socket);
+        }
+        RTC_LOG(LS_INFO) << "Tunnel TCP packet socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
+        return new rtc::AsyncTCPSocket(socket);
+    }
+
     rtc::Thread *_thread = nullptr;
 };
 

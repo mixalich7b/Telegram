@@ -67,7 +67,8 @@ accidentally:
   direct Go TCP/UDP tunnel socket bridge; private P2P UDP/STUN/ICE candidates
   remain available when Telegram allows P2P, but their sockets use the tunnel;
 - tunnel VoIP DNS uses `tgTunnelLookupHost`, reflector TCP uses raw reflector
-  framing, and WebRTC TLS socket wrapping fails closed unless implemented;
+  framing, and WebRTC TLS socket wrapping uses `SSLAdapter` over the Go tunnel
+  TCP handle;
 - WireGuard and AmneziaWG Go cache/module artifacts stay out of
   `TMessagesProj/jni`;
 - WireGuard and AmneziaWG use one shared Go bridge with a linker version script
