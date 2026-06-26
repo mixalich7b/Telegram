@@ -25,10 +25,11 @@ When a tunnel is active, ordinary proxy rows remain visible but inactive,
 disables the active tunnel first.
 
 `Use tunnel for calls` defaults to enabled and is persisted independently from
-the selected tunnel profile. It controls private-call relay, group/conference
-calls, and live/group streaming for newly created sessions. Telegram-authorized
-private P2P remains direct regardless of this setting. Existing active sessions
-are not rerouted when the setting changes.
+the selected tunnel profile. It controls private-call P2P, private-call relay,
+group/conference calls, and live/group streaming for newly created sessions.
+Telegram-authorized private P2P availability still follows Telegram's server
+policy, but its UDP sockets use the tunnel while this setting is enabled.
+Existing active sessions are not rerouted when the setting changes.
 
 Each saved tunnel profile row shows the display name, protocol label, endpoint
 or status, active/connecting/failed state when relevant, and edit/delete actions.

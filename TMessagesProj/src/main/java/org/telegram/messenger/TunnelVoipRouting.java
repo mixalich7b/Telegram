@@ -18,6 +18,6 @@ public final class TunnelVoipRouting {
     }
 
     public static int selectEndpointType(boolean requestedTcpRelay, TunnelProxySettings proxySettings, int udpRelayType, int tcpRelayType) {
-        return requestedTcpRelay || proxySettings != null ? tcpRelayType : udpRelayType;
+        return requestedTcpRelay ? tcpRelayType : udpRelayType;
     }
 }

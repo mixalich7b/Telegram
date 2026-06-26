@@ -364,10 +364,16 @@ bool ReflectorPort::CreateReflectorClientSocket() {
 
         rtc::PacketSocketTcpOptions tcp_options;
         tcp_options.opts = opts;
-        socket_ = CreateClientRawTcpSocket(
-            underlying_socket_factory_,
-            rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
-            proxy(), user_agent(), tcp_options);
+        if (underlying_socket_factory_) {
+            socket_ = CreateClientRawTcpSocket(
+                underlying_socket_factory_,
+                rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
+                proxy(), user_agent(), tcp_options);
+        } else {
+            socket_ = socket_factory()->CreateClientTcpSocket(
+                rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
+                proxy(), user_agent(), tcp_options);
+        }
     }
 
     if (!socket_) {

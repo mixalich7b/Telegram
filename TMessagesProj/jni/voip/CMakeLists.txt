@@ -492,6 +492,7 @@ add_library(tgcalls STATIC
         voip/tgcalls/CodecSelectHelper.cpp
         voip/tgcalls/Message.cpp
         voip/tgcalls/InstanceImpl.cpp
+        voip/tgcalls/TunnelPacketSocketFactory.cpp
         voip/tgcalls/group/GroupNetworkManager.cpp
         voip/tgcalls/group/GroupJoinPayloadInternal.cpp
         voip/tgcalls/group/GroupInstanceCustomImpl.cpp

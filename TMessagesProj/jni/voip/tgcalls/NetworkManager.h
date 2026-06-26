@@ -17,8 +17,8 @@
 #include <memory>
 
 namespace rtc {
-class BasicPacketSocketFactory;
-class BasicNetworkManager;
+class PacketSocketFactory;
+class NetworkManager;
 class PacketTransportInternal;
 struct NetworkRoute;
 } // namespace rtc
@@ -97,8 +97,8 @@ private:
 	std::function<void(Message &&)> _sendSignalingMessage;
 
     std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
-	std::unique_ptr<rtc::BasicPacketSocketFactory> _socketFactory;
-	std::unique_ptr<rtc::BasicNetworkManager> _networkManager;
+	std::unique_ptr<rtc::PacketSocketFactory> _socketFactory;
+	std::unique_ptr<rtc::NetworkManager> _networkManager;
     std::unique_ptr<webrtc::TurnCustomizer> _turnCustomizer;
     std::unique_ptr<cricket::RelayPortFactoryInterface> _relayPortFactory;
 	std::unique_ptr<cricket::BasicPortAllocator> _portAllocator;

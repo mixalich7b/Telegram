@@ -22,13 +22,13 @@ public class TunnelVoipRoutingTest {
     }
 
     @Test
-    public void wireGuardTunnelPreservesP2pAndForcesTcpRelay() {
-        assertTunnelForcesTcpRelay(new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false));
+    public void wireGuardTunnelPreservesP2pAndRelayType() {
+        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false));
     }
 
     @Test
-    public void amneziaWGTunnelPreservesP2pAndForcesTcpRelay() {
-        assertTunnelForcesTcpRelay(new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 39002, "user", "pass", false));
+    public void amneziaWGTunnelPreservesP2pAndRelayType() {
+        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 39002, "user", "pass", false));
     }
 
     @Test
@@ -43,15 +43,15 @@ public class TunnelVoipRoutingTest {
     public void blockedTunnelStillUsesTunnelVoipPolicy() {
         TunnelProxySettings blocked = new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 1, "", "", true);
 
-        assertTunnelForcesTcpRelay(blocked);
+        assertTunnelPreservesVoipPolicy(blocked);
         assertTrue(blocked.blocked);
     }
 
-    private static void assertTunnelForcesTcpRelay(TunnelProxySettings proxySettings) {
+    private static void assertTunnelPreservesVoipPolicy(TunnelProxySettings proxySettings) {
         assertTrue(TunnelVoipRouting.shouldUseTunnel(proxySettings));
         assertTrue(TunnelVoipRouting.shouldEnableP2p(true, proxySettings));
         assertFalse(TunnelVoipRouting.shouldEnableP2p(false, proxySettings));
-        assertEquals(TCP_RELAY, TunnelVoipRouting.selectEndpointType(false, proxySettings, UDP_RELAY, TCP_RELAY));
+        assertEquals(UDP_RELAY, TunnelVoipRouting.selectEndpointType(false, proxySettings, UDP_RELAY, TCP_RELAY));
         assertEquals(TCP_RELAY, TunnelVoipRouting.selectEndpointType(true, proxySettings, UDP_RELAY, TCP_RELAY));
     }
 }

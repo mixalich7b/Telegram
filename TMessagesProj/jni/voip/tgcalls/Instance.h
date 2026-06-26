@@ -42,6 +42,7 @@ struct Proxy {
 	enum class Protocol {
 		Socks5,
 		HttpConnect,
+		Tunnel,
 	};
 
 	std::string host;

@@ -6,6 +6,17 @@
         tgAwgStart;
         tgAwgStop;
         tgAwgOnNetworkChanged;
+        tgTunnelIsRunning;
+        tgTunnelGetLocalAddress;
+        tgTunnelTcpConnect;
+        tgTunnelTcpRead;
+        tgTunnelTcpWrite;
+        tgTunnelTcpClose;
+        tgTunnelUdpOpen;
+        tgTunnelUdpSendTo;
+        tgTunnelUdpRecvFrom;
+        tgTunnelUdpLocalAddress;
+        tgTunnelUdpClose;
     local:
         *;
 };

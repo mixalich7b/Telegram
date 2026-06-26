@@ -1900,7 +1900,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		if (proxySettings == null) {
 			return null;
 		}
-		return new Instance.Proxy(proxySettings.host, proxySettings.port, proxySettings.username, proxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
+		return new Instance.Proxy("", 0, "", "", Instance.Proxy.PROTOCOL_TUNNEL);
 	}
 
 	public void migrateToChat(TLRPC.Chat newChat) {

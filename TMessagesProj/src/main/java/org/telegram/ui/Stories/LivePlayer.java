@@ -229,7 +229,7 @@ public class LivePlayer implements NotificationCenter.NotificationCenterDelegate
         if (destroyed) return;
 
         final TunnelProxySettings tunnelProxySettings = TunnelManager.getVoipProxySettings();
-        final Instance.Proxy tunnelProxy = tunnelProxySettings == null ? null : new Instance.Proxy(tunnelProxySettings.host, tunnelProxySettings.port, tunnelProxySettings.username, tunnelProxySettings.password, Instance.Proxy.PROTOCOL_HTTP_CONNECT);
+        final Instance.Proxy tunnelProxy = tunnelProxySettings == null ? null : new Instance.Proxy("", 0, "", "", Instance.Proxy.PROTOCOL_TUNNEL);
         instance = NativeInstance.makeGroup(
                 VoIPHelper.getLogFilePath("live_" + inputCall.id),
                 0,

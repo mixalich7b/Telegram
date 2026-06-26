@@ -20,6 +20,7 @@
 #include "SctpDataChannelProviderInterfaceImpl.h"
 #include "StaticThreads.h"
 #include "platform/PlatformInterface.h"
+#include "TunnelPacketSocketFactory.h"
 #include "p2p/base/turn_port.h"
 
 #include "ReflectorPort.h"
@@ -528,7 +529,11 @@ _dataChannelMessageReceived(configuration.dataChannelMessageReceived) {
     _underlyingSocketFactory = _threads->getNetworkThread()->socketserver();
     
     _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
-    if (getCustomParameterBool(_customParameters, "network_standalone_reflectors")) {
+    if (IsTunnelProxy(_proxy)) {
+        _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
+        _networkManager = CreateTunnelNetworkManager();
+        _underlyingSocketFactory = nullptr;
+    } else if (getCustomParameterBool(_customParameters, "network_standalone_reflectors")) {
         _socketFactory = std::make_unique<WrappedBasicPacketSocketFactory>(std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver()), true);
         _networkManager = std::make_unique<WrappedNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
     } else {
@@ -606,12 +611,14 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         cricket::PORTALLOCATOR_ENABLE_IPV6 |
         cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
 
+    const bool tunnelProxy = IsTunnelProxy(_proxy);
     const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
-    if (!_enableTCP && !_proxy) {
+    const bool nativeProxy = _proxy && !tunnelProxy;
+    if (!_enableTCP && !nativeProxy && !tunnelProxy) {
         flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
     }
     
-    if (!_enableP2P || (_proxy && !httpConnectProxy)) {
+    if (!_enableP2P || (nativeProxy && !httpConnectProxy)) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
@@ -621,7 +628,7 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         }
         _portAllocator->SetCandidateFilter(candidateFilter);
     }
-    if (_proxy) {
+    if (nativeProxy) {
         _portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
     }
     

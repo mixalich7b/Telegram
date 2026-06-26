@@ -26,6 +26,8 @@
 namespace rtc {
 class BasicPacketSocketFactory;
 class BasicNetworkManager;
+class PacketSocketFactory;
+class NetworkManager;
 class PacketTransportInternal;
 struct NetworkRoute;
 } // namespace rtc

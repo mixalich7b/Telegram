@@ -23,10 +23,11 @@ public class WireGuardVoipRoutingTest {
     }
 
     @Test
-    public void endpointTypeIsForcedToTcpRelayWhenWireGuardProxyIsPresent() {
+    public void endpointTypeFollowsDebugTcpPreferenceWhenWireGuardProxyIsPresent() {
         WireGuardProxySettings proxySettings = new WireGuardProxySettings("127.0.0.1", 12345, "user", "pass", false);
 
-        assertEquals(3, WireGuardVoipRouting.selectEndpointType(false, proxySettings, 2, 3));
+        assertEquals(2, WireGuardVoipRouting.selectEndpointType(false, proxySettings, 2, 3));
+        assertEquals(3, WireGuardVoipRouting.selectEndpointType(true, proxySettings, 2, 3));
     }
 
     @Test
@@ -41,6 +42,6 @@ public class WireGuardVoipRoutingTest {
 
         assertTrue(WireGuardVoipRouting.shouldUseWireGuard(proxySettings));
         assertTrue(WireGuardVoipRouting.shouldEnableP2p(true, proxySettings));
-        assertEquals(3, WireGuardVoipRouting.selectEndpointType(false, proxySettings, 2, 3));
+        assertEquals(2, WireGuardVoipRouting.selectEndpointType(false, proxySettings, 2, 3));
     }
 }

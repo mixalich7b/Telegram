@@ -28,7 +28,8 @@ Reviewed upstream references:
 
 ## Routing
 
-Both protocols use loopback proxies owned by the Telegram process:
+Both protocols use a loopback proxy for `tgnet` and a direct tunnel socket
+bridge for WebRTC VoIP:
 
 ```text
 tgnet TCP traffic
@@ -37,20 +38,18 @@ tgnet TCP traffic
   -> UDP to the configured peer
   -> Telegram datacenters
 
-WebRTC VoIP TCP relay traffic
-  -> authenticated HTTP CONNECT on 127.0.0.1
-  -> wireguard-go or amneziawg-go tun/netstack
+WebRTC VoIP relay and P2P traffic, when Use Tunnel For Calls is enabled
+  -> Instance.Proxy.PROTOCOL_TUNNEL marker
+  -> native TunnelPacketSocketFactory
+  -> direct TCP/UDP socket API in wireguard-go or amneziawg-go tun/netstack
   -> UDP to the configured peer
-  -> Telegram relay/datacenter
-
-Private-call P2P traffic, when Telegram allows P2P
-  -> direct UDP outside the tunnel
+  -> Telegram relay/datacenter/peer path
 ```
 
 The app never creates an Android VPN session. When a tunnel is user-enabled,
-tgnet and VoIP relay traffic selected for tunnel routing fail closed. Explicitly
-disabled tunnel-for-calls routing and Telegram-authorized private P2P are
-deliberate direct routes, not fallback behavior.
+tgnet and VoIP traffic selected for tunnel routing fail closed. Explicitly
+disabled tunnel-for-calls routing is a deliberate direct route, not fallback
+behavior.
 
 ## Route Policy
 
@@ -215,8 +214,8 @@ WireGuard and AmneziaWG share one Go `c-shared` library. Loading two independent
 Go shared libraries in the same Android process can corrupt the Go runtime when
 users switch between protocol profiles, so `libtg-wg-go.so` and
 `libtg-awg-go.so` must not be rebuilt or packaged. The shared bridge is built
-with a linker version script that exports only `tgWg*` and `tgAwg*` C API
-symbols; Go runtime and cgo helper symbols remain local.
+with a linker version script that exports only `tgWg*`, `tgAwg*`, and
+`tgTunnel*` C API symbols; Go runtime and cgo helper symbols remain local.
 
 Android bridge builds use the managed Go 1.24.4 toolchain from the native build
 directory instead of whatever `go` binary is first on `PATH`.
@@ -225,7 +224,8 @@ Bridge behavior shared by both protocols:
 
 - `netstack.CreateNetTUN`;
 - authenticated SOCKS5 CONNECT for tgnet;
-- authenticated HTTP CONNECT for VoIP;
+- authenticated HTTP CONNECT support for compatibility tests;
+- direct TCP/UDP tunnel socket exports for WebRTC VoIP;
 - endpoint DNS preprocessing;
 - bind refresh on network change;
 - host-side endpoint/proxy/network tests.
@@ -245,25 +245,27 @@ New private/group/live VoIP sessions read
 
 Tunnel VoIP behavior:
 
-- internal tunnel proxies use HTTP CONNECT;
+- Java passes an internal `Instance.Proxy.PROTOCOL_TUNNEL` marker, not a
+  loopback proxy endpoint;
 - private calls ignore user proxy preferences while a tunnel is active;
-- `Use Tunnel For Calls` controls private relay, group/conference, and
-  live/group streaming routing and defaults to enabled;
-- Telegram-authorized private P2P remains enabled and uses direct host/reflexive
-  UDP candidates outside the tunnel;
-- private relay is forced to TCP while tunnel-for-calls is enabled;
-- native WebRTC paths call `BasicPortAllocator::set_proxy(...)`;
-- private paths keep UDP/STUN and direct host/reflexive ICE candidates when P2P
-  is enabled, but exclude non-TCP TURN servers so relay cannot bypass the
-  tunnel;
+- `Use Tunnel For Calls` controls private P2P, private relay,
+  group/conference, and live/group streaming routing and defaults to enabled;
+- Telegram-authorized private P2P remains enabled, but host/reflexive UDP
+  candidates use the tunnel socket API while tunnel-for-calls is enabled;
+- private relay may use UDP or TCP while tunnel-for-calls is enabled; both
+  socket types go through `TunnelPacketSocketFactory`;
+- native WebRTC paths use `TunnelPacketSocketFactory` and a synthetic tunnel
+  `NetworkManager` instead of `BasicPortAllocator::set_proxy(...)` for tunnel
+  proxies;
+- private paths keep UDP/STUN and host/reflexive ICE candidates when P2P is
+  enabled, with all sockets opened through the tunnel bridge;
 - private paths retain relay-only filtering when P2P is disabled;
-- group/live paths continue to disable UDP/STUN and direct host/reflexive ICE
-  candidates while using the tunnel;
+- group/live paths use the same tunnel socket factory in tunnel mode;
 - V2 reference networking keeps TCP TURN servers with `?transport=tcp` when a
-  proxy is present.
+  tunnel or ordinary proxy is present.
 
 Active sessions are not dynamically rerouted by UI changes. UDP ASSOCIATE is not
-implemented for tunnel relay; direct private P2P can use UDP.
+implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
 
 ## Key Files
 

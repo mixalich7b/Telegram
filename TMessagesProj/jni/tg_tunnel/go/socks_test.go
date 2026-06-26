@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 )
@@ -104,7 +105,7 @@ func TestHandleSocksProxiesBytesThroughDialer(t *testing.T) {
 
 	dialer := &echoDialer{}
 	state := &runtimeState{
-		dialer:   dialer,
+		network:  fakeTunnelNetwork{dialer: dialer},
 		username: "user",
 		password: "pass",
 	}
@@ -132,7 +133,7 @@ func TestHandleSocksWritesFailureWhenDialFails(t *testing.T) {
 	setDeadline(t, server)
 
 	state := &runtimeState{
-		dialer: &errorDialer{},
+		network: fakeTunnelNetwork{dialer: &errorDialer{}},
 	}
 	go handleSocks(context.Background(), state, server)
 
@@ -193,7 +194,7 @@ func TestHandleHttpConnectProxiesBytesThroughDialer(t *testing.T) {
 
 	dialer := &echoDialer{}
 	state := &runtimeState{
-		dialer:   dialer,
+		network:  fakeTunnelNetwork{dialer: dialer},
 		username: "user",
 		password: "pass",
 	}
@@ -217,7 +218,7 @@ func TestHandleHttpConnectWritesFailureWhenDialFails(t *testing.T) {
 	setDeadline(t, server)
 
 	state := &runtimeState{
-		dialer: &errorDialer{},
+		network: fakeTunnelNetwork{dialer: &errorDialer{}},
 	}
 	go handleProxyConnection(context.Background(), state, server)
 
@@ -349,4 +350,24 @@ type errorDialer struct {
 
 func (d *errorDialer) DialContext(ctx context.Context, network string, address string) (net.Conn, error) {
 	return nil, errors.New("dial failed")
+}
+
+type fakeTunnelNetwork struct {
+	dialer tcpDialer
+}
+
+func (n fakeTunnelNetwork) DialContext(ctx context.Context, network string, address string) (net.Conn, error) {
+	return n.dialer.DialContext(ctx, network, address)
+}
+
+func (n fakeTunnelNetwork) ListenPacket(ctx context.Context, network string, address string) (net.PacketConn, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (n fakeTunnelNetwork) LookupHost(host string) ([]string, error) {
+	return []string{host}, nil
+}
+
+func (n fakeTunnelNetwork) LocalAddresses() []netip.Addr {
+	return nil
 }

@@ -335,7 +335,7 @@ tasks.register("verifyWireGuardStaticGuards") {
             throw new GradleException("Android tunnel bridge builds must use the pinned managed Go toolchain, not an arbitrary system Go")
         }
         def exportMapText = file("jni/tg_tunnel/go/exports.map").text
-        ["tgWgStart", "tgWgStop", "tgWgOnNetworkChanged", "tgAwgStart", "tgAwgStop", "tgAwgOnNetworkChanged"].each { symbol ->
+        ["tgWgStart", "tgWgStop", "tgWgOnNetworkChanged", "tgAwgStart", "tgAwgStop", "tgAwgOnNetworkChanged", "tgTunnelIsRunning", "tgTunnelGetLocalAddress", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "tgTunnelUdpLocalAddress", "tgTunnelUdpClose"].each { symbol ->
             if (!exportMapText.contains(symbol)) {
                 throw new GradleException("jni/tg_tunnel/go/exports.map must export ${symbol}")
             }
@@ -458,52 +458,83 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def voipServiceText = file("src/main/java/org/telegram/messenger/voip/VoIPService.java").text
-        ["TunnelManager.getVoipProxySettings", "TunnelManager.isUserEnabled", "TunnelVoipRouting.shouldEnableP2p", "TunnelVoipRouting.selectEndpointType", "PROTOCOL_HTTP_CONNECT"].each { token ->
+        ["TunnelManager.getVoipProxySettings", "TunnelManager.isUserEnabled", "TunnelVoipRouting.shouldEnableP2p", "TunnelVoipRouting.selectEndpointType", "PROTOCOL_TUNNEL"].each { token ->
             if (!voipServiceText.contains(token)) {
                 throw new GradleException("VoIPService must route calls through tunnel token '${token}'")
             }
+        }
+        def voipInstanceText = file("jni/voip/org_telegram_messenger_voip_Instance.cpp").text
+        if (!voipInstanceText.contains("Proxy::Protocol::Tunnel")) {
+            throw new GradleException("Native VoIP proxy parsing must recognize tunnel proxies")
         }
         def nativeInstanceText = file("src/main/java/org/telegram/messenger/voip/NativeInstance.java").text
         if (!nativeInstanceText.contains("Instance.Proxy proxy")) {
             throw new GradleException("NativeInstance.makeGroup must accept a proxy for WireGuard group-call routing")
         }
         def livePlayerText = file("src/main/java/org/telegram/ui/Stories/LivePlayer.java").text
-        ["TunnelManager.getVoipProxySettings", "PROTOCOL_HTTP_CONNECT"].each { token ->
+        ["TunnelManager.getVoipProxySettings", "PROTOCOL_TUNNEL"].each { token ->
             if (!livePlayerText.contains(token)) {
                 throw new GradleException("LivePlayer group-call streaming must route through tunnel token '${token}'")
             }
         }
+        def tunnelPacketSocketFactoryText = file("jni/voip/tgcalls/TunnelPacketSocketFactory.cpp").text
+        ["tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "ADAPTER_TYPE_VPN", "CreateClientTcpSocket", "CreateUdpSocket"].each { token ->
+            if (!tunnelPacketSocketFactoryText.contains(token)) {
+                throw new GradleException("TunnelPacketSocketFactory must provide VPN-like VoIP sockets token '${token}'")
+            }
+        }
+        if (!file("jni/voip/CMakeLists.txt").text.contains("voip/tgcalls/TunnelPacketSocketFactory.cpp")) {
+            throw new GradleException("CMake must compile TunnelPacketSocketFactory.cpp")
+        }
         def groupNetworkManagerText = file("jni/voip/tgcalls/group/GroupNetworkManager.cpp").text
-        ["set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST"].each { token ->
+        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "nativeProxy", "set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST"].each { token ->
             if (!groupNetworkManagerText.contains(token)) {
-                throw new GradleException("GroupNetworkManager must enforce WireGuard proxy routing token '${token}'")
+                throw new GradleException("GroupNetworkManager must route tunnel VoIP through tunnel sockets token '${token}'")
             }
         }
         def networkManagerText = file("jni/voip/tgcalls/NetworkManager.cpp").text
-        ["set_proxy", "PROXY_HTTPS", "if (!_enableP2P)", "httpConnectProxy && !server.isTcp", "PROTO_TCP", "CF_REFLEXIVE", "CF_HOST"].each { token ->
+        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "nativeProxy", "if (!_enableP2P)", "server.isTcp && !httpConnectProxy && !tunnelProxy", "PROTO_UDP", "PROTO_TCP", "CF_REFLEXIVE", "CF_HOST"].each { token ->
             if (!networkManagerText.contains(token)) {
-                throw new GradleException("NetworkManager must keep direct P2P while tunneling TCP relay token '${token}'")
+                throw new GradleException("NetworkManager must keep private VoIP P2P/relay on tunnel sockets token '${token}'")
             }
         }
         if (networkManagerText.contains("if (!_enableP2P || httpConnectProxy)")) {
-            throw new GradleException("NetworkManager must not disable direct P2P merely because tunnel HTTP CONNECT is present")
+            throw new GradleException("NetworkManager must not disable P2P merely because tunnel sockets are present")
         }
         def nativeNetworkingV2Text = file("jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp").text
-        ["set_proxy", "PROXY_HTTPS", "!_enableP2P || (_proxy && !httpConnectProxy)", "httpConnectProxy && !server.isTcp", "CF_REFLEXIVE", "CF_HOST", "!_enableTCP && !_proxy"].each { token ->
+        ["IsTunnelProxy(_proxy)", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "_underlyingSocketFactory = nullptr", "nativeProxy", "!_enableP2P || (nativeProxy && !httpConnectProxy)", "httpConnectProxy && !server.isTcp", "CF_REFLEXIVE", "CF_HOST", "!_enableTCP && !nativeProxy && !tunnelProxy"].each { token ->
             if (!nativeNetworkingV2Text.contains(token)) {
-                throw new GradleException("NativeNetworkingImpl must keep direct P2P while tunneling TCP relay token '${token}'")
+                throw new GradleException("NativeNetworkingImpl must route V2 private VoIP through tunnel sockets token '${token}'")
             }
         }
         def instanceV2ReferenceText = file("jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp").text
-        ["set_proxy", "PROXY_HTTPS", "!_enableP2P || !httpConnectProxy", "_enableP2P && (!_proxy || httpConnectProxy)", "httpConnectProxy && server.isTurn && !server.isTcp", "kTcpCandidatePolicyEnabled", "server.isTcp && !_proxy", "?transport=tcp"].each { token ->
+        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "nativeProxy", "!_enableP2P || !httpConnectProxy", "_enableP2P && (!nativeProxy || httpConnectProxy)", "httpConnectProxy && server.isTurn && !server.isTcp", "kTcpCandidatePolicyEnabled", "server.isTcp && !nativeProxy && !tunnelProxy", "?transport=tcp"].each { token ->
             if (!instanceV2ReferenceText.contains(token)) {
-                throw new GradleException("InstanceV2ReferenceImpl must keep direct P2P while tunneling TCP TURN token '${token}'")
+                throw new GradleException("InstanceV2ReferenceImpl must route reference VoIP through tunnel sockets token '${token}'")
+            }
+        }
+        def reflectorPortText = file("jni/voip/tgcalls/v2/ReflectorPort.cpp").text
+        ["underlying_socket_factory_", "socket_factory()->CreateClientTcpSocket"].each { token ->
+            if (!reflectorPortText.contains(token)) {
+                throw new GradleException("ReflectorPort must use the tunnel packet socket factory when no underlying socket factory is available token '${token}'")
             }
         }
         def tunnelGoText = file("jni/tg_tunnel/go/tg_tunnel.go").text
         ["golang.zx2c4.com/wireguard", "github.com/amnezia-vpn/amneziawg-go", "httpConnectHandshake", "startWireGuardRuntime", "startAmneziaWGRuntime"].each { token ->
             if (!tunnelGoText.contains(token)) {
                 throw new GradleException("Shared Go tunnel bridge must support WireGuard, AmneziaWG, and HTTP CONNECT token '${token}'")
+            }
+        }
+        def tunnelSocketGoText = file("jni/tg_tunnel/go/tunnel_sockets.go").text
+        ["ListenPacket", "LookupHost", "LocalAddresses", "openTunnelTCP", "openTunnelUDP", "tunnelUDPSendTo", "tunnelUDPRecvFrom", "closeTunnelSocketsLocked"].each { token ->
+            if (!tunnelSocketGoText.contains(token)) {
+                throw new GradleException("Shared Go tunnel bridge must expose direct TCP/UDP tunnel sockets token '${token}'")
+            }
+        }
+        def tunnelExportsText = file("jni/tg_tunnel/go/exports.map").text
+        ["tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom"].each { token ->
+            if (!tunnelExportsText.contains(token)) {
+                throw new GradleException("Go bridge export map must include tunnel socket symbol '${token}'")
             }
         }
         def amneziaWGModText = file("jni/tg_tunnel/go/go.mod").text

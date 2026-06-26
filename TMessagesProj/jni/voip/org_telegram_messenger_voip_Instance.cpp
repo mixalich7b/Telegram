@@ -333,7 +333,12 @@ std::unique_ptr<Proxy> parseProxy(JNIEnv *env, jobject proxyClass) {
     proxy->port = static_cast<uint16_t>(proxyObject.getIntField("port"));
     proxy->login = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("login"));
     proxy->password = tgvoip::jni::JavaStringToStdString(env, proxyObject.getStringField("password"));
-    proxy->protocol = proxyObject.getIntField("protocol") == 1 ? Proxy::Protocol::HttpConnect : Proxy::Protocol::Socks5;
+    int protocol = proxyObject.getIntField("protocol");
+    if (protocol == 2) {
+        proxy->protocol = Proxy::Protocol::Tunnel;
+    } else {
+        proxy->protocol = protocol == 1 ? Proxy::Protocol::HttpConnect : Proxy::Protocol::Socks5;
+    }
     return proxy;
 }
 

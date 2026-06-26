@@ -47,6 +47,7 @@
 #include "ThreadLocalObject.h"
 #include "Manager.h"
 #include "NetworkManager.h"
+#include "TunnelPacketSocketFactory.h"
 #include "VideoCaptureInterfaceImpl.h"
 #include "platform/PlatformInterface.h"
 #include "LogSinkImpl.h"
@@ -677,13 +678,21 @@ public:
         peerConnectionDependencies.observer = _peerConnectionObserver.get();
 
         _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
-        _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
-        _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
-        _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver());
+        const bool tunnelProxy = IsTunnelProxy(_proxy.get());
+        if (tunnelProxy) {
+            _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
+            _networkManager = CreateTunnelNetworkManager();
+            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, nullptr);
+        } else {
+            _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
+            _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
+            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver());
+        }
 
         auto portAllocator = std::make_unique<cricket::BasicPortAllocator>(_networkManager.get(), _socketFactory.get(), nullptr, _relayPortFactory.get());
         const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
-        if (_proxy) {
+        const bool nativeProxy = _proxy && !tunnelProxy;
+        if (nativeProxy) {
             if (!_enableP2P || !httpConnectProxy) {
                 uint32_t flags = portAllocator->flags();
                 flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
@@ -702,12 +711,12 @@ public:
         peerConnectionDependencies.allocator = std::move(portAllocator);
 
         webrtc::PeerConnectionInterface::RTCConfiguration peerConnectionConfiguration;
-        if (_enableP2P && (!_proxy || httpConnectProxy)) {
+        if (_enableP2P && (!nativeProxy || httpConnectProxy)) {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kAll;
         } else {
             peerConnectionConfiguration.type = webrtc::PeerConnectionInterface::IceTransportsType::kRelay;
         }
-        peerConnectionConfiguration.tcp_candidate_policy = _proxy ? webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyEnabled : webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyDisabled;
+        peerConnectionConfiguration.tcp_candidate_policy = (nativeProxy || tunnelProxy) ? webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyEnabled : webrtc::PeerConnectionInterface::TcpCandidatePolicy::kTcpCandidatePolicyDisabled;
         peerConnectionConfiguration.enable_ice_renomination = true;
         peerConnectionConfiguration.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
         peerConnectionConfiguration.bundle_policy = webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
@@ -718,7 +727,7 @@ public:
         peerConnectionConfiguration.prioritize_most_likely_ice_candidate_pairs = true;
 
         for (auto &server : _rtcServers) {
-            if (server.isTcp && !_proxy) {
+            if (server.isTcp && !nativeProxy && !tunnelProxy) {
                 continue;
             }
             if (httpConnectProxy && server.isTurn && !server.isTcp) {
@@ -1691,8 +1700,8 @@ private:
     std::unique_ptr<webrtc::TaskQueueFactory> _taskQueueFactory;
 
     std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
-    std::unique_ptr<rtc::BasicPacketSocketFactory> _socketFactory;
-    std::unique_ptr<rtc::BasicNetworkManager> _networkManager;
+    std::unique_ptr<rtc::PacketSocketFactory> _socketFactory;
+    std::unique_ptr<rtc::NetworkManager> _networkManager;
     std::unique_ptr<cricket::RelayPortFactoryInterface> _relayPortFactory;
 
     webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> _peerConnectionFactory;

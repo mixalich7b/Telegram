@@ -28,12 +28,19 @@ type tcpDialer interface {
 	DialContext(ctx context.Context, network string, address string) (net.Conn, error)
 }
 
+type tunnelNetwork interface {
+	tcpDialer
+	ListenPacket(ctx context.Context, network string, address string) (net.PacketConn, error)
+	LookupHost(host string) ([]string, error)
+	LocalAddresses() []netip.Addr
+}
+
 type wireGuardDevice interface {
 	BindUpdate() error
 	Close()
 }
 
-type runtimeFactory func(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error)
+type runtimeFactory func(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tunnelNetwork, int, error)
 
 type proxyProtocol int
 
@@ -48,7 +55,7 @@ type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, erro
 
 type runtimeState struct {
 	device   wireGuardDevice
-	dialer   tcpDialer
+	network  tunnelNetwork
 	listener net.Listener
 	cancel   context.CancelFunc
 	username string
@@ -99,7 +106,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 		return -10
 	}
 
-	device, dialer, status, err := factory(local, dns, mtu, userspaceConfig)
+	device, network, status, err := factory(local, dns, mtu, userspaceConfig)
 	if err != nil {
 		logError("%s start failed: %v", protocolName, err)
 		return status
@@ -119,7 +126,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 	ctx, cancel := context.WithCancel(context.Background())
 	next := &runtimeState{
 		device:   device,
-		dialer:   dialer,
+		network:  network,
 		listener: listener,
 		cancel:   cancel,
 		username: socksUsername,
@@ -145,7 +152,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 	return port
 }
 
-func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error) {
+func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tunnelNetwork, int, error) {
 	tunDev, tnet, err := wgnetstack.CreateNetTUN(local, dns, mtu)
 	if err != nil {
 		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
@@ -161,10 +168,10 @@ func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 		dev.Close()
 		return nil, nil, -6, fmt.Errorf("device.Up failed: %w", err)
 	}
-	return dev, tnet, 0, nil
+	return dev, wireGuardNet{net: tnet, local: append([]netip.Addr(nil), local...)}, 0, nil
 }
 
-func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tcpDialer, int, error) {
+func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tunnelNetwork, int, error) {
 	tunDev, tnet, err := awgnetstack.CreateNetTUN(local, dns, mtu)
 	if err != nil {
 		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
@@ -180,7 +187,7 @@ func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 		dev.Close()
 		return nil, nil, -6, fmt.Errorf("device.Up failed: %w", err)
 	}
-	return dev, tnet, 0, nil
+	return dev, amneziaWGNet{net: tnet, local: append([]netip.Addr(nil), local...)}, 0, nil
 }
 
 func stopRuntime() {
@@ -209,6 +216,7 @@ func stopLocked() {
 	if state == nil {
 		return
 	}
+	closeTunnelSocketsLocked()
 	if state.cancel != nil {
 		state.cancel()
 	}
@@ -251,7 +259,7 @@ func handleProxyConnection(ctx context.Context, state *runtimeState, client net.
 		return
 	}
 
-	remote, err := state.dialer.DialContext(ctx, "tcp", target)
+	remote, err := state.network.DialContext(ctx, "tcp", target)
 	if err != nil {
 		if protocol == proxyProtocolSocks5 {
 			writeSocksFailure(client)

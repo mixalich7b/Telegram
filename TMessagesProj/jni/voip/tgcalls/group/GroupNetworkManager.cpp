@@ -1,4 +1,5 @@
 #include "group/GroupNetworkManager.h"
+#include "TunnelPacketSocketFactory.h"
 
 #include "p2p/base/basic_packet_socket_factory.h"
 #include "p2p/client/basic_port_allocator.h"
@@ -391,8 +392,14 @@ _proxy(std::move(proxy)) {
 
     _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
 
-    _socketFactory.reset(new rtc::BasicPacketSocketFactory(_threads->getNetworkThread()->socketserver()));
-    _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
+    const bool tunnelProxy = IsTunnelProxy(_proxy.get());
+    if (tunnelProxy) {
+        _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
+        _networkManager = CreateTunnelNetworkManager();
+    } else {
+        _socketFactory.reset(new rtc::BasicPacketSocketFactory(_threads->getNetworkThread()->socketserver()));
+        _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
+    }
     _asyncResolverFactory = std::make_unique<webrtc::BasicAsyncDnsResolverFactory>();
 
     _dtlsSrtpTransport = std::make_unique<WrappedDtlsSrtpTransport>(true, fieldTrials, [this](webrtc::RtpPacketReceived const &packet, bool isUnresolved) {
@@ -431,8 +438,10 @@ void GroupNetworkManager::resetDtlsSrtpTransport() {
         cricket::PORTALLOCATOR_ENABLE_IPV6 |
         cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
 
+    const bool tunnelProxy = IsTunnelProxy(_proxy.get());
     const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
-    if (_proxy) {
+    const bool nativeProxy = _proxy && !tunnelProxy;
+    if (nativeProxy) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = portAllocator->candidate_filter();

@@ -24,19 +24,22 @@ tgnet TCP traffic
   -> UDP to configured WireGuard peer
   -> Telegram datacenters
 
-WebRTC VoIP TCP relay traffic
-  -> authenticated HTTP CONNECT on 127.0.0.1
-  -> wireguard-go tun/netstack
+WebRTC VoIP relay traffic
+  -> native tunnel packet socket factory
+  -> direct TCP/UDP socket API in wireguard-go tun/netstack
   -> UDP to configured WireGuard peer
   -> Telegram relay/datacenter
 
 Private-call P2P traffic, when Telegram allows P2P
-  -> direct UDP outside the tunnel
+  -> native tunnel packet socket factory
+  -> direct UDP socket API in wireguard-go tun/netstack
+  -> UDP to configured WireGuard peer
+  -> Telegram peer path
 ```
 
-AmneziaWG uses the same local SOCKS5 and HTTP CONNECT shape through
-`amneziawg-go` tun/netstack, then sends obfuscated UDP to the configured
-AmneziaWG peer.
+AmneziaWG uses the same local SOCKS5 shape for tgnet and the same direct
+VoIP TCP/UDP tunnel socket shape through `amneziawg-go` tun/netstack, then sends
+obfuscated UDP to the configured AmneziaWG peer.
 
 ## Hard Constraints
 
@@ -44,10 +47,9 @@ AmneziaWG peer.
   device-level VPN session for this feature.
 - Do not commit real WireGuard keys, endpoints, Telegram `APP_ID`, or Telegram
   `APP_HASH`.
-- When a tunnel is user-enabled, tgnet and VoIP relay traffic selected for
-  tunnel routing must fail closed. Do not add a silent direct fallback.
-  Explicitly disabled tunnel-for-calls routing and Telegram-authorized private
-  P2P are deliberate direct routes.
+- When a tunnel is user-enabled, tgnet and VoIP traffic selected for tunnel
+  routing must fail closed. Do not add a silent direct fallback. Explicitly
+  disabled tunnel-for-calls routing is a deliberate direct route.
 - Existing proxy behavior must stay mutually exclusive with WireGuard and
   AmneziaWG through `NetworkRouteSettings`.
 - Tunnel profiles must be stored with Android Keystore-backed encryption on
@@ -56,8 +58,8 @@ AmneziaWG peer.
 - On devices without Keystore-backed tunnel profile storage, UI must not
   enable/add/import/scan tunnel profiles. Stale enabled settings should remain
   fail-closed and disable-able.
-- UDP ASSOCIATE is not implemented. Tunnel-routed VoIP relay uses TCP through
-  HTTP CONNECT; direct private P2P may still use UDP outside the tunnel.
+- UDP ASSOCIATE is not implemented. Tunnel-routed VoIP UDP uses the direct
+  tunnel socket API, not SOCKS5 UDP ASSOCIATE.
 
 ## Code Map
 
@@ -90,7 +92,8 @@ AmneziaWG peer.
   - `TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java`
 - Shared Go tunnel runtime:
   - `TMessagesProj/jni/tg_tunnel/go/`
-  - exports `tgWg*` and `tgAwg*` from one `libtg-tunnel-go.so`
+  - exports `tgWg*`, `tgAwg*`, and `tgTunnel*` from one
+    `libtg-tunnel-go.so`
   - pinned AmneziaWG upstream module: `github.com/amnezia-vpn/amneziawg-go v0.2.18`
   - upstream Go requirement: `go 1.24.4`
   - `TMessagesProj/jni/CMakeLists.txt`
@@ -106,6 +109,7 @@ AmneziaWG peer.
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/VoIPService.java`
   - `TMessagesProj/jni/voip/org_telegram_messenger_voip_Instance.cpp`
   - `TMessagesProj/jni/voip/tgcalls/Instance.h`
+  - `TMessagesProj/jni/voip/tgcalls/TunnelPacketSocketFactory.cpp`
   - `TMessagesProj/jni/voip/tgcalls/NetworkManager.cpp`
   - `TMessagesProj/jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp`
   - `TMessagesProj/jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp`
@@ -173,26 +177,27 @@ AmneziaWG peer.
 ## VoIP Invariants
 
 - Tunnel-enabled private calls must ignore user proxy preferences.
-- `Use Tunnel For Calls` controls tunnel HTTP CONNECT routing for private-call
+- `Use Tunnel For Calls` controls tunnel socket routing for private-call P2P,
   relay, group/conference calls, and live/group streaming. It applies only to
   newly created VoIP sessions.
 - Private-call P2P availability must follow Telegram's requested P2P value and
-  must not be disabled by tunnel routing. P2P host/reflexive UDP candidates are
-  direct and do not use the tunnel.
-- When tunnel-for-calls is enabled, private-call relay must use TCP through HTTP
-  CONNECT. UDP TURN/relay candidates must not bypass the tunnel.
-- Tunnel-created VoIP proxies use HTTP CONNECT. Keep default/user
-  `Instance.Proxy` behavior as SOCKS5 unless deliberately changing user proxy
-  semantics.
-- Native WebRTC paths must call `BasicPortAllocator::set_proxy(...)` when a
-  tunnel proxy is present.
+  must not be disabled by tunnel routing. When tunnel-for-calls is enabled,
+  P2P host/reflexive UDP candidates must use the tunnel socket API, not direct
+  device UDP.
+- When tunnel-for-calls is enabled, private-call relay may use UDP or TCP, but
+  both must use the tunnel socket API and must not bypass the tunnel.
+- Tunnel-created VoIP proxies use `Instance.Proxy.PROTOCOL_TUNNEL`. Keep
+  default/user `Instance.Proxy` behavior as SOCKS5 unless deliberately changing
+  user proxy semantics.
+- Native WebRTC paths must use `TunnelPacketSocketFactory` and the synthetic
+  tunnel `NetworkManager` when a tunnel proxy is present. They must not call
+  `BasicPortAllocator::set_proxy(...)` for tunnel proxies.
 - Native private WebRTC paths must keep UDP/STUN and host/reflexive ICE
-  candidates available when P2P is enabled, while filtering non-TCP TURN
-  servers from tunnel HTTP CONNECT routing.
+  candidates available when P2P is enabled, while routing their sockets through
+  the tunnel socket API.
 - If P2P is disabled, native private WebRTC paths must retain relay-only
   behavior by disabling UDP/STUN and filtering direct ICE candidates.
-- Native group/live WebRTC paths must remain proxy-only in tunnel mode: disable
-  UDP/STUN, clear `CF_REFLEXIVE` and `CF_HOST`, and keep TCP candidates enabled.
+- Native group/live WebRTC paths must use tunnel sockets in tunnel mode.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;

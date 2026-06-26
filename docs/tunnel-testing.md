@@ -30,13 +30,14 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
 - controller startup, restart, network refresh, and fail-closed behavior;
 - tunnel proxy protocol metadata;
 - VoIP route policy for direct, enabled/disabled tunnel-for-calls, active
-  tunnel, blocked tunnel, and direct P2P cases.
+  tunnel, blocked tunnel, and tunnel-routed P2P cases.
 
 Go bridge tests cover:
 
 - address and endpoint parsing;
 - domain endpoint preprocessing to `IP:port` and DNS failure reporting;
 - SOCKS5 and HTTP CONNECT proxy behavior;
+- direct TCP/UDP tunnel socket exports for WebRTC VoIP;
 - proxy byte-copy paths through fake dialers;
 - network-change handling through fake bind refreshes;
 - AmneziaWG `device.IpcSet` acceptance for generated AWG UAPI, including
@@ -52,7 +53,7 @@ accidentally:
 
 - no Android `VpnService`, `Builder.establish()`, or `/dev/tun` in tunnel
   integration files;
-- no silent direct fallback for tgnet or VoIP relay selected for tunnel routing;
+- no silent direct fallback for tgnet or VoIP selected for tunnel routing;
 - profile storage uses Android Keystore-backed AES-GCM and does not write
   plaintext profile contents to `mainconfig`;
 - all route-mode changes go through `NetworkRouteSettings`;
@@ -60,9 +61,9 @@ accidentally:
   tunnel proxy;
 - unsupported-device UI checks exist for add/import/scan/enable/select;
 - parser rejects multiple peers;
-- VoIP paths keep HTTP CONNECT and TCP-only tunnel relay, preserve direct
-  private P2P UDP/STUN/ICE candidates, filter non-TCP TURN from private tunnel
-  routing, and retain proxy-only group/live filtering;
+- VoIP paths use `PROTOCOL_TUNNEL`, `TunnelPacketSocketFactory`, and the
+  direct Go TCP/UDP tunnel socket bridge; private P2P UDP/STUN/ICE candidates
+  remain available when Telegram allows P2P, but their sockets use the tunnel;
 - WireGuard and AmneziaWG Go cache/module artifacts stay out of
   `TMessagesProj/jni`;
 - WireGuard and AmneziaWG use one shared Go bridge with a linker version script
@@ -112,8 +113,8 @@ Cover these flows:
 - start new private and group/live VoIP sessions while each protocol is active;
 - repeat private and group/live session creation with `Use tunnel for calls`
   enabled and disabled;
-- verify allowed private P2P remains direct while fallback relay uses tunnel
-  HTTP CONNECT when enabled;
+- verify allowed private P2P and fallback relay both use the tunnel when
+  `Use tunnel for calls` is enabled;
 - verify Telegram datacenter traffic does not go direct while either protocol is
   enabled.
 
@@ -125,8 +126,9 @@ Cover these flows:
   changes.
 - Re-run license review when tunnel dependencies change.
 - Do not place Go module/cache output under `TMessagesProj/jni`.
-- Do not add UDP ASSOCIATE assertions until SOCKS5 command `0x03` is
-  implemented.
+- Do not add SOCKS5 UDP ASSOCIATE assertions until SOCKS5 command `0x03` is
+  implemented; VoIP UDP tunnel coverage belongs to the direct tunnel socket
+  bridge.
 - Do not add real-server tests to default Gradle tasks.
 - When an invariant intentionally changes, update tests, static guards, docs,
   and `AGENTS.md` together.
