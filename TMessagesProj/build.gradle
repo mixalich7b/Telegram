@@ -114,6 +114,8 @@ android {
     defaultConfig {
         minSdkVersion 21
         targetSdkVersion 35
+        buildConfigField "int", "TG_APP_ID", getRequiredGradleProperty("TG_APP_ID")
+        buildConfigField "String", "TG_APP_HASH", "\"" + getRequiredGradleProperty("TG_APP_HASH") + "\""
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
 
@@ -241,6 +243,14 @@ def getProps(String propName) {
         return "";
     }
 }
+
+def getRequiredGradleProperty(String propName) {
+    def value = project.findProperty(propName)
+    if (value == null || value.toString().trim().isEmpty()) {
+        throw new GradleException("Missing required Gradle property '${propName}'")
+    }
+    return value.toString().trim()
+}
 apply plugin: 'com.google.gms.google-services'
 
 task checkVisibility {
@@ -269,7 +279,7 @@ tasks.register("testTunnelGo", Exec) {
     description = "Runs host-side Go tests for the internal WireGuard/AmneziaWG bridge."
     group = "verification"
     workingDir file("jni/tg_tunnel/go")
-    def goTestBuildDir = rootProject.file(".gradle/tunnel-go-test")
+    def goTestBuildDir = new File(gradle.gradleUserHomeDir, "tunnel-go-test")
     environment "GOCACHE", file("${goTestBuildDir}/gocache")
     environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
     doFirst {

@@ -225,13 +225,13 @@ obfuscated UDP to the configured AmneziaWG peer.
 Fast no-emulator checks:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
+./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
 ```
 
 Packaging check:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
+./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
 ```
 
 Important details:

@@ -50,10 +50,10 @@ android {
         }
 
         release {
-            storeFile file("../TMessagesProj/config/release.keystore")
-            storePassword RELEASE_STORE_PASSWORD
-            keyAlias RELEASE_KEY_ALIAS
-            keyPassword RELEASE_KEY_PASSWORD
+            storeFile file(TG_RELEASE_KEYSTORE_PATH)
+            storePassword TG_RELEASE_STORE_PASSWORD
+            keyAlias TG_RELEASE_KEY_ALIAS
+            keyPassword TG_RELEASE_KEY_PASSWORD
         }
     }
 

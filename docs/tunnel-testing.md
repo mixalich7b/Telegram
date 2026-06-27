@@ -5,13 +5,13 @@
 Fast no-emulator checks:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
+./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
 ```
 
 Packaging check:
 
 ```bash
-env GRADLE_USER_HOME=$PWD/.gradle ./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
+./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
 ```
 
 `:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests,
@@ -45,8 +45,8 @@ Go bridge tests cover:
 - AmneziaWG `device.IpcSet` acceptance for generated AWG UAPI, including
   `jc/jmin/jmax`, `s1..s4`, `h1..h4`, and `i1..i5`.
 
-The Gradle Go test tasks keep `GOCACHE` and `GOMODCACHE` under the root
-`.gradle` directory, never under `TMessagesProj/jni`.
+The Gradle Go test tasks keep `GOCACHE` and `GOMODCACHE` under the Gradle
+user home directory, never under `TMessagesProj/jni`.
 
 ## Static Guards
 
