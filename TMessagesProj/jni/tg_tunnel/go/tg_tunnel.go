@@ -1,15 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -42,13 +37,6 @@ type wireGuardDevice interface {
 
 type runtimeFactory func(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tunnelNetwork, int, error)
 
-type proxyProtocol int
-
-const (
-	proxyProtocolSocks5 proxyProtocol = iota
-	proxyProtocolHttpConnect
-)
-
 const endpointResolveTimeout = 10 * time.Second
 
 type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, error)
@@ -56,10 +44,7 @@ type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, erro
 type runtimeState struct {
 	device     wireGuardDevice
 	network    tunnelNetwork
-	listener   net.Listener
 	cancel     context.CancelFunc
-	username   string
-	password   string
 	protocol   string
 	generation uint64
 }
@@ -70,15 +55,15 @@ var (
 	nextGeneration uint64
 )
 
-func startWireGuardRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
-	return startRuntime("WireGuard", userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword, newWireGuardRuntime)
+func startWireGuardRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int) int {
+	return startRuntime("WireGuard", userspaceConfig, localAddresses, dnsServers, mtu, newWireGuardRuntime)
 }
 
-func startAmneziaWGRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string) int {
-	return startRuntime("AmneziaWG", userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword, newAmneziaWGRuntime)
+func startAmneziaWGRuntime(userspaceConfig string, localAddresses []string, dnsServers []string, mtu int) int {
+	return startRuntime("AmneziaWG", userspaceConfig, localAddresses, dnsServers, mtu, newAmneziaWGRuntime)
 }
 
-func startRuntime(protocolName string, userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, socksHost string, socksPort int, socksUsername string, socksPassword string, factory runtimeFactory) int {
+func startRuntime(protocolName string, userspaceConfig string, localAddresses []string, dnsServers []string, mtu int, factory runtimeFactory) int {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
@@ -114,18 +99,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 		return status
 	}
 
-	host := socksHost
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(socksPort)))
-	if err != nil {
-		logError("SOCKS listen failed: %v", err)
-		device.Close()
-		return -7
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	nextGeneration++
 	generation := nextGeneration
 	if generation == 0 {
@@ -135,30 +109,13 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 	next := &runtimeState{
 		device:     device,
 		network:    network,
-		listener:   listener,
 		cancel:     cancel,
-		username:   socksUsername,
-		password:   socksPassword,
 		protocol:   protocolName,
 		generation: generation,
 	}
 	state = next
-	go acceptLoop(ctx, next)
-
-	_, portStr, err := net.SplitHostPort(listener.Addr().String())
-	if err != nil {
-		logError("SOCKS address parse failed: %v", err)
-		stopLocked()
-		return -8
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		logError("SOCKS port parse failed: %v", err)
-		stopLocked()
-		return -9
-	}
-	logDebug("%s started on %s", protocolName, listener.Addr().String())
-	return port
+	logDebug("%s started", protocolName)
+	return 0
 }
 
 func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspaceConfig string) (wireGuardDevice, tunnelNetwork, int, error) {
@@ -229,254 +186,10 @@ func stopLocked() {
 	if state.cancel != nil {
 		state.cancel()
 	}
-	if state.listener != nil {
-		_ = state.listener.Close()
-	}
 	if state.device != nil {
 		state.device.Close()
 	}
 	state = nil
-}
-
-func acceptLoop(ctx context.Context, state *runtimeState) {
-	for {
-		conn, err := state.listener.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				logError("%s proxy accept failed: %v", state.protocol, err)
-				continue
-			}
-		}
-		go handleProxyConnection(ctx, state, conn)
-	}
-}
-
-func handleSocks(ctx context.Context, state *runtimeState, client net.Conn) {
-	handleProxyConnection(ctx, state, client)
-}
-
-func handleProxyConnection(ctx context.Context, state *runtimeState, client net.Conn) {
-	defer client.Close()
-
-	reader := bufio.NewReader(client)
-	target, protocol, err := proxyHandshake(reader, client, state.username, state.password)
-	if err != nil {
-		logError("proxy handshake failed: %v", err)
-		return
-	}
-
-	remote, err := state.network.DialContext(ctx, "tcp", target)
-	if err != nil {
-		if protocol == proxyProtocolSocks5 {
-			writeSocksFailure(client)
-		} else {
-			writeHTTPConnectFailure(client)
-		}
-		logError("%s dial failed for %s: %v", state.protocol, target, err)
-		return
-	}
-	defer remote.Close()
-
-	if protocol == proxyProtocolSocks5 {
-		if _, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0}); err != nil {
-			return
-		}
-	} else {
-		if _, err = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
-			return
-		}
-	}
-
-	done := make(chan struct{}, 2)
-	go proxyCopy(remote, reader, done)
-	go proxyCopy(client, remote, done)
-	<-done
-}
-
-func proxyCopy(dst net.Conn, src io.Reader, done chan<- struct{}) {
-	_, _ = io.Copy(dst, src)
-	if closer, ok := dst.(interface{ CloseWrite() error }); ok {
-		_ = closer.CloseWrite()
-	}
-	done <- struct{}{}
-}
-
-func socksHandshake(conn net.Conn, username string, password string) (string, error) {
-	return socksHandshakeFromReader(bufio.NewReader(conn), conn, username, password)
-}
-
-func proxyHandshake(reader *bufio.Reader, conn net.Conn, username string, password string) (string, proxyProtocol, error) {
-	first, err := reader.Peek(1)
-	if err != nil {
-		return "", proxyProtocolSocks5, err
-	}
-	if first[0] == 0x05 {
-		target, err := socksHandshakeFromReader(reader, conn, username, password)
-		return target, proxyProtocolSocks5, err
-	}
-	target, err := httpConnectHandshake(reader, conn, username, password)
-	return target, proxyProtocolHttpConnect, err
-}
-
-func socksHandshakeFromReader(reader io.Reader, writer io.Writer, username string, password string) (string, error) {
-	header := make([]byte, 2)
-	if _, err := io.ReadFull(reader, header); err != nil {
-		return "", err
-	}
-	if header[0] != 0x05 {
-		return "", errors.New("unsupported SOCKS version")
-	}
-	methods := make([]byte, int(header[1]))
-	if _, err := io.ReadFull(reader, methods); err != nil {
-		return "", err
-	}
-
-	method := byte(0x00)
-	if username != "" || password != "" {
-		method = 0x02
-		if !containsMethod(methods, method) {
-			_, _ = writer.Write([]byte{0x05, 0xff})
-			return "", errors.New("username/password auth is unavailable")
-		}
-	} else if !containsMethod(methods, method) {
-		_, _ = writer.Write([]byte{0x05, 0xff})
-		return "", errors.New("no-auth method is unavailable")
-	}
-	if _, err := writer.Write([]byte{0x05, method}); err != nil {
-		return "", err
-	}
-	if method == 0x02 {
-		if err := socksAuthenticate(reader, writer, username, password); err != nil {
-			return "", err
-		}
-	}
-
-	request := make([]byte, 4)
-	if _, err := io.ReadFull(reader, request); err != nil {
-		return "", err
-	}
-	if request[0] != 0x05 || request[1] != 0x01 {
-		writeSocksFailure(writer)
-		return "", errors.New("only CONNECT is supported")
-	}
-
-	host, err := readSocksHost(reader, request[3])
-	if err != nil {
-		writeSocksFailure(writer)
-		return "", err
-	}
-	portBytes := make([]byte, 2)
-	if _, err = io.ReadFull(reader, portBytes); err != nil {
-		return "", err
-	}
-	port := binary.BigEndian.Uint16(portBytes)
-	return net.JoinHostPort(host, strconv.Itoa(int(port))), nil
-}
-
-func socksAuthenticate(reader io.Reader, writer io.Writer, username string, password string) error {
-	version := make([]byte, 1)
-	if _, err := io.ReadFull(reader, version); err != nil {
-		return err
-	}
-	if version[0] != 0x01 {
-		return errors.New("unsupported auth version")
-	}
-	userLength := make([]byte, 1)
-	if _, err := io.ReadFull(reader, userLength); err != nil {
-		return err
-	}
-	user := make([]byte, int(userLength[0]))
-	if _, err := io.ReadFull(reader, user); err != nil {
-		return err
-	}
-	passLength := make([]byte, 1)
-	if _, err := io.ReadFull(reader, passLength); err != nil {
-		return err
-	}
-	pass := make([]byte, int(passLength[0]))
-	if _, err := io.ReadFull(reader, pass); err != nil {
-		return err
-	}
-	if string(user) != username || string(pass) != password {
-		_, _ = writer.Write([]byte{0x01, 0x01})
-		return errors.New("invalid auth")
-	}
-	_, err := writer.Write([]byte{0x01, 0x00})
-	return err
-}
-
-func readSocksHost(reader io.Reader, addressType byte) (string, error) {
-	switch addressType {
-	case 0x01:
-		ip := make([]byte, 4)
-		if _, err := io.ReadFull(reader, ip); err != nil {
-			return "", err
-		}
-		return net.IP(ip).String(), nil
-	case 0x03:
-		length := make([]byte, 1)
-		if _, err := io.ReadFull(reader, length); err != nil {
-			return "", err
-		}
-		host := make([]byte, int(length[0]))
-		if _, err := io.ReadFull(reader, host); err != nil {
-			return "", err
-		}
-		return string(host), nil
-	case 0x04:
-		ip := make([]byte, 16)
-		if _, err := io.ReadFull(reader, ip); err != nil {
-			return "", err
-		}
-		return net.IP(ip).String(), nil
-	default:
-		return "", fmt.Errorf("unsupported address type %d", addressType)
-	}
-}
-
-func httpConnectHandshake(reader *bufio.Reader, writer io.Writer, username string, password string) (string, error) {
-	request, err := http.ReadRequest(reader)
-	if err != nil {
-		return "", err
-	}
-	if request.Body != nil {
-		_ = request.Body.Close()
-	}
-	if request.Method != http.MethodConnect {
-		_, _ = io.WriteString(writer, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
-		return "", errors.New("only HTTP CONNECT is supported")
-	}
-	if !httpProxyAuthorized(request, username, password) {
-		_, _ = io.WriteString(writer, "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"tg-wg\"\r\nContent-Length: 0\r\n\r\n")
-		return "", errors.New("invalid HTTP proxy auth")
-	}
-	target := request.URL.Host
-	if target == "" {
-		target = request.Host
-	}
-	if _, _, err := net.SplitHostPort(target); err != nil {
-		_, _ = io.WriteString(writer, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
-		return "", fmt.Errorf("invalid CONNECT target %q: %w", target, err)
-	}
-	return target, nil
-}
-
-func httpProxyAuthorized(request *http.Request, username string, password string) bool {
-	if username == "" && password == "" {
-		return true
-	}
-	value := request.Header.Get("Proxy-Authorization")
-	if len(value) < 6 || !strings.EqualFold(value[:6], "Basic ") {
-		return false
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value[6:]))
-	if err != nil {
-		return false
-	}
-	return string(decoded) == username+":"+password
 }
 
 func resolveUserspaceConfigEndpoints(config string, lookup endpointResolver) (string, error) {
@@ -540,23 +253,6 @@ func resolveUserspaceEndpoint(endpoint string, lookup endpointResolver) (string,
 		return netip.AddrPortFrom(addr.Unmap(), uint16(port)).String(), nil
 	}
 	return "", fmt.Errorf("resolve endpoint host %q: no IP addresses", host)
-}
-
-func writeSocksFailure(writer io.Writer) {
-	_, _ = writer.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-}
-
-func writeHTTPConnectFailure(writer io.Writer) {
-	_, _ = io.WriteString(writer, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
-}
-
-func containsMethod(methods []byte, method byte) bool {
-	for _, candidate := range methods {
-		if candidate == method {
-			return true
-		}
-	}
-	return false
 }
 
 func parseAddrs(values []string) ([]netip.Addr, error) {

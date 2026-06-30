@@ -3710,6 +3710,8 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
         std::string newSecret = decodeSecret(secret);
         bool secretChanged = proxySecret != newSecret;
         bool reconnect = proxyAddress != address || proxyPort != port || username != proxyUser || proxyPassword != password || secretChanged;
+        tunnelRouteEnabled = false;
+        tunnelRouteBlocked = false;
         proxyAddress = address;
         proxyPort = port;
         proxyUser = username;
@@ -3730,6 +3732,35 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
             Datacenter *datacenter = getDatacenterWithId(DEFAULT_DATACENTER_ID);
             if (datacenter != nullptr) {
                 datacenter->resetInitVersion();
+            }
+        }
+        if (reconnect) {
+            for (auto & datacenter : datacenters) {
+                datacenter.second->suspendConnections(true);
+            }
+            Datacenter *datacenter = getDatacenterWithId(DEFAULT_DATACENTER_ID);
+            if (datacenter != nullptr && datacenter->isHandshakingAny()) {
+                datacenter->beginHandshake(HandshakeTypeCurrent, true);
+            }
+            processRequestQueue(0, 0);
+        }
+    });
+}
+
+void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked) {
+    scheduleTask([&, enabled, blocked] {
+        bool reconnect = tunnelRouteEnabled != enabled || tunnelRouteBlocked != blocked || !proxyAddress.empty() || !proxyUser.empty() || !proxyPassword.empty() || !proxySecret.empty();
+        tunnelRouteEnabled = enabled;
+        tunnelRouteBlocked = enabled && blocked;
+        proxyAddress = "";
+        proxyPort = 1080;
+        proxyUser = "";
+        proxyPassword = "";
+        proxySecret = "";
+        if (connectionState == ConnectionStateConnectingViaProxy) {
+            connectionState = ConnectionStateConnecting;
+            if (delegate != nullptr) {
+                delegate->onConnectionStateChanged(connectionState, instanceNum);
             }
         }
         if (reconnect) {

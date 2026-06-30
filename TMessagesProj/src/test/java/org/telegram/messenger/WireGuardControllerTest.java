@@ -13,79 +13,74 @@ import static org.junit.Assert.assertTrue;
 public class WireGuardControllerTest {
 
     @Test
-    public void disabledConfigDoesNotStartOrApplyProxy() {
+    public void disabledConfigDoesNotStartOrApplyTunnelRoute() {
         FakeConfig config = new FakeConfig();
         config.enabled = false;
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertFalse(controller.applyProxySettingsForAccount(0));
+        assertFalse(controller.applyTunnelSettingsForAccount(0));
         assertEquals(0, nativeRuntime.startCalls);
-        assertEquals(0, proxySink.calls.size());
+        assertEquals(0, tunnelStateSink.calls.size());
         assertNull(controller.getFailureReason());
     }
 
     @Test
-    public void successfulStartAppliesInternalSocksProxy() {
+    public void successfulStartAppliesActiveTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        nativeRuntime.port = 39001;
-        FakeProxySink proxySink = new FakeProxySink();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAccount(2));
+        assertTrue(controller.applyTunnelSettingsForAccount(2));
 
         assertEquals(1, nativeRuntime.startCalls);
         assertTrue(controller.isRunningForTests());
         assertNull(controller.getFailureReason());
-        assertEquals(1, proxySink.calls.size());
-        ProxyCall call = proxySink.calls.get(0);
+        assertEquals(1, tunnelStateSink.calls.size());
+        TunnelStateCall call = tunnelStateSink.calls.get(0);
         assertEquals(2, call.account);
-        assertEquals("127.0.0.1", call.host);
-        assertEquals(39001, call.port);
-        assertEquals("tg-wg-token8", call.username);
-        assertEquals("token24", call.password);
-        assertEquals("", call.secret);
+        assertTrue(call.enabled);
+        assertFalse(call.blocked);
     }
 
     @Test
-    public void nativeFailureAppliesBlockedProxy() {
+    public void nativeFailureAppliesBlockedTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
         nativeRuntime.failure = new RuntimeException("boom");
-        FakeProxySink proxySink = new FakeProxySink();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAccount(1));
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
 
         assertEquals(1, nativeRuntime.startCalls);
         assertFalse(controller.isRunningForTests());
         assertEquals("unable to start WireGuard runtime", controller.getFailureReason());
-        assertEquals(1, proxySink.calls.size());
-        ProxyCall call = proxySink.calls.get(0);
-        assertEquals("127.0.0.1", call.host);
-        assertEquals(1, call.port);
-        assertEquals("", call.username);
-        assertEquals("", call.password);
+        assertEquals(1, tunnelStateSink.calls.size());
+        TunnelStateCall call = tunnelStateSink.calls.get(0);
+        assertTrue(call.enabled);
+        assertTrue(call.blocked);
     }
 
     @Test
-    public void invalidNativePortAppliesBlockedProxy() {
+    public void nativeErrorStatusAppliesBlockedTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        nativeRuntime.port = 0;
-        FakeProxySink proxySink = new FakeProxySink();
+        nativeRuntime.status = -7;
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAccount(1));
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
 
-        assertEquals("nativeStart returned invalid port 0", controller.getFailureReason());
-        assertEquals(1, proxySink.calls.get(0).port);
+        assertEquals("nativeStart returned error -7", controller.getFailureReason());
+        assertTrue(tunnelStateSink.calls.get(0).enabled);
+        assertTrue(tunnelStateSink.calls.get(0).blocked);
     }
 
     @Test
@@ -93,52 +88,51 @@ public class WireGuardControllerTest {
         FakeConfig config = new FakeConfig();
         config.validationError = "missing WireGuard config values: [PRIVATE_KEY]";
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAccount(1));
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
 
         assertEquals(0, nativeRuntime.startCalls);
         assertEquals(config.validationError, controller.getFailureReason());
-        assertEquals(1, proxySink.calls.get(0).port);
+        assertTrue(tunnelStateSink.calls.get(0).enabled);
+        assertTrue(tunnelStateSink.calls.get(0).blocked);
     }
 
     @Test
     public void startIsAttemptedOnlyOnce() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
 
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAccount(1));
-        assertTrue(controller.applyProxySettingsForAccount(1));
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
 
         assertEquals(1, nativeRuntime.startCalls);
-        assertEquals(2, proxySink.calls.size());
-        assertEquals(23456, proxySink.calls.get(0).port);
-        assertEquals(23456, proxySink.calls.get(1).port);
+        assertEquals(2, tunnelStateSink.calls.size());
+        assertFalse(tunnelStateSink.calls.get(0).blocked);
+        assertFalse(tunnelStateSink.calls.get(1).blocked);
     }
 
     @Test
-    public void applyProxySettingsForAllAccountsUsesInternalSocks() {
+    public void applyTunnelSettingsForAllAccountsUsesActiveTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        nativeRuntime.port = 39001;
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        assertTrue(controller.applyProxySettingsForAllAccounts(3));
+        assertTrue(controller.applyTunnelSettingsForAllAccounts(3));
 
         assertEquals(1, nativeRuntime.startCalls);
-        assertEquals(3, proxySink.calls.size());
+        assertEquals(3, tunnelStateSink.calls.size());
         for (int account = 0; account < 3; account++) {
-            ProxyCall call = proxySink.calls.get(account);
+            TunnelStateCall call = tunnelStateSink.calls.get(account);
             assertEquals(account, call.account);
-            assertEquals(39001, call.port);
-            assertEquals("tg-wg-token8", call.username);
-            assertEquals("token24", call.password);
+            assertTrue(call.enabled);
+            assertFalse(call.blocked);
         }
     }
 
@@ -146,15 +140,15 @@ public class WireGuardControllerTest {
     public void getProxySettingsReturnsBlockedEndpointWhenStartupFails() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        nativeRuntime.port = 0;
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        nativeRuntime.status = -1;
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
         TunnelProxySettings proxySettings = controller.getProxySettings();
 
         assertTrue(proxySettings.blocked);
-        assertEquals("127.0.0.1", proxySettings.host);
-        assertEquals(1, proxySettings.port);
+        assertEquals("", proxySettings.host);
+        assertEquals(0, proxySettings.port);
         assertEquals("", proxySettings.username);
         assertEquals("", proxySettings.password);
     }
@@ -164,41 +158,40 @@ public class WireGuardControllerTest {
         FakeConfig config = new FakeConfig();
         config.protocol = TunnelProtocol.AMNEZIA_WG;
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
         TunnelProxySettings proxySettings = controller.getProxySettings();
 
         assertEquals(TunnelProtocol.AMNEZIA_WG, proxySettings.protocol);
         assertFalse(proxySettings.blocked);
-        assertEquals(23456, proxySettings.port);
+        assertEquals(0, proxySettings.port);
     }
 
     @Test
     public void networkChangedIsForwardedOnlyWhenRunning() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
         controller.onNetworkChanged(2);
         assertEquals(0, nativeRuntime.networkChangedCalls);
 
-        controller.applyProxySettingsForAccount(1);
+        controller.applyTunnelSettingsForAccount(1);
         controller.onNetworkChanged(2);
         assertEquals(1, nativeRuntime.networkChangedCalls);
     }
 
     @Test
-    public void networkChangedFailureRestartsRuntimeAndReappliesProxy() {
+    public void networkChangedFailureRestartsRuntimeAndReappliesTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        controller.applyProxySettingsForAccount(1);
+        controller.applyTunnelSettingsForAccount(1);
         nativeRuntime.networkChangedStatus = -9;
-        nativeRuntime.port = 39002;
 
         controller.onNetworkChanged(2);
 
@@ -207,23 +200,23 @@ public class WireGuardControllerTest {
         assertEquals(2, nativeRuntime.startCalls);
         assertTrue(controller.isRunningForTests());
         assertNull(controller.getFailureReason());
-        assertEquals(3, proxySink.calls.size());
-        assertEquals(39002, proxySink.calls.get(1).port);
-        assertEquals(39002, proxySink.calls.get(2).port);
-        assertEquals(0, proxySink.calls.get(1).account);
-        assertEquals(1, proxySink.calls.get(2).account);
+        assertEquals(3, tunnelStateSink.calls.size());
+        assertFalse(tunnelStateSink.calls.get(1).blocked);
+        assertFalse(tunnelStateSink.calls.get(2).blocked);
+        assertEquals(0, tunnelStateSink.calls.get(1).account);
+        assertEquals(1, tunnelStateSink.calls.get(2).account);
     }
 
     @Test
-    public void networkChangedRestartFailureAppliesBlockedProxy() {
+    public void networkChangedRestartFailureAppliesBlockedTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        controller.applyProxySettingsForAccount(1);
+        controller.applyTunnelSettingsForAccount(1);
         nativeRuntime.networkChangedStatus = -1;
-        nativeRuntime.port = 0;
+        nativeRuntime.status = -5;
 
         controller.onNetworkChanged(2);
 
@@ -231,66 +224,57 @@ public class WireGuardControllerTest {
         assertEquals(1, nativeRuntime.stopCalls);
         assertEquals(2, nativeRuntime.startCalls);
         assertFalse(controller.isRunningForTests());
-        assertEquals("nativeStart returned invalid port 0", controller.getFailureReason());
-        assertEquals(1, proxySink.calls.get(1).port);
-        assertEquals(1, proxySink.calls.get(2).port);
-        assertEquals("", proxySink.calls.get(1).username);
-        assertEquals("", proxySink.calls.get(2).password);
+        assertEquals("nativeStart returned error -5", controller.getFailureReason());
+        assertTrue(tunnelStateSink.calls.get(1).blocked);
+        assertTrue(tunnelStateSink.calls.get(2).blocked);
     }
 
     @Test
-    public void restartAppliesBlockedProxyBeforeStartingNewRuntime() {
+    public void restartAppliesBlockedTunnelRouteBeforeStartingNewRuntime() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        controller.applyProxySettingsForAccount(1);
-        nativeRuntime.port = 39002;
+        controller.applyTunnelSettingsForAccount(1);
         controller.restart(2);
 
         assertEquals(2, nativeRuntime.startCalls);
         assertEquals(1, nativeRuntime.stopCalls);
-        assertEquals(5, proxySink.calls.size());
-        assertEquals(23456, proxySink.calls.get(0).port);
-        assertEquals(1, proxySink.calls.get(1).port);
-        assertEquals(1, proxySink.calls.get(2).port);
-        assertEquals(39002, proxySink.calls.get(3).port);
-        assertEquals(39002, proxySink.calls.get(4).port);
+        assertEquals(5, tunnelStateSink.calls.size());
+        assertFalse(tunnelStateSink.calls.get(0).blocked);
+        assertTrue(tunnelStateSink.calls.get(1).blocked);
+        assertTrue(tunnelStateSink.calls.get(2).blocked);
+        assertFalse(tunnelStateSink.calls.get(3).blocked);
+        assertFalse(tunnelStateSink.calls.get(4).blocked);
     }
 
     @Test
-    public void disableStopsRuntimeAndClearsNativeProxy() {
+    public void disableStopsRuntimeAndClearsTunnelRoute() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
-        FakeProxySink proxySink = new FakeProxySink();
-        WireGuardController controller = newController(config, nativeRuntime, proxySink);
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink);
 
-        controller.applyProxySettingsForAccount(1);
+        controller.applyTunnelSettingsForAccount(1);
         controller.disable(2);
 
         assertEquals(1, nativeRuntime.startCalls);
         assertEquals(1, nativeRuntime.stopCalls);
         assertFalse(controller.isRunningForTests());
         assertNull(controller.getFailureReason());
-        assertEquals(3, proxySink.calls.size());
-        assertEquals("", proxySink.calls.get(1).host);
-        assertEquals(1080, proxySink.calls.get(1).port);
-        assertEquals("", proxySink.calls.get(2).host);
-        assertEquals(1080, proxySink.calls.get(2).port);
+        assertEquals(3, tunnelStateSink.calls.size());
+        assertFalse(tunnelStateSink.calls.get(1).enabled);
+        assertFalse(tunnelStateSink.calls.get(1).blocked);
+        assertFalse(tunnelStateSink.calls.get(2).enabled);
+        assertFalse(tunnelStateSink.calls.get(2).blocked);
     }
 
-    private static WireGuardController newController(FakeConfig config, FakeNativeRuntime nativeRuntime, FakeProxySink proxySink) {
+    private static WireGuardController newController(FakeConfig config, FakeNativeRuntime nativeRuntime, FakeTunnelStateSink tunnelStateSink) {
         return new WireGuardController(
                 config,
                 nativeRuntime,
-                proxySink,
-                new WireGuardController.TokenGenerator() {
-                    @Override
-                    public String nextToken(int bytes) {
-                        return "token" + bytes;
-                    }
-                },
+                tunnelStateSink,
                 new WireGuardController.Logger() {
                     @Override
                     public void debug(String message) {
@@ -351,37 +335,23 @@ public class WireGuardControllerTest {
             return 1420;
         }
 
-        @Override
-        public String socksHost() {
-            return "127.0.0.1";
-        }
-
-        @Override
-        public int socksPort() {
-            return 0;
-        }
-
-        @Override
-        public int blockedProxyPort() {
-            return 1;
-        }
     }
 
     private static final class FakeNativeRuntime implements WireGuardController.NativeRuntime {
         int startCalls;
         int networkChangedCalls;
         int stopCalls;
-        int port = 23456;
+        int status = 0;
         int networkChangedStatus = 0;
         RuntimeException failure;
 
         @Override
-        public int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword) {
+        public int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu) {
             startCalls++;
             if (failure != null) {
                 throw failure;
             }
-            return port;
+            return status;
         }
 
         @Override
@@ -396,30 +366,24 @@ public class WireGuardControllerTest {
         }
     }
 
-    private static final class FakeProxySink implements WireGuardController.ProxySettingsSink {
-        final List<ProxyCall> calls = new ArrayList<>();
+    private static final class FakeTunnelStateSink implements WireGuardController.TunnelStateSink {
+        final List<TunnelStateCall> calls = new ArrayList<>();
 
         @Override
-        public void apply(int account, String host, int port, String username, String password, String secret) {
-            calls.add(new ProxyCall(account, host, port, username, password, secret));
+        public void apply(int account, boolean enabled, boolean blocked) {
+            calls.add(new TunnelStateCall(account, enabled, blocked));
         }
     }
 
-    private static final class ProxyCall {
+    private static final class TunnelStateCall {
         final int account;
-        final String host;
-        final int port;
-        final String username;
-        final String password;
-        final String secret;
+        final boolean enabled;
+        final boolean blocked;
 
-        ProxyCall(int account, String host, int port, String username, String password, String secret) {
+        TunnelStateCall(int account, boolean enabled, boolean blocked) {
             this.account = account;
-            this.host = host;
-            this.port = port;
-            this.username = username;
-            this.password = password;
-            this.secret = secret;
+            this.enabled = enabled;
+            this.blocked = blocked;
         }
     }
 }

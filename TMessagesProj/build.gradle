@@ -408,8 +408,8 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def connectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
-        if (!connectionsManagerText.contains("TunnelManager.applyProxySettingsForAccount")) {
-            throw new GradleException("ConnectionsManager.setProxySettings must preserve tunnel proxy settings when a tunnel is enabled")
+        if (!connectionsManagerText.contains("TunnelManager.applyTunnelSettingsForAccount")) {
+            throw new GradleException("ConnectionsManager.setProxySettings must preserve tunnel route settings when a tunnel is enabled")
         }
         def networkRouteSettingsText = file("src/main/java/org/telegram/messenger/NetworkRouteSettings.java").text
         ["TunnelManager.enable", "TunnelManager.disable", "proxy_enabled", "ConnectionsManager.setProxySettings"].each { token ->
@@ -529,10 +529,27 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("ReflectorPort must use the tunnel packet socket factory when no underlying socket factory is available token '${token}'")
             }
         }
+        def tgnetConnectionSocketText = file("jni/tgnet/ConnectionSocket.cpp").text
+        ["tunnelRouteEnabled", "tunnelRouteBlocked", "socketpair", "libtg-tunnel-go.so", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "MSG_NOSIGNAL"].each { token ->
+            if (!tgnetConnectionSocketText.contains(token)) {
+                throw new GradleException("tgnet tunnel route must use direct tunnel TCP transport token '${token}'")
+            }
+        }
+        def nativeConnectionsManagerText = file("jni/tgnet/ConnectionsManager.cpp").text
+        ["setTunnelSettings", "tunnelRouteEnabled", "tunnelRouteBlocked", "proxyAddress = \"\""].each { token ->
+            if (!nativeConnectionsManagerText.contains(token)) {
+                throw new GradleException("Native ConnectionsManager must keep tunnel route state separate from user proxy token '${token}'")
+            }
+        }
         def tunnelGoText = file("jni/tg_tunnel/go/tg_tunnel.go").text
-        ["golang.zx2c4.com/wireguard", "github.com/amnezia-vpn/amneziawg-go", "httpConnectHandshake", "startWireGuardRuntime", "startAmneziaWGRuntime"].each { token ->
+        ["golang.zx2c4.com/wireguard", "github.com/amnezia-vpn/amneziawg-go", "startWireGuardRuntime", "startAmneziaWGRuntime", "return 0"].each { token ->
             if (!tunnelGoText.contains(token)) {
-                throw new GradleException("Shared Go tunnel bridge must support WireGuard, AmneziaWG, and HTTP CONNECT token '${token}'")
+                throw new GradleException("Shared Go tunnel bridge must support direct WireGuard and AmneziaWG runtime token '${token}'")
+            }
+        }
+        ["net.Listen", "acceptLoop", "handleProxyConnection", "socksHandshake", "httpConnectHandshake"].each { token ->
+            if (tunnelGoText.contains(token)) {
+                throw new GradleException("Shared Go tunnel bridge must not expose an internal tgnet proxy token '${token}'")
             }
         }
         def tunnelSocketGoText = file("jni/tg_tunnel/go/tunnel_sockets.go").text

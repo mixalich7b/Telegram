@@ -18,28 +18,18 @@ final class WireGuardController {
         String[] dnsServers();
 
         int mtu();
-
-        String socksHost();
-
-        int socksPort();
-
-        int blockedProxyPort();
     }
 
     interface NativeRuntime {
-        int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword);
+        int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu);
 
         int onNetworkChanged();
 
         void stop();
     }
 
-    interface ProxySettingsSink {
-        void apply(int account, String host, int port, String username, String password, String secret);
-    }
-
-    interface TokenGenerator {
-        String nextToken(int bytes);
+    interface TunnelStateSink {
+        void apply(int account, boolean enabled, boolean blocked);
     }
 
     interface Logger {
@@ -53,22 +43,17 @@ final class WireGuardController {
     private final Object lock = new Object();
     private final Config config;
     private final NativeRuntime nativeRuntime;
-    private final ProxySettingsSink proxySettingsSink;
-    private final TokenGenerator tokenGenerator;
+    private final TunnelStateSink tunnelStateSink;
     private final Logger logger;
 
     private boolean startAttempted;
     private boolean running;
-    private int socksPort;
-    private String socksUsername;
-    private String socksPassword;
     private String failureReason;
 
-    WireGuardController(Config config, NativeRuntime nativeRuntime, ProxySettingsSink proxySettingsSink, TokenGenerator tokenGenerator, Logger logger) {
+    WireGuardController(Config config, NativeRuntime nativeRuntime, TunnelStateSink tunnelStateSink, Logger logger) {
         this.config = config;
         this.nativeRuntime = nativeRuntime;
-        this.proxySettingsSink = proxySettingsSink;
-        this.tokenGenerator = tokenGenerator;
+        this.tunnelStateSink = tunnelStateSink;
         this.logger = logger;
     }
 
@@ -85,24 +70,24 @@ final class WireGuardController {
         }
     }
 
-    boolean applyProxySettingsForAccount(int account) {
+    boolean applyTunnelSettingsForAccount(int account) {
         if (!config.isEnabled()) {
             return false;
         }
         startIfEnabled();
         synchronized (lock) {
-            applyProxySettingsLocked(account);
+            applyTunnelSettingsLocked(account);
             return true;
         }
     }
 
-    boolean applyProxySettingsForAllAccounts(int accountCount) {
+    boolean applyTunnelSettingsForAllAccounts(int accountCount) {
         if (!config.isEnabled()) {
             return false;
         }
         synchronized (lock) {
             startLocked();
-            applyProxySettingsForAccountsLocked(accountCount);
+            applyTunnelSettingsForAccountsLocked(accountCount);
             return true;
         }
     }
@@ -142,12 +127,11 @@ final class WireGuardController {
                 logger.error(e);
             }
             running = false;
-            socksPort = 0;
             startAttempted = false;
             failureReason = config.protocolLabel() + " network refresh failed";
 
             startLocked();
-            applyProxySettingsForAccountsLocked(accountCount);
+            applyTunnelSettingsForAccountsLocked(accountCount);
         }
     }
 
@@ -163,10 +147,10 @@ final class WireGuardController {
             return;
         }
         synchronized (lock) {
-            applyBlockedProxyForAccountsLocked(accountCount);
+            applyBlockedTunnelForAccountsLocked(accountCount);
             stopRuntimeLocked();
             startLocked();
-            applyProxySettingsForAccountsLocked(accountCount);
+            applyTunnelSettingsForAccountsLocked(accountCount);
         }
     }
 
@@ -186,7 +170,6 @@ final class WireGuardController {
 
     private void markFailed(String reason, Throwable throwable) {
         running = false;
-        socksPort = 0;
         failureReason = reason;
         if (throwable != null) {
             logger.error(throwable);
@@ -203,9 +186,6 @@ final class WireGuardController {
             }
         }
         running = false;
-        socksPort = 0;
-        socksUsername = null;
-        socksPassword = null;
         startAttempted = false;
     }
 
@@ -221,60 +201,51 @@ final class WireGuardController {
             return;
         }
 
-        socksUsername = "tg-wg-" + tokenGenerator.nextToken(8);
-        socksPassword = tokenGenerator.nextToken(24);
-
         try {
-            int port = nativeRuntime.start(
+            int status = nativeRuntime.start(
                     config.buildUserspaceConfig(),
                     config.localAddresses(),
                     config.dnsServers(),
-                    config.mtu(),
-                    config.socksHost(),
-                    config.socksPort(),
-                    socksUsername,
-                    socksPassword
+                    config.mtu()
             );
-            if (port <= 0 || port > 65535) {
-                markFailed("nativeStart returned invalid port " + port, null);
+            if (status < 0) {
+                markFailed("nativeStart returned error " + status, null);
                 return;
             }
-            socksPort = port;
             running = true;
             failureReason = null;
-            logger.debug(config.protocolLabel() + " runtime started on " + config.socksHost() + ":" + socksPort);
+            logger.debug(config.protocolLabel() + " runtime started");
         } catch (Throwable e) {
             markFailed("unable to start " + config.protocolLabel() + " runtime", e);
         }
     }
 
-    private void applyProxySettingsForAccountsLocked(int accountCount) {
+    private void applyTunnelSettingsForAccountsLocked(int accountCount) {
         for (int account = 0; account < accountCount; account++) {
-            applyProxySettingsLocked(account);
+            applyTunnelSettingsLocked(account);
         }
     }
 
-    private void applyBlockedProxyForAccountsLocked(int accountCount) {
+    private void applyBlockedTunnelForAccountsLocked(int accountCount) {
         for (int account = 0; account < accountCount; account++) {
-            proxySettingsSink.apply(account, config.socksHost(), config.blockedProxyPort(), "", "", "");
+            tunnelStateSink.apply(account, true, true);
         }
     }
 
     private void applyDirectProxyForAccountsLocked(int accountCount) {
         for (int account = 0; account < accountCount; account++) {
-            proxySettingsSink.apply(account, "", 1080, "", "", "");
+            tunnelStateSink.apply(account, false, false);
         }
     }
 
-    private void applyProxySettingsLocked(int account) {
-        TunnelProxySettings proxySettings = buildProxySettingsLocked();
-        proxySettingsSink.apply(account, proxySettings.host, proxySettings.port, proxySettings.username, proxySettings.password, "");
+    private void applyTunnelSettingsLocked(int account) {
+        tunnelStateSink.apply(account, true, !running);
     }
 
     private TunnelProxySettings buildProxySettingsLocked() {
         if (running) {
-            return new TunnelProxySettings(config.protocol(), config.socksHost(), socksPort, socksUsername, socksPassword, false);
+            return new TunnelProxySettings(config.protocol(), "", 0, "", "", false);
         }
-        return new TunnelProxySettings(config.protocol(), config.socksHost(), config.blockedProxyPort(), "", "", true);
+        return new TunnelProxySettings(config.protocol(), "", 0, "", "", true);
     }
 }

@@ -28,7 +28,7 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
 - profile serialization, encrypted envelope behavior, schema round trips, and
   legacy WireGuard profile migration;
 - controller startup, restart, network refresh, and fail-closed behavior;
-- tunnel proxy protocol metadata;
+- tunnel marker metadata;
 - VoIP route policy for direct, enabled/disabled tunnel-for-calls, active
   tunnel, blocked tunnel, and tunnel-routed P2P cases.
 
@@ -36,11 +36,10 @@ Go bridge tests cover:
 
 - address and endpoint parsing;
 - domain endpoint preprocessing to `IP:port` and DNS failure reporting;
-- SOCKS5 and HTTP CONNECT proxy behavior;
+- direct TCP tunnel socket exports for tgnet;
 - direct TCP/UDP tunnel socket exports for WebRTC VoIP;
 - tunnel DNS lookup, complete TCP writes, and stale runtime-generation socket
   rejection;
-- proxy byte-copy paths through fake dialers;
 - network-change handling through fake bind refreshes;
 - AmneziaWG `device.IpcSet` acceptance for generated AWG UAPI, including
   `jc/jmin/jmax`, `s1..s4`, `h1..h4`, and `i1..i5`.
@@ -59,8 +58,8 @@ accidentally:
 - profile storage uses Android Keystore-backed AES-GCM and does not write
   plaintext profile contents to `mainconfig`;
 - all route-mode changes go through `NetworkRouteSettings`;
-- `ConnectionsManager.setProxySettings(...)` preserves the active internal
-  tunnel proxy;
+- `ConnectionsManager.setProxySettings(...)` preserves the active native tunnel
+  route;
 - unsupported-device UI checks exist for add/import/scan/enable/select;
 - parser rejects multiple peers;
 - VoIP paths use `PROTOCOL_TUNNEL`, `TunnelPacketSocketFactory`, and the
@@ -131,9 +130,8 @@ Cover these flows:
   changes.
 - Re-run license review when tunnel dependencies change.
 - Do not place Go module/cache output under `TMessagesProj/jni`.
-- Do not add SOCKS5 UDP ASSOCIATE assertions until SOCKS5 command `0x03` is
-  implemented; VoIP UDP tunnel coverage belongs to the direct tunnel socket
-  bridge.
+- Do not add SOCKS5 UDP ASSOCIATE assertions for tunnel routing; VoIP UDP tunnel
+  coverage belongs to the direct tunnel socket bridge.
 - Do not add real-server tests to default Gradle tasks.
 - When an invariant intentionally changes, update tests, static guards, docs,
   and `AGENTS.md` together.

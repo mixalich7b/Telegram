@@ -23,17 +23,17 @@ public class TunnelVoipRoutingTest {
 
     @Test
     public void wireGuardTunnelPreservesP2pAndRelayType() {
-        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false));
+        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.WIREGUARD, "", 0, "", "", false));
     }
 
     @Test
     public void amneziaWGTunnelPreservesP2pAndRelayType() {
-        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 39002, "user", "pass", false));
+        assertTunnelPreservesVoipPolicy(new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "", 0, "", "", false));
     }
 
     @Test
     public void disabledTunnelVoipRoutingRemovesProxy() {
-        TunnelProxySettings proxySettings = new TunnelProxySettings(TunnelProtocol.WIREGUARD, "127.0.0.1", 39001, "user", "pass", false);
+        TunnelProxySettings proxySettings = new TunnelProxySettings(TunnelProtocol.WIREGUARD, "", 0, "", "", false);
 
         assertEquals(proxySettings, TunnelVoipRouting.selectProxySettings(true, proxySettings));
         assertNull(TunnelVoipRouting.selectProxySettings(false, proxySettings));
@@ -41,7 +41,7 @@ public class TunnelVoipRoutingTest {
 
     @Test
     public void blockedTunnelStillUsesTunnelVoipPolicy() {
-        TunnelProxySettings blocked = new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "127.0.0.1", 1, "", "", true);
+        TunnelProxySettings blocked = new TunnelProxySettings(TunnelProtocol.AMNEZIA_WG, "", 0, "", "", true);
 
         assertTunnelPreservesVoipPolicy(blocked);
         assertTrue(blocked.blocked);

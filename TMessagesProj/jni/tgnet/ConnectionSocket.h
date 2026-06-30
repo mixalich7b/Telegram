@@ -11,6 +11,7 @@
 
 #include <sys/epoll.h>
 #include <netinet/in.h>
+#include <memory>
 #include <string>
 
 class NativeByteBuffer;
@@ -18,6 +19,7 @@ class ConnectionsManager;
 class ByteStream;
 class EventObject;
 class ByteArray;
+struct TunnelSocketState;
 
 class ConnectionSocket {
 
@@ -58,6 +60,7 @@ private:
     struct sockaddr_in socketAddress;
     struct sockaddr_in6 socketAddress6;
     int socketFd = -1;
+    std::shared_ptr<TunnelSocketState> tunnelSocketState;
     time_t timeout = 12;
     bool onConnectedSent = false;
     int64_t lastEventTime = 0;
@@ -85,6 +88,10 @@ private:
     int32_t checkSocketError(int32_t *error);
     void closeSocket(int32_t reason, int32_t error);
     void openConnectionInternal(bool ipv6);
+    void openTunnelConnection(std::string address, uint16_t port);
+    void finishTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
+    void failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
+    void closeTunnelConnection();
     void adjustWriteOp();
 
     friend class EventObject;

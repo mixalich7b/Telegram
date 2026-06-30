@@ -28,13 +28,12 @@ Reviewed upstream references:
 
 ## Routing
 
-Both protocols use a loopback proxy for `tgnet` and a direct tunnel socket
-bridge for WebRTC VoIP:
+Both protocols use direct tunnel socket bridges for `tgnet` and WebRTC VoIP:
 
 ```text
 tgnet TCP traffic
-  -> authenticated SOCKS5 on 127.0.0.1
-  -> wireguard-go or amneziawg-go tun/netstack
+  -> native tgnet tunnel TCP transport
+  -> direct TCP socket API in wireguard-go or amneziawg-go tun/netstack
   -> UDP to the configured peer
   -> Telegram datacenters
 
@@ -63,14 +62,13 @@ behavior.
   disabled.
 - `Use Tunnel For Calls` is persisted independently and defaults to enabled.
 - If startup, restart, or native network refresh fails while a tunnel is enabled,
-  the app applies a blocked local proxy instead of going direct.
+  the app applies blocked tunnel route state instead of going direct.
 - On devices without Keystore-backed profile storage, add/import/scan/enable and
   profile selection actions are blocked. Stale enabled settings remain
   fail-closed and disable-able.
 
-`ConnectionsManager.setProxySettings(...)` must preserve the internal tunnel
-proxy while a tunnel is enabled; user proxy or direct-route writes must not
-replace it.
+`ConnectionsManager.setProxySettings(...)` must preserve the native tunnel route
+while a tunnel is enabled; user proxy or direct-route writes must not replace it.
 
 ## Java Architecture
 
@@ -80,8 +78,8 @@ The public Java entry point is protocol-neutral:
   network changes, and support gating.
 - `TunnelProtocol`: `WIREGUARD` and `AMNEZIA_WG`.
 - `TunnelConfigParser`: protocol-neutral parser wrapper.
-- `TunnelProxySettings` and `TunnelVoipRouting`: proxy metadata and VoIP route
-  policy.
+- `TunnelProxySettings` and `TunnelVoipRouting`: tunnel marker metadata and VoIP
+  route policy.
 - `WireGuardManager`, `WireGuardProxySettings`, and `WireGuardVoipRouting`:
   compatibility facades for older call sites.
 
@@ -91,8 +89,8 @@ The existing `WireGuardProfile`, `WireGuardSettings`,
 implementation. They now carry both WireGuard common fields and AmneziaWG fields
 to avoid a high-risk rename across UI and persistence code.
 
-`WireGuardController` owns runtime start/restart/stop, fail-closed proxy
-application, network-refresh recovery, and generated loopback proxy credentials.
+`WireGuardController` owns runtime start/restart/stop, fail-closed tunnel route
+application, and network-refresh recovery.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
 ## Profile Storage
@@ -223,13 +221,12 @@ directory instead of whatever `go` binary is first on `PATH`.
 Bridge behavior shared by both protocols:
 
 - `netstack.CreateNetTUN`;
-- authenticated SOCKS5 CONNECT for tgnet;
-- authenticated HTTP CONNECT support for compatibility tests;
+- direct TCP tunnel socket exports for tgnet;
 - direct TCP/UDP tunnel socket exports for WebRTC VoIP;
 - tunnel DNS lookup export for native WebRTC hostname resolution;
 - endpoint DNS preprocessing;
 - bind refresh on network change;
-- host-side endpoint/proxy/network tests.
+- host-side endpoint and tunnel socket tests.
 
 Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
 scans JNI directories recursively and may otherwise package dependency shared

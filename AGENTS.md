@@ -19,8 +19,8 @@ Current routing shape:
 
 ```text
 tgnet TCP traffic
-  -> authenticated SOCKS5 on 127.0.0.1
-  -> wireguard-go tun/netstack
+  -> native tgnet tunnel TCP transport
+  -> direct TCP socket API in wireguard-go tun/netstack
   -> UDP to configured WireGuard peer
   -> Telegram datacenters
 
@@ -37,9 +37,9 @@ Private-call P2P traffic, when Telegram allows P2P
   -> Telegram peer path
 ```
 
-AmneziaWG uses the same local SOCKS5 shape for tgnet and the same direct
-VoIP TCP/UDP tunnel socket shape through `amneziawg-go` tun/netstack, then sends
-obfuscated UDP to the configured AmneziaWG peer.
+AmneziaWG uses the same direct tgnet TCP and VoIP TCP/UDP tunnel socket shape
+through `amneziawg-go` tun/netstack, then sends obfuscated UDP to the configured
+AmneziaWG peer.
 
 ## Hard Constraints
 
@@ -135,13 +135,14 @@ obfuscated UDP to the configured AmneziaWG peer.
 - `NetworkRouteSettings` is the route-mode policy layer for proxy/tunnel mutual
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the
-  internal tunnel proxy while a tunnel is enabled.
-- If tunnel startup, restart, or network-refresh recovery fails, apply the
-  blocked local proxy to all accounts instead of going direct.
+  native tunnel route while a tunnel is enabled.
+- If tunnel startup, restart, or network-refresh recovery fails, apply blocked
+  tunnel route state to all accounts instead of going direct.
 - Network changes should call the native refresh path. If native bind refresh
   fails, restart the runtime and reapply proxy settings; if restart fails, fail
   closed.
-- The internal proxy binds to `127.0.0.1` with generated credentials.
+- tgnet tunnel routing uses the direct native tunnel TCP transport, not a
+  loopback SOCKS/HTTP proxy.
 - Profile contents are encrypted separately from `mainconfig`; only route state
   such as enabled/current profile id and tunnel-for-calls belongs in global
   preferences.

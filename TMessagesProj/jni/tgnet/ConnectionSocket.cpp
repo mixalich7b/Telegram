@@ -15,10 +15,16 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <dlfcn.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
 #include <algorithm>
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <utility>
+#include <vector>
 #include <openssl/bn.h>
 #include "ByteStream.h"
 #include "ConnectionSocket.h"
@@ -37,6 +43,174 @@
 #endif
 
 #define MAX_GREASE 8
+
+namespace {
+
+using TunnelIsRunningFunc = int (*)();
+using TunnelTcpConnectFunc = int64_t (*)(const char *, int);
+using TunnelTcpReadFunc = int (*)(int64_t, void *, int);
+using TunnelTcpWriteFunc = int (*)(int64_t, const void *, int);
+using TunnelTcpCloseFunc = void (*)(int64_t);
+
+class TunnelBridge {
+public:
+    static TunnelBridge &shared() {
+        static TunnelBridge bridge;
+        return bridge;
+    }
+
+    bool load() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (loaded) {
+            return true;
+        }
+        handle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
+        if (handle == nullptr) {
+            if (LOGS_ENABLED) DEBUG_E("tgnet tunnel bridge dlopen failed");
+            return false;
+        }
+        isRunning = reinterpret_cast<TunnelIsRunningFunc>(dlsym(handle, "tgTunnelIsRunning"));
+        tcpConnect = reinterpret_cast<TunnelTcpConnectFunc>(dlsym(handle, "tgTunnelTcpConnect"));
+        tcpRead = reinterpret_cast<TunnelTcpReadFunc>(dlsym(handle, "tgTunnelTcpRead"));
+        tcpWrite = reinterpret_cast<TunnelTcpWriteFunc>(dlsym(handle, "tgTunnelTcpWrite"));
+        tcpClose = reinterpret_cast<TunnelTcpCloseFunc>(dlsym(handle, "tgTunnelTcpClose"));
+        loaded = isRunning != nullptr && tcpConnect != nullptr && tcpRead != nullptr && tcpWrite != nullptr && tcpClose != nullptr;
+        if (!loaded) {
+            if (LOGS_ENABLED) DEBUG_E("tgnet tunnel bridge symbols missing");
+            dlclose(handle);
+            handle = nullptr;
+        }
+        return loaded;
+    }
+
+    bool running() {
+        return load() && isRunning() == 1;
+    }
+
+    TunnelIsRunningFunc isRunning = nullptr;
+    TunnelTcpConnectFunc tcpConnect = nullptr;
+    TunnelTcpReadFunc tcpRead = nullptr;
+    TunnelTcpWriteFunc tcpWrite = nullptr;
+    TunnelTcpCloseFunc tcpClose = nullptr;
+
+private:
+    std::mutex mutex;
+    void *handle = nullptr;
+    bool loaded = false;
+};
+
+} // namespace
+
+struct TunnelSocketState {
+    std::atomic<bool> closed{false};
+    std::atomic<int64_t> handle{0};
+    std::mutex fdMutex;
+    int appFd = -1;
+    int bridgeFd = -1;
+};
+
+namespace {
+
+void closeFd(int &fd) {
+    if (fd >= 0) {
+        close(fd);
+        fd = -1;
+    }
+}
+
+void closeTunnelSocketState(const std::shared_ptr<TunnelSocketState> &state) {
+    if (state == nullptr || state->closed.exchange(true)) {
+        return;
+    }
+    int64_t handle = state->handle.exchange(0);
+    if (handle > 0 && TunnelBridge::shared().load()) {
+        TunnelBridge::shared().tcpClose(handle);
+    }
+    std::lock_guard<std::mutex> lock(state->fdMutex);
+    closeFd(state->bridgeFd);
+    closeFd(state->appFd);
+}
+
+bool writeAllToFd(int fd, const uint8_t *data, size_t size) {
+    size_t written = 0;
+    while (written < size) {
+        ssize_t result = send(fd, data + written, size - written, MSG_NOSIGNAL);
+        if (result < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+        if (result == 0) {
+            return false;
+        }
+        written += static_cast<size_t>(result);
+    }
+    return true;
+}
+
+void relayLocalToTunnel(const std::shared_ptr<TunnelSocketState> &state) {
+    std::vector<uint8_t> buffer(32 * 1024);
+    while (!state->closed.load()) {
+        int fd;
+        {
+            std::lock_guard<std::mutex> lock(state->fdMutex);
+            fd = state->bridgeFd;
+        }
+        if (fd < 0) {
+            break;
+        }
+        ssize_t readCount = read(fd, buffer.data(), buffer.size());
+        if (readCount < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (readCount == 0) {
+            break;
+        }
+        int64_t handle = state->handle.load();
+        if (handle <= 0 || !TunnelBridge::shared().load()) {
+            break;
+        }
+        int written = TunnelBridge::shared().tcpWrite(handle, buffer.data(), static_cast<int>(readCount));
+        if (written != readCount) {
+            break;
+        }
+    }
+    closeTunnelSocketState(state);
+}
+
+void relayTunnelToLocal(const std::shared_ptr<TunnelSocketState> &state) {
+    std::vector<uint8_t> buffer(32 * 1024);
+    while (!state->closed.load()) {
+        int64_t handle = state->handle.load();
+        if (handle <= 0 || !TunnelBridge::shared().load()) {
+            break;
+        }
+        int readCount = TunnelBridge::shared().tcpRead(handle, buffer.data(), static_cast<int>(buffer.size()));
+        if (readCount <= 0) {
+            break;
+        }
+        int fd;
+        {
+            std::lock_guard<std::mutex> lock(state->fdMutex);
+            fd = state->bridgeFd;
+        }
+        if (fd < 0 || !writeAllToFd(fd, buffer.data(), static_cast<size_t>(readCount))) {
+            break;
+        }
+    }
+    closeTunnelSocketState(state);
+}
+
+void startTunnelRelays(const std::shared_ptr<TunnelSocketState> &state) {
+    std::thread(relayLocalToTunnel, state).detach();
+    std::thread(relayTunnelToLocal, state).detach();
+}
+
+} // namespace
 
 static BIGNUM *get_y2(BIGNUM *x, const BIGNUM *mod, BN_CTX *big_num_context) {
     // returns y^2 = x^3 + 486662 * x^2 + x
@@ -454,6 +628,7 @@ ConnectionSocket::ConnectionSocket(int32_t instance) {
 }
 
 ConnectionSocket::~ConnectionSocket() {
+    closeTunnelConnection();
     if (outgoingByteStream != nullptr) {
         delete outgoingByteStream;
         outgoingByteStream = nullptr;
@@ -484,6 +659,36 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
 
     memset(&socketAddress, 0, sizeof(sockaddr_in));
     memset(&socketAddress6, 0, sizeof(sockaddr_in6));
+
+    bool useTunnelRoute = overrideProxyAddress.empty() && ConnectionsManager::getInstance(instanceNum).tunnelRouteEnabled;
+    if (useTunnelRoute) {
+        if (ConnectionsManager::getInstance(instanceNum).tunnelRouteBlocked) {
+            if (LOGS_ENABLED) DEBUG_E("connection(%p) tunnel route is blocked", this);
+            closeSocket(1, ENETDOWN);
+            return;
+        }
+        proxyAuthState = 0;
+        uint32_t tempBuffLength;
+        if (secret.size() > 17 && secret[0] == '\xee') {
+            proxyAuthState = 10;
+            currentSecret = secret.substr(1, 16);
+            currentSecretDomain = secret.substr(17);
+            tempBuffLength = 65 * 1024;
+        } else {
+            tempBuffLength = 0;
+        }
+        if (tempBuffLength > 0) {
+            if (tempBuffer == nullptr || tempBuffer->length < tempBuffLength) {
+                if (tempBuffer != nullptr) {
+                    delete tempBuffer;
+                }
+                tempBuffer = new ByteArray(tempBuffLength);
+            }
+        }
+        if (LOGS_ENABLED) DEBUG_D("connection(%p) connecting via tunnel %s:%d", this, address.c_str(), port);
+        openTunnelConnection(address, port);
+        return;
+    }
 
     std::string *proxyAddress = &overrideProxyAddress;
     std::string *proxySecret = &overrideProxySecret;
@@ -649,6 +854,107 @@ void ConnectionSocket::openConnectionInternal(bool ipv6) {
     }
 }
 
+void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) {
+    int fds[2] = {-1, -1};
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+        if (LOGS_ENABLED) DEBUG_E("connection(%p) can't create tunnel socketpair", this);
+        closeSocket(1, errno);
+        return;
+    }
+
+    auto state = std::make_shared<TunnelSocketState>();
+    state->appFd = fds[0];
+    state->bridgeFd = fds[1];
+    tunnelSocketState = state;
+
+    int32_t connectionInstanceNum = instanceNum;
+    std::thread([this, state, address, port, connectionInstanceNum] {
+        int64_t handle = 0;
+        if (TunnelBridge::shared().running()) {
+            handle = TunnelBridge::shared().tcpConnect(address.c_str(), port);
+        }
+        if (handle <= 0) {
+            if (!state->closed.load()) {
+                ConnectionsManager::getInstance(connectionInstanceNum).scheduleTask([this, state] {
+                    if (state->closed.load()) {
+                        return;
+                    }
+                    failTunnelConnection(state);
+                });
+            }
+            return;
+        }
+        if (state->closed.load()) {
+            if (TunnelBridge::shared().load()) {
+                TunnelBridge::shared().tcpClose(handle);
+            }
+            return;
+        }
+        state->handle.store(handle);
+        startTunnelRelays(state);
+        if (state->closed.load()) {
+            closeTunnelSocketState(state);
+            return;
+        }
+        ConnectionsManager::getInstance(connectionInstanceNum).scheduleTask([this, state] {
+            if (state->closed.load()) {
+                return;
+            }
+            finishTunnelConnection(state);
+        });
+    }).detach();
+}
+
+void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocketState> &state) {
+    if (tunnelSocketState != state || state == nullptr || state->closed.load()) {
+        closeTunnelSocketState(state);
+        return;
+    }
+    int fd = -1;
+    {
+        std::lock_guard<std::mutex> lock(state->fdMutex);
+        fd = state->appFd;
+        state->appFd = -1;
+    }
+    if (fd < 0) {
+        closeSocket(1, ENOTCONN);
+        return;
+    }
+    socketFd = fd;
+    if (fcntl(socketFd, F_SETFL, O_NONBLOCK) == -1) {
+        if (LOGS_ENABLED) DEBUG_E("connection(%p) set tunnel O_NONBLOCK failed", this);
+        closeSocket(1, errno);
+        return;
+    }
+    eventMask.events = EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLET;
+    eventMask.data.ptr = eventObject;
+    if (epoll_ctl(ConnectionsManager::getInstance(instanceNum).epolFd, EPOLL_CTL_ADD, socketFd, &eventMask) != 0) {
+        if (LOGS_ENABLED) DEBUG_E("connection(%p) epoll_ctl, adding tunnel socket failed", this);
+        closeSocket(1, errno);
+        return;
+    }
+    if (adjustWriteOpAfterResolve) {
+        adjustWriteOpAfterResolve = false;
+    }
+    adjustWriteOp();
+}
+
+void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state) {
+    if (tunnelSocketState != state) {
+        closeTunnelSocketState(state);
+        return;
+    }
+    closeTunnelSocketState(state);
+    tunnelSocketState = nullptr;
+    closeSocket(1, ENETDOWN);
+}
+
+void ConnectionSocket::closeTunnelConnection() {
+    auto state = tunnelSocketState;
+    tunnelSocketState = nullptr;
+    closeTunnelSocketState(state);
+}
+
 int32_t ConnectionSocket::checkSocketError(int32_t *error) {
     if (socketFd < 0) {
         return true;
@@ -667,6 +973,7 @@ int32_t ConnectionSocket::checkSocketError(int32_t *error) {
 void ConnectionSocket::closeSocket(int32_t reason, int32_t error) {
     lastEventTime = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
     ConnectionsManager::getInstance(instanceNum).detachConnection(this);
+    closeTunnelConnection();
     if (socketFd >= 0) {
         epoll_ctl(ConnectionsManager::getInstance(instanceNum).epolFd, EPOLL_CTL_DEL, socketFd, nullptr);
         if (close(socketFd) != 0) {
@@ -1087,6 +1394,12 @@ void ConnectionSocket::writeBuffer(NativeByteBuffer *buffer) {
 }
 
 void ConnectionSocket::adjustWriteOp() {
+    if (socketFd < 0) {
+        if (tunnelSocketState != nullptr) {
+            adjustWriteOpAfterResolve = true;
+        }
+        return;
+    }
     if (!waitingForHostResolve.empty()) {
         adjustWriteOpAfterResolve = true;
         return;
@@ -1134,7 +1447,7 @@ void ConnectionSocket::resetLastEventTime() {
 }
 
 bool ConnectionSocket::isDisconnected() {
-    return socketFd < 0;
+    return socketFd < 0 && tunnelSocketState == nullptr;
 }
 
 void ConnectionSocket::dropConnection() {

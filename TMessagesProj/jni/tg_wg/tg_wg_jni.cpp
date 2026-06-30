@@ -9,7 +9,7 @@ namespace {
 
 constexpr const char *kTag = "Telegram/WireGuard";
 
-using StartFunc = int (*)(const char *, const char **, int, const char **, int, int, const char *, int, const char *, const char *);
+using StartFunc = int (*)(const char *, const char **, int, const char **, int, int);
 using VoidFunc = void (*)();
 using NetworkChangedFunc = int (*)();
 
@@ -102,15 +102,12 @@ std::vector<const char *> toCStringVector(const std::vector<std::string> &values
 } // namespace
 
 extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_TunnelManager_nativeWireGuardStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu, jstring socksHost, jint socksPort, jstring socksUsername, jstring socksPassword) {
+Java_org_telegram_messenger_TunnelManager_nativeWireGuardStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu) {
     if (!loadGoBridge()) {
         return -100;
     }
 
     ScopedUtfChars config(env, userspaceConfig);
-    ScopedUtfChars host(env, socksHost);
-    ScopedUtfChars username(env, socksUsername);
-    ScopedUtfChars password(env, socksPassword);
 
     std::vector<std::string> localAddressValues = toStringVector(env, localAddresses);
     std::vector<std::string> dnsServerValues = toStringVector(env, dnsServers);
@@ -123,11 +120,7 @@ Java_org_telegram_messenger_TunnelManager_nativeWireGuardStart(JNIEnv *env, jcla
             static_cast<int>(localAddressPointers.size()),
             dnsServerPointers.data(),
             static_cast<int>(dnsServerPointers.size()),
-            static_cast<int>(mtu),
-            host.get(),
-            static_cast<int>(socksPort),
-            username.get(),
-            password.get()));
+            static_cast<int>(mtu)));
 }
 
 extern "C" JNIEXPORT jint JNICALL

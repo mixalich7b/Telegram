@@ -66,11 +66,11 @@ public final class WireGuardManager {
     }
 
     public static boolean applyProxySettingsForAccount(int account) {
-        return TunnelManager.applyProxySettingsForAccount(account);
+        return TunnelManager.applyTunnelSettingsForAccount(account);
     }
 
     public static boolean applyProxySettingsForAllAccounts() {
-        return TunnelManager.applyProxySettingsForAllAccounts();
+        return TunnelManager.applyTunnelSettingsForAllAccounts();
     }
 
     public static WireGuardProxySettings getProxySettings() {

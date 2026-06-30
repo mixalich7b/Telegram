@@ -2,19 +2,12 @@ package org.telegram.messenger;
 
 import org.telegram.tgnet.ConnectionsManager;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Locale;
 
 public final class TunnelManager {
 
     private static final String WIREGUARD_NATIVE_LIBRARY_NAME = "tg-wg";
     private static final String AMNEZIA_NATIVE_LIBRARY_NAME = "tg-awg";
-    private static final String SOCKS_BIND_HOST = "127.0.0.1";
-    private static final int SOCKS_BIND_PORT = 0;
-    private static final int BLOCKED_PROXY_PORT = 1;
-
-    private static final SecureRandom random = new SecureRandom();
     private static final RuntimeSelector runtimeSelector = new RuntimeSelector();
     private static final WireGuardController controller = new WireGuardController(
             new WireGuardController.Config() {
@@ -64,32 +57,12 @@ public final class TunnelManager {
                     return profile == null ? WireGuardProfile.DEFAULT_MTU : profile.mtu;
                 }
 
-                @Override
-                public String socksHost() {
-                    return SOCKS_BIND_HOST;
-                }
-
-                @Override
-                public int socksPort() {
-                    return SOCKS_BIND_PORT;
-                }
-
-                @Override
-                public int blockedProxyPort() {
-                    return BLOCKED_PROXY_PORT;
-                }
             },
             runtimeSelector,
-            new WireGuardController.ProxySettingsSink() {
+            new WireGuardController.TunnelStateSink() {
                 @Override
-                public void apply(int account, String host, int port, String username, String password, String secret) {
-                    ConnectionsManager.native_setProxySettings(account, host, port, username, password, secret);
-                }
-            },
-            new WireGuardController.TokenGenerator() {
-                @Override
-                public String nextToken(int bytes) {
-                    return randomToken(bytes);
+                public void apply(int account, boolean enabled, boolean blocked) {
+                    ConnectionsManager.native_setTunnelSettings(account, enabled, blocked);
                 }
             },
             new WireGuardController.Logger() {
@@ -196,11 +169,19 @@ public final class TunnelManager {
     }
 
     public static boolean applyProxySettingsForAccount(int account) {
-        return controller.applyProxySettingsForAccount(account);
+        return controller.applyTunnelSettingsForAccount(account);
+    }
+
+    public static boolean applyTunnelSettingsForAccount(int account) {
+        return controller.applyTunnelSettingsForAccount(account);
     }
 
     public static boolean applyProxySettingsForAllAccounts() {
-        return controller.applyProxySettingsForAllAccounts(UserConfig.MAX_ACCOUNT_COUNT);
+        return controller.applyTunnelSettingsForAllAccounts(UserConfig.MAX_ACCOUNT_COUNT);
+    }
+
+    public static boolean applyTunnelSettingsForAllAccounts() {
+        return controller.applyTunnelSettingsForAllAccounts(UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static TunnelProxySettings getProxySettings() {
@@ -219,30 +200,20 @@ public final class TunnelManager {
         return controller.getFailureReason();
     }
 
-    private static String randomToken(int bytes) {
-        byte[] data = new byte[bytes];
-        random.nextBytes(data);
-        StringBuilder builder = new StringBuilder(bytes * 2);
-        for (byte value : data) {
-            builder.append(String.format(Locale.US, "%02x", value & 0xff));
-        }
-        return builder.toString();
-    }
-
     private static final class RuntimeSelector implements WireGuardController.NativeRuntime {
         private TunnelProtocol activeProtocol;
 
         @Override
-        public int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword) {
+        public int start(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu) {
             WireGuardProfile profile = WireGuardSettings.getCurrentProfile();
             TunnelProtocol protocol = profile == null ? TunnelProtocol.WIREGUARD : profile.protocol;
             activeProtocol = protocol;
             if (protocol == TunnelProtocol.AMNEZIA_WG) {
                 System.loadLibrary(AMNEZIA_NATIVE_LIBRARY_NAME);
-                return nativeAmneziaWGStart(userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword);
+                return nativeAmneziaWGStart(userspaceConfig, localAddresses, dnsServers, mtu);
             }
             System.loadLibrary(WIREGUARD_NATIVE_LIBRARY_NAME);
-            return nativeWireGuardStart(userspaceConfig, localAddresses, dnsServers, mtu, socksHost, socksPort, socksUsername, socksPassword);
+            return nativeWireGuardStart(userspaceConfig, localAddresses, dnsServers, mtu);
         }
 
         @Override
@@ -264,10 +235,10 @@ public final class TunnelManager {
         }
     }
 
-    private static native int nativeWireGuardStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword);
+    private static native int nativeWireGuardStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu);
     private static native int nativeWireGuardOnNetworkChanged();
     private static native void nativeWireGuardStop();
-    private static native int nativeAmneziaWGStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, String socksHost, int socksPort, String socksUsername, String socksPassword);
+    private static native int nativeAmneziaWGStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu);
     private static native int nativeAmneziaWGOnNetworkChanged();
     private static native void nativeAmneziaWGStop();
 }
