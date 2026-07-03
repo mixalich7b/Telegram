@@ -84,6 +84,67 @@ public class WireGuardControllerTest {
     }
 
     @Test
+    public void startupFailureSchedulesReconnectAndUnblocksAfterRetrySucceeds() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        nativeRuntime.status = -1;
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        FakeRetryScheduler retryScheduler = new FakeRetryScheduler();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink, retryScheduler);
+
+        assertTrue(controller.applyTunnelSettingsForAllAccounts(2));
+
+        assertEquals(1, nativeRuntime.startCalls);
+        assertFalse(controller.isRunningForTests());
+        assertEquals(1, retryScheduler.delays.size());
+        assertEquals(1000L, (long) retryScheduler.delays.get(0));
+        assertTrue(tunnelStateSink.calls.get(0).blocked);
+        assertTrue(tunnelStateSink.calls.get(1).blocked);
+
+        nativeRuntime.status = 0;
+        retryScheduler.runNext();
+
+        assertEquals(2, nativeRuntime.startCalls);
+        assertTrue(controller.isRunningForTests());
+        assertNull(controller.getFailureReason());
+        assertEquals(6, tunnelStateSink.calls.size());
+        assertTrue(tunnelStateSink.calls.get(2).blocked);
+        assertTrue(tunnelStateSink.calls.get(3).blocked);
+        assertFalse(tunnelStateSink.calls.get(4).blocked);
+        assertFalse(tunnelStateSink.calls.get(5).blocked);
+    }
+
+    @Test
+    public void retryBackoffRepeatsAfterExhaustion() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        nativeRuntime.status = -1;
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        FakeRetryScheduler retryScheduler = new FakeRetryScheduler();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink, retryScheduler);
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long[] expectedDelays = new long[]{
+                1000L,
+                2000L,
+                2000L,
+                3000L,
+                5000L,
+                10000L,
+                10000L,
+                10000L,
+                1000L
+        };
+
+        for (int i = 0; i < expectedDelays.length; i++) {
+            assertEquals(expectedDelays[i], (long) retryScheduler.delays.get(i));
+            if (i + 1 < expectedDelays.length) {
+                retryScheduler.runNext();
+            }
+        }
+    }
+
+    @Test
     public void validationFailureDoesNotStartNativeRuntime() {
         FakeConfig config = new FakeConfig();
         config.validationError = "missing WireGuard config values: [PRIVATE_KEY]";
@@ -98,6 +159,22 @@ public class WireGuardControllerTest {
         assertEquals(config.validationError, controller.getFailureReason());
         assertTrue(tunnelStateSink.calls.get(0).enabled);
         assertTrue(tunnelStateSink.calls.get(0).blocked);
+    }
+
+    @Test
+    public void validationFailureDoesNotScheduleReconnect() {
+        FakeConfig config = new FakeConfig();
+        config.validationError = "missing WireGuard config values: [PRIVATE_KEY]";
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        FakeRetryScheduler retryScheduler = new FakeRetryScheduler();
+
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink, retryScheduler);
+
+        assertTrue(controller.applyTunnelSettingsForAccount(1));
+
+        assertEquals(0, nativeRuntime.startCalls);
+        assertEquals(0, retryScheduler.delays.size());
     }
 
     @Test
@@ -230,6 +307,55 @@ public class WireGuardControllerTest {
     }
 
     @Test
+    public void tunnelConnectionFailureStopsRuntimeBlocksRouteAndSchedulesReconnect() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        FakeRetryScheduler retryScheduler = new FakeRetryScheduler();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink, retryScheduler);
+
+        controller.applyTunnelSettingsForAccount(1, 2);
+        controller.onTunnelConnectionFailure(2);
+
+        assertEquals(1, nativeRuntime.startCalls);
+        assertEquals(1, nativeRuntime.stopCalls);
+        assertFalse(controller.isRunningForTests());
+        assertEquals("WireGuard connection failed", controller.getFailureReason());
+        assertEquals(1, retryScheduler.delays.size());
+        assertEquals(1000L, (long) retryScheduler.delays.get(0));
+        assertTrue(tunnelStateSink.calls.get(1).blocked);
+        assertTrue(tunnelStateSink.calls.get(2).blocked);
+
+        retryScheduler.runNext();
+
+        assertEquals(2, nativeRuntime.startCalls);
+        assertTrue(controller.isRunningForTests());
+        assertNull(controller.getFailureReason());
+        assertFalse(tunnelStateSink.calls.get(5).blocked);
+        assertFalse(tunnelStateSink.calls.get(6).blocked);
+    }
+
+    @Test
+    public void disableCancelsScheduledReconnect() {
+        FakeConfig config = new FakeConfig();
+        FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
+        nativeRuntime.status = -1;
+        FakeTunnelStateSink tunnelStateSink = new FakeTunnelStateSink();
+        FakeRetryScheduler retryScheduler = new FakeRetryScheduler();
+        WireGuardController controller = newController(config, nativeRuntime, tunnelStateSink, retryScheduler);
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        controller.disable(1);
+        retryScheduler.runNext();
+
+        assertEquals(1, nativeRuntime.startCalls);
+        assertEquals(1, retryScheduler.cancelCalls);
+        assertFalse(controller.isRunningForTests());
+        assertNull(controller.getFailureReason());
+        assertFalse(tunnelStateSink.calls.get(tunnelStateSink.calls.size() - 1).enabled);
+    }
+
+    @Test
     public void restartAppliesBlockedTunnelRouteBeforeStartingNewRuntime() {
         FakeConfig config = new FakeConfig();
         FakeNativeRuntime nativeRuntime = new FakeNativeRuntime();
@@ -271,6 +397,10 @@ public class WireGuardControllerTest {
     }
 
     private static WireGuardController newController(FakeConfig config, FakeNativeRuntime nativeRuntime, FakeTunnelStateSink tunnelStateSink) {
+        return newController(config, nativeRuntime, tunnelStateSink, new FakeRetryScheduler());
+    }
+
+    private static WireGuardController newController(FakeConfig config, FakeNativeRuntime nativeRuntime, FakeTunnelStateSink tunnelStateSink, FakeRetryScheduler retryScheduler) {
         return new WireGuardController(
                 config,
                 nativeRuntime,
@@ -287,7 +417,8 @@ public class WireGuardControllerTest {
                     @Override
                     public void error(Throwable throwable) {
                     }
-                });
+                },
+                retryScheduler);
     }
 
     private static final class FakeConfig implements WireGuardController.Config {
@@ -372,6 +503,32 @@ public class WireGuardControllerTest {
         @Override
         public void apply(int account, boolean enabled, boolean blocked) {
             calls.add(new TunnelStateCall(account, enabled, blocked));
+        }
+    }
+
+    private static final class FakeRetryScheduler implements WireGuardController.RetryScheduler {
+        final List<Runnable> runnables = new ArrayList<>();
+        final List<Runnable> canceled = new ArrayList<>();
+        final List<Long> delays = new ArrayList<>();
+        int cancelCalls;
+
+        @Override
+        public void schedule(Runnable runnable, long delayMs) {
+            runnables.add(runnable);
+            delays.add(delayMs);
+        }
+
+        @Override
+        public void cancel(Runnable runnable) {
+            cancelCalls++;
+            canceled.add(runnable);
+        }
+
+        void runNext() {
+            Runnable runnable = runnables.remove(0);
+            if (!canceled.contains(runnable)) {
+                runnable.run();
+            }
         }
     }
 

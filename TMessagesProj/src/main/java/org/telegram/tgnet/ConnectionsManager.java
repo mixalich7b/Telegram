@@ -885,6 +885,10 @@ public class ConnectionsManager extends BaseController {
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needShowAlert, 3));
     }
 
+    public static void onTunnelConnectionFailure(int currentAccount) {
+        AndroidUtilities.runOnUIThread(TunnelManager::onTunnelConnectionFailure);
+    }
+
     public static void getHostByName(String hostName, long address) {
         AndroidUtilities.runOnUIThread(() -> {
             ResolvedDomain resolvedDomain = dnsCache.get(hostName);

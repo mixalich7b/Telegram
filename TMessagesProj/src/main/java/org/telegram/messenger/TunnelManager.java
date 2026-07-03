@@ -127,7 +127,7 @@ public final class TunnelManager {
     }
 
     public static void startIfEnabled() {
-        controller.startIfEnabled();
+        controller.startIfEnabled(UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static void enable(String profileId) {
@@ -169,11 +169,11 @@ public final class TunnelManager {
     }
 
     public static boolean applyProxySettingsForAccount(int account) {
-        return controller.applyTunnelSettingsForAccount(account);
+        return controller.applyTunnelSettingsForAccount(account, UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static boolean applyTunnelSettingsForAccount(int account) {
-        return controller.applyTunnelSettingsForAccount(account);
+        return controller.applyTunnelSettingsForAccount(account, UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static boolean applyProxySettingsForAllAccounts() {
@@ -185,7 +185,7 @@ public final class TunnelManager {
     }
 
     public static TunnelProxySettings getProxySettings() {
-        return controller.getProxySettings();
+        return controller.getProxySettings(UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static TunnelProxySettings getVoipProxySettings() {
@@ -198,6 +198,10 @@ public final class TunnelManager {
 
     public static String getFailureReason() {
         return controller.getFailureReason();
+    }
+
+    public static void onTunnelConnectionFailure() {
+        controller.onTunnelConnectionFailure(UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     private static final class RuntimeSelector implements WireGuardController.NativeRuntime {

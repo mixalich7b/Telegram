@@ -198,7 +198,16 @@ to peer configuration. Zero or unset AmneziaWG values are omitted.
 
 Domain peer endpoints are resolved by the Go runtime to `IP:port` before calling
 the upstream UAPI parser. DNS resolution failure keeps startup failed and
-therefore fail-closed.
+therefore fail-closed. Retryable runtime failures automatically schedule a
+fail-closed reconnect loop with backoff delays of 1s, 2s, 2s, 3s, 5s, 10s,
+10s, and 10s; if the runtime still cannot recover after that sequence, the
+sequence starts again from 1s. Validation failures such as a missing profile are
+not retried.
+
+When tgnet tunnel TCP connect fails while the native tunnel route is active, the
+route is blocked, the current runtime is stopped, and the same reconnect backoff
+is used. The native route remains blocked until a retry starts the runtime
+successfully and reapplies tunnel settings.
 
 ## Native Runtime And Build
 

@@ -1,6 +1,16 @@
 package org.telegram.messenger;
 
 final class WireGuardController {
+    private static final long[] RETRY_DELAYS_MS = new long[]{
+            1000L,
+            2000L,
+            2000L,
+            3000L,
+            5000L,
+            10000L,
+            10000L,
+            10000L
+    };
 
     interface Config {
         boolean isEnabled();
@@ -40,42 +50,81 @@ final class WireGuardController {
         void error(Throwable throwable);
     }
 
+    interface RetryScheduler {
+        void schedule(Runnable runnable, long delayMs);
+
+        void cancel(Runnable runnable);
+    }
+
     private final Object lock = new Object();
     private final Config config;
     private final NativeRuntime nativeRuntime;
     private final TunnelStateSink tunnelStateSink;
     private final Logger logger;
+    private final RetryScheduler retryScheduler;
 
     private boolean startAttempted;
     private boolean running;
     private String failureReason;
+    private Runnable retryRunnable;
+    private int retryDelayIndex;
+    private int retryGeneration;
+    private int retryAccountCount;
+    private int lastAccountCount;
 
     WireGuardController(Config config, NativeRuntime nativeRuntime, TunnelStateSink tunnelStateSink, Logger logger) {
+        this(
+                config,
+                nativeRuntime,
+                tunnelStateSink,
+                logger,
+                new RetryScheduler() {
+                    @Override
+                    public void schedule(Runnable runnable, long delayMs) {
+                        AndroidUtilities.runOnUIThread(runnable, delayMs);
+                    }
+
+                    @Override
+                    public void cancel(Runnable runnable) {
+                        AndroidUtilities.cancelRunOnUIThread(runnable);
+                    }
+                });
+    }
+
+    WireGuardController(Config config, NativeRuntime nativeRuntime, TunnelStateSink tunnelStateSink, Logger logger, RetryScheduler retryScheduler) {
         this.config = config;
         this.nativeRuntime = nativeRuntime;
         this.tunnelStateSink = tunnelStateSink;
         this.logger = logger;
+        this.retryScheduler = retryScheduler;
     }
 
     boolean isEnabled() {
         return config.isEnabled();
     }
 
-    void startIfEnabled() {
+    void startIfEnabled(int accountCount) {
         if (!config.isEnabled()) {
             return;
         }
         synchronized (lock) {
-            startLocked();
+            rememberAccountCountLocked(accountCount);
+            startLocked(accountCount);
+            applyTunnelSettingsForAccountsLocked(accountCount);
         }
     }
 
     boolean applyTunnelSettingsForAccount(int account) {
+        return applyTunnelSettingsForAccount(account, account + 1);
+    }
+
+    boolean applyTunnelSettingsForAccount(int account, int accountCount) {
         if (!config.isEnabled()) {
             return false;
         }
-        startIfEnabled();
         synchronized (lock) {
+            rememberAccountCountLocked(accountCount);
+            startLocked(accountCount);
             applyTunnelSettingsLocked(account);
             return true;
         }
@@ -86,18 +135,24 @@ final class WireGuardController {
             return false;
         }
         synchronized (lock) {
-            startLocked();
+            rememberAccountCountLocked(accountCount);
+            startLocked(accountCount);
             applyTunnelSettingsForAccountsLocked(accountCount);
             return true;
         }
     }
 
     TunnelProxySettings getProxySettings() {
+        return getProxySettings(Math.max(1, lastAccountCount));
+    }
+
+    TunnelProxySettings getProxySettings(int accountCount) {
         if (!config.isEnabled()) {
             return null;
         }
         synchronized (lock) {
-            startLocked();
+            rememberAccountCountLocked(accountCount);
+            startLocked(accountCount);
             return buildProxySettingsLocked();
         }
     }
@@ -130,7 +185,7 @@ final class WireGuardController {
             startAttempted = false;
             failureReason = config.protocolLabel() + " network refresh failed";
 
-            startLocked();
+            startLocked(accountCount);
             applyTunnelSettingsForAccountsLocked(accountCount);
         }
     }
@@ -147,18 +202,41 @@ final class WireGuardController {
             return;
         }
         synchronized (lock) {
+            cancelRetryLocked(true);
+            rememberAccountCountLocked(accountCount);
             applyBlockedTunnelForAccountsLocked(accountCount);
             stopRuntimeLocked();
-            startLocked();
+            startLocked(accountCount);
             applyTunnelSettingsForAccountsLocked(accountCount);
         }
     }
 
     void disable(int accountCount) {
         synchronized (lock) {
+            cancelRetryLocked(true);
             stopRuntimeLocked();
             failureReason = null;
+            retryAccountCount = 0;
+            lastAccountCount = 0;
             applyDirectProxyForAccountsLocked(accountCount);
+        }
+    }
+
+    void onTunnelConnectionFailure(int accountCount) {
+        if (!config.isEnabled()) {
+            return;
+        }
+        synchronized (lock) {
+            rememberAccountCountLocked(accountCount);
+            if (!running) {
+                return;
+            }
+            String reason = config.protocolLabel() + " connection failed";
+            failureReason = reason;
+            logger.error(config.protocolLabel() + " runtime failed: " + reason);
+            applyBlockedTunnelForAccountsLocked(accountCount);
+            stopRuntimeLocked();
+            scheduleRetryLocked(accountCount);
         }
     }
 
@@ -168,13 +246,16 @@ final class WireGuardController {
         }
     }
 
-    private void markFailed(String reason, Throwable throwable) {
+    private void markFailed(String reason, Throwable throwable, boolean retryable, int accountCount) {
         running = false;
         failureReason = reason;
         if (throwable != null) {
             logger.error(throwable);
         }
-        logger.error(config.protocolLabel() + " runtime disabled: " + reason);
+        logger.error(config.protocolLabel() + " runtime failed: " + reason);
+        if (retryable) {
+            scheduleRetryLocked(accountCount);
+        }
     }
 
     private void stopRuntimeLocked() {
@@ -189,15 +270,15 @@ final class WireGuardController {
         startAttempted = false;
     }
 
-    private void startLocked() {
-        if (startAttempted) {
+    private void startLocked(int accountCount) {
+        if (startAttempted || retryRunnable != null) {
             return;
         }
         startAttempted = true;
 
         String validationError = config.validate();
         if (validationError != null) {
-            markFailed(validationError, null);
+            markFailed(validationError, null, false, accountCount);
             return;
         }
 
@@ -209,15 +290,70 @@ final class WireGuardController {
                     config.mtu()
             );
             if (status < 0) {
-                markFailed("nativeStart returned error " + status, null);
+                markFailed("nativeStart returned error " + status, null, true, accountCount);
                 return;
             }
             running = true;
             failureReason = null;
+            cancelRetryLocked(true);
             logger.debug(config.protocolLabel() + " runtime started");
         } catch (Throwable e) {
-            markFailed("unable to start " + config.protocolLabel() + " runtime", e);
+            markFailed("unable to start " + config.protocolLabel() + " runtime", e, true, accountCount);
         }
+    }
+
+    private void scheduleRetryLocked(int accountCount) {
+        if (retryRunnable != null || !config.isEnabled()) {
+            return;
+        }
+        rememberAccountCountLocked(accountCount);
+        retryAccountCount = Math.max(retryAccountCount, Math.max(1, accountCount));
+        long delayMs = RETRY_DELAYS_MS[retryDelayIndex];
+        retryDelayIndex = (retryDelayIndex + 1) % RETRY_DELAYS_MS.length;
+        int generation = ++retryGeneration;
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                retryNow(generation);
+            }
+        };
+        retryRunnable = runnable;
+        logger.error(config.protocolLabel() + " reconnect scheduled in " + delayMs + " ms");
+        retryScheduler.schedule(runnable, delayMs);
+    }
+
+    private void retryNow(int generation) {
+        synchronized (lock) {
+            if (generation != retryGeneration || retryRunnable == null) {
+                return;
+            }
+            retryRunnable = null;
+            if (!config.isEnabled()) {
+                return;
+            }
+            int accountCount = Math.max(1, retryAccountCount);
+            applyBlockedTunnelForAccountsLocked(accountCount);
+            stopRuntimeLocked();
+            startLocked(accountCount);
+            applyTunnelSettingsForAccountsLocked(accountCount);
+        }
+    }
+
+    private void cancelRetryLocked(boolean resetBackoff) {
+        if (retryRunnable != null) {
+            retryScheduler.cancel(retryRunnable);
+            retryRunnable = null;
+        }
+        retryGeneration++;
+        retryAccountCount = 0;
+        if (resetBackoff) {
+            retryDelayIndex = 0;
+        }
+    }
+
+    private void rememberAccountCountLocked(int accountCount) {
+        lastAccountCount = Math.max(lastAccountCount, Math.max(1, accountCount));
+        retryAccountCount = Math.max(retryAccountCount, lastAccountCount);
     }
 
     private void applyTunnelSettingsForAccountsLocked(int accountCount) {

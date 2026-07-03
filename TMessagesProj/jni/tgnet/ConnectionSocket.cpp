@@ -946,6 +946,9 @@ void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketSt
     }
     closeTunnelSocketState(state);
     tunnelSocketState = nullptr;
+    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelConnectionFailure(instanceNum);
+    }
     closeSocket(1, ENETDOWN);
 }
 
