@@ -116,6 +116,9 @@ import java.util.Locale;
 
 public class SecretMediaViewer implements NotificationCenter.NotificationCenterDelegate, GestureDetector.OnGestureListener, GestureDetector.OnDoubleTapListener {
 
+    private final static float SWIPE_TO_DISMISS_DISTANCE_FACTOR = 8.0f;
+    private final static int SWIPE_TO_DISMISS_VELOCITY_DP = 650;
+
     private class FrameLayoutDrawer extends FrameLayout {
         public FrameLayoutDrawer(Context context) {
             super(context);
@@ -2359,7 +2362,15 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
                 }
                 zooming = false;
             } else if (draggingDown) {
-                if (Math.abs(dragY - ev.getY()) > getContainerViewHeight() / 6.0f) {
+                float dragOffsetY = ev.getY() - dragY;
+                float velocityY = 0;
+                if (velocityTracker != null) {
+                    velocityTracker.computeCurrentVelocity(1000);
+                    velocityY = velocityTracker.getYVelocity();
+                }
+                boolean dismissByDistance = Math.abs(dragOffsetY) > getContainerViewHeight() / SWIPE_TO_DISMISS_DISTANCE_FACTOR;
+                boolean dismissByVelocity = Math.abs(velocityY) > dp(SWIPE_TO_DISMISS_VELOCITY_DP);
+                if (dismissByDistance || dismissByVelocity) {
                     closePhoto(true, false);
                 } else {
                     animateTo(1, 0, 0, false);

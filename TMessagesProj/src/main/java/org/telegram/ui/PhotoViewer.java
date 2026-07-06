@@ -351,6 +351,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private final BoolAnimator animatorPollAttachButtonsVisibility = new BoolAnimator(ANIMATOR_ID_POLL_ATTACH_BUTTONS_VISIBLE, this, CubicBezierInterpolator.EASE_OUT_QUINT, 380);
 
     private final static float ZOOM_SCALE = 0.1f;
+    private final static float SWIPE_TO_DISMISS_DISTANCE_FACTOR = 8.0f;
+    private final static int SWIPE_TO_DISMISS_VELOCITY_DP = 650;
     private final static int MARK_DEFERRED_IMAGE_LOADING = 1;
 
     private boolean ALLOW_USE_SURFACE = Build.VERSION.SDK_INT >= 30;
@@ -19413,8 +19415,17 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 zooming = false;
                 moving = false;
             } else if (draggingDown) {
-                if (Math.abs(dragY - ev.getY()) > getContainerViewHeight() / 6.0f) {
-                    if (enableSwipeToPiP() && (dragY - ev.getY() > 0)) {
+                float dragOffsetY = ev.getY() - dragY;
+                float velocityY = 0;
+                if (velocityTracker != null) {
+                    velocityTracker.computeCurrentVelocity(1000);
+                    velocityY = velocityTracker.getYVelocity();
+                }
+                boolean dismissByDistance = Math.abs(dragOffsetY) > getContainerViewHeight() / SWIPE_TO_DISMISS_DISTANCE_FACTOR;
+                boolean dismissByVelocity = Math.abs(velocityY) > dp(SWIPE_TO_DISMISS_VELOCITY_DP);
+                if (dismissByDistance || dismissByVelocity) {
+                    boolean swipeUp = dismissByVelocity ? velocityY < 0 : dragOffsetY < 0;
+                    if (enableSwipeToPiP() && swipeUp) {
                         switchToPip(true);
                     } else {
                         closePhoto(true, false);
