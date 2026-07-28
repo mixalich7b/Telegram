@@ -104,6 +104,7 @@ private:
 struct TunnelSocketState {
     std::atomic<bool> closed{false};
     std::atomic<int64_t> handle{0};
+    int64_t lifecycleGeneration = 0;
     std::mutex fdMutex;
     int appFd = -1;
     int bridgeFd = -1;
@@ -865,6 +866,7 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
     auto state = std::make_shared<TunnelSocketState>();
     state->appFd = fds[0];
     state->bridgeFd = fds[1];
+    state->lifecycleGeneration = ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration;
     tunnelSocketState = state;
 
     int32_t connectionInstanceNum = instanceNum;
@@ -937,6 +939,12 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
         adjustWriteOpAfterResolve = false;
     }
     adjustWriteOp();
+    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnected(
+                instanceNum,
+                state->lifecycleGeneration
+        );
+    }
 }
 
 void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state) {
@@ -947,7 +955,10 @@ void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketSt
     closeTunnelSocketState(state);
     tunnelSocketState = nullptr;
     if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
-        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelConnectionFailure(instanceNum);
+        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectFailed(
+                instanceNum,
+                state->lifecycleGeneration
+        );
     }
     closeSocket(1, ENETDOWN);
 }

@@ -3533,8 +3533,8 @@ ConnectionState ConnectionsManager::getConnectionState() {
     return connectionState;
 }
 
-void ConnectionsManager::setDelegate(ConnectiosManagerDelegate *connectiosManagerDelegate) {
-    delegate = connectiosManagerDelegate;
+void ConnectionsManager::setDelegate(ConnectionsManagerDelegate *connectionsManagerDelegate) {
+    delegate = connectionsManagerDelegate;
 }
 
 void ConnectionsManager::setPushConnectionEnabled(bool value) {
@@ -3712,6 +3712,7 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
         bool reconnect = proxyAddress != address || proxyPort != port || username != proxyUser || proxyPassword != password || secretChanged;
         tunnelRouteEnabled = false;
         tunnelRouteBlocked = false;
+        tunnelRouteGeneration = 0;
         proxyAddress = address;
         proxyPort = port;
         proxyUser = username;
@@ -3747,11 +3748,18 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
     });
 }
 
-void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked) {
-    scheduleTask([&, enabled, blocked] {
-        bool reconnect = tunnelRouteEnabled != enabled || tunnelRouteBlocked != blocked || !proxyAddress.empty() || !proxyUser.empty() || !proxyPassword.empty() || !proxySecret.empty();
+void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked, int64_t lifecycleGeneration) {
+    scheduleTask([&, enabled, blocked, lifecycleGeneration] {
+        bool reconnect = tunnelRouteEnabled != enabled
+                || tunnelRouteBlocked != blocked
+                || tunnelRouteGeneration != lifecycleGeneration
+                || !proxyAddress.empty()
+                || !proxyUser.empty()
+                || !proxyPassword.empty()
+                || !proxySecret.empty();
         tunnelRouteEnabled = enabled;
         tunnelRouteBlocked = enabled && blocked;
+        tunnelRouteGeneration = lifecycleGeneration;
         proxyAddress = "";
         proxyPort = 1080;
         proxyUser = "";

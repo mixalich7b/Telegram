@@ -34,7 +34,8 @@ jmethodID jclass_ConnectionsManager_onBytesSent;
 jmethodID jclass_ConnectionsManager_onBytesReceived;
 jmethodID jclass_ConnectionsManager_onRequestNewServerIpAndPort;
 jmethodID jclass_ConnectionsManager_onProxyError;
-jmethodID jclass_ConnectionsManager_onTunnelConnectionFailure;
+jmethodID jclass_ConnectionsManager_onTunnelTcpConnectFailed;
+jmethodID jclass_ConnectionsManager_onTunnelTcpConnected;
 jmethodID jclass_ConnectionsManager_getHostByName;
 jmethodID jclass_ConnectionsManager_getInitFlags;
 jmethodID jclass_ConnectionsManager_onPremiumFloodWait;
@@ -246,8 +247,8 @@ void setProxySettings(JNIEnv *env, jclass c, jint instanceNum, jstring address, 
     }
 }
 
-void setTunnelSettings(JNIEnv *env, jclass c, jint instanceNum, jboolean enabled, jboolean blocked) {
-    ConnectionsManager::getInstance(instanceNum).setTunnelSettings(enabled, blocked);
+void setTunnelSettings(JNIEnv *env, jclass c, jint instanceNum, jboolean enabled, jboolean blocked, jlong lifecycleGeneration) {
+    ConnectionsManager::getInstance(instanceNum).setTunnelSettings(enabled, blocked, lifecycleGeneration);
 }
 
 jint getConnectionState(JNIEnv *env, jclass c, jint instanceNum) {
@@ -336,7 +337,7 @@ jlong checkProxy(JNIEnv *env, jclass c, jint instanceNum, jstring address, jint 
     return result;
 }
 
-class Delegate : public ConnectiosManagerDelegate {
+class Delegate : public ConnectionsManagerDelegate {
     
     void onUpdate(int32_t instanceNum) {
         jniEnv[instanceNum]->CallStaticVoidMethod(jclass_ConnectionsManager, jclass_ConnectionsManager_onUpdate, instanceNum);
@@ -388,8 +389,22 @@ class Delegate : public ConnectiosManagerDelegate {
         jniEnv[instanceNum]->CallStaticVoidMethod(jclass_ConnectionsManager, jclass_ConnectionsManager_onProxyError);
     }
 
-    void onTunnelConnectionFailure(int32_t instanceNum) {
-        jniEnv[instanceNum]->CallStaticVoidMethod(jclass_ConnectionsManager, jclass_ConnectionsManager_onTunnelConnectionFailure, instanceNum);
+    void onTunnelTcpConnectFailed(int32_t instanceNum, int64_t lifecycleGeneration) {
+        jniEnv[instanceNum]->CallStaticVoidMethod(
+                jclass_ConnectionsManager,
+                jclass_ConnectionsManager_onTunnelTcpConnectFailed,
+                instanceNum,
+                (jlong) lifecycleGeneration
+        );
+    }
+
+    void onTunnelTcpConnected(int32_t instanceNum, int64_t lifecycleGeneration) {
+        jniEnv[instanceNum]->CallStaticVoidMethod(
+                jclass_ConnectionsManager,
+                jclass_ConnectionsManager_onTunnelTcpConnected,
+                instanceNum,
+                (jlong) lifecycleGeneration
+        );
     }
 
     void getHostByName(std::string domain, int32_t instanceNum, ConnectionSocket *socket) {
@@ -546,7 +561,7 @@ static JNINativeMethod ConnectionsManagerMethods[] = {
         {"native_bindRequestToGuid", "(III)V", (void *) bindRequestToGuid},
         {"native_applyDatacenterAddress", "(IILjava/lang/String;I)V", (void *) applyDatacenterAddress},
         {"native_setProxySettings", "(ILjava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", (void *) setProxySettings},
-        {"native_setTunnelSettings", "(IZZ)V", (void *) setTunnelSettings},
+        {"native_setTunnelSettings", "(IZZJ)V", (void *) setTunnelSettings},
         {"native_getConnectionState", "(I)I", (void *) getConnectionState},
         {"native_setUserId", "(IJ)V", (void *) setUserId},
         {"native_init", "(IIIILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJZZZII)V", (void *) init},
@@ -682,8 +697,12 @@ extern "C" int registerNativeTgNetFunctions(JavaVM *vm, JNIEnv *env) {
     if (jclass_ConnectionsManager_onProxyError == 0) {
         return JNI_FALSE;
     }
-    jclass_ConnectionsManager_onTunnelConnectionFailure = env->GetStaticMethodID(jclass_ConnectionsManager, "onTunnelConnectionFailure", "(I)V");
-    if (jclass_ConnectionsManager_onTunnelConnectionFailure == 0) {
+    jclass_ConnectionsManager_onTunnelTcpConnectFailed = env->GetStaticMethodID(jclass_ConnectionsManager, "onTunnelTcpConnectFailed", "(IJ)V");
+    if (jclass_ConnectionsManager_onTunnelTcpConnectFailed == 0) {
+        return JNI_FALSE;
+    }
+    jclass_ConnectionsManager_onTunnelTcpConnected = env->GetStaticMethodID(jclass_ConnectionsManager, "onTunnelTcpConnected", "(IJ)V");
+    if (jclass_ConnectionsManager_onTunnelTcpConnected == 0) {
         return JNI_FALSE;
     }
     jclass_ConnectionsManager_getHostByName = env->GetStaticMethodID(jclass_ConnectionsManager, "getHostByName", "(Ljava/lang/String;J)V");

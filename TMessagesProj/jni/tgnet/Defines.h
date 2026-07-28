@@ -139,7 +139,8 @@ typedef std::function<void(std::string path)> onFinishedFunc;
 typedef std::function<void(FileLoadFailReason reason)> onFailedFunc;
 typedef std::function<void(float progress)> onProgressChangedFunc;
 
-typedef struct ConnectiosManagerDelegate {
+typedef struct ConnectionsManagerDelegate {
+    virtual ~ConnectionsManagerDelegate() = default;
     virtual void onUpdate(int32_t instanceNum) = 0;
     virtual void onSessionCreated(int32_t instanceNum) = 0;
     virtual void onConnectionStateChanged(ConnectionState state, int32_t instanceNum) = 0;
@@ -151,13 +152,14 @@ typedef struct ConnectiosManagerDelegate {
     virtual void onBytesReceived(int32_t amount, int32_t networkType, int32_t instanceNum) = 0;
     virtual void onRequestNewServerIpAndPort(int32_t second, int32_t instanceNum) = 0;
     virtual void onProxyError(int32_t instanceNum) = 0;
-    virtual void onTunnelConnectionFailure(int32_t instanceNum) = 0;
+    virtual void onTunnelTcpConnectFailed(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
+    virtual void onTunnelTcpConnected(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
     virtual void getHostByName(std::string domain, int32_t instanceNum, ConnectionSocket *socket) = 0;
     virtual int32_t getInitFlags(int32_t instanceNum) = 0;
     virtual void onPremiumFloodWait(int32_t instanceNum, int32_t requestToken, bool isUpload) = 0;
     virtual void onIntegrityCheckClassic(int32_t instanceNum, int32_t requestToken, std::string project, std::string nonce) = 0;
     virtual void onCaptchaCheck(int32_t instanceNum, int32_t requestToken, std::string action, std::string key_id) = 0;
-} ConnectiosManagerDelegate;
+} ConnectionsManagerDelegate;
 
 typedef struct HandshakeDelegate {
     virtual void onHandshakeComplete(Handshake *handshake, int64_t keyId, ByteArray *authKey, int32_t timeDifference) = 0;

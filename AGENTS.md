@@ -71,7 +71,7 @@ AmneziaWG peer.
   - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelVoipRouting.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardUserspaceConfig.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardManager.java`
-  - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardController.java`
+  - `TMessagesProj/src/main/java/org/telegram/messenger/TunnelController.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardProxySettings.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardVoipRouting.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/WireGuardProfile.java`
@@ -131,7 +131,12 @@ AmneziaWG peer.
 
 - `TunnelManager` is the Java entry point. `WireGuardManager` is a compatibility
   facade. Keep runtime proxy selection centralized in `TunnelManager` and
-  `WireGuardController`.
+  `TunnelController`.
+- Native tunnel lifecycle work and reconnect attempts must run on the dedicated
+  serial tunnel lifecycle queue, never on the Android UI thread. Do not hold the
+  controller state lock across native start, stop, or network-refresh calls.
+- Reconnect backoff resets after tgnet reports a successfully established tunnel
+  TCP connection, not merely after the userspace runtime starts.
 - `NetworkRouteSettings` is the route-mode policy layer for proxy/tunnel mutual
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the

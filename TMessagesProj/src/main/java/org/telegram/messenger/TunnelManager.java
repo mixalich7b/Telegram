@@ -8,9 +8,9 @@ public final class TunnelManager {
 
     private static final String WIREGUARD_NATIVE_LIBRARY_NAME = "tg-wg";
     private static final String AMNEZIA_NATIVE_LIBRARY_NAME = "tg-awg";
-    private static final RuntimeSelector runtimeSelector = new RuntimeSelector();
-    private static final WireGuardController controller = new WireGuardController(
-            new WireGuardController.Config() {
+    private static final TunnelRuntimeSelector tunnelRuntimeSelector = new TunnelRuntimeSelector();
+    private static final TunnelController controller = new TunnelController(
+            new TunnelController.TunnelConfigProvider() {
                 @Override
                 public boolean isEnabled() {
                     return WireGuardSettings.isEnabled();
@@ -58,14 +58,23 @@ public final class TunnelManager {
                 }
 
             },
-            runtimeSelector,
-            new WireGuardController.TunnelStateSink() {
+            tunnelRuntimeSelector,
+            new TunnelController.TunnelRouteStateApplier() {
                 @Override
-                public void apply(int account, boolean enabled, boolean blocked) {
-                    ConnectionsManager.native_setTunnelSettings(account, enabled, blocked);
+                public void applyTunnelRouteState(
+                        int account,
+                        TunnelController.TunnelRouteState state,
+                        long lifecycleGeneration
+                ) {
+                    ConnectionsManager.native_setTunnelSettings(
+                            account,
+                            state != TunnelController.TunnelRouteState.DIRECT,
+                            state == TunnelController.TunnelRouteState.BLOCKED,
+                            lifecycleGeneration
+                    );
                 }
             },
-            new WireGuardController.Logger() {
+            new TunnelController.Logger() {
                 @Override
                 public void debug(String message) {
                     if (BuildVars.LOGS_ENABLED) {
@@ -200,11 +209,15 @@ public final class TunnelManager {
         return controller.getFailureReason();
     }
 
-    public static void onTunnelConnectionFailure() {
-        controller.onTunnelConnectionFailure(UserConfig.MAX_ACCOUNT_COUNT);
+    public static void onTunnelTcpConnectFailed(int account, long lifecycleGeneration) {
+        controller.onTunnelTcpConnectFailed(account, lifecycleGeneration, UserConfig.MAX_ACCOUNT_COUNT);
     }
 
-    private static final class RuntimeSelector implements WireGuardController.NativeRuntime {
+    public static void onTunnelTcpConnected(int account, long lifecycleGeneration) {
+        controller.onTunnelTcpConnected(account, lifecycleGeneration);
+    }
+
+    private static final class TunnelRuntimeSelector implements TunnelController.TunnelRuntime {
         private TunnelProtocol activeProtocol;
 
         @Override

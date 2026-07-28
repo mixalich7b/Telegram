@@ -89,8 +89,17 @@ The existing `WireGuardProfile`, `WireGuardSettings`,
 implementation. They now carry both WireGuard common fields and AmneziaWG fields
 to avoid a high-risk rename across UI and persistence code.
 
-`WireGuardController` owns runtime start/restart/stop, fail-closed tunnel route
-application, and network-refresh recovery.
+`TunnelController` owns runtime start/restart/stop, fail-closed tunnel route
+application, reconnect backoff, and network-refresh recovery. Potentially
+blocking native lifecycle operations run on a dedicated serial
+`tunnelLifecycleQueue`; callers immediately receive a blocked tunnel route until
+runtime startup or refresh completes.
+
+Runtime startup does not count as a successful network connection. The tgnet
+socket path reports `onTunnelTcpConnected` only after a tunnel TCP handle has
+been attached to the socket. That callback resets reconnect backoff. A runtime
+that repeatedly starts but cannot establish tgnet TCP connections therefore
+continues through the configured backoff sequence.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
 ## Profile Storage
@@ -284,7 +293,7 @@ implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
 
 - Java runtime/settings:
   `TunnelManager`, `TunnelProtocol`, `TunnelProxySettings`, `TunnelVoipRouting`,
-  `TunnelConfigParser`, `WireGuardManager`, `WireGuardController`,
+  `TunnelConfigParser`, `WireGuardManager`, `TunnelController`,
   `WireGuardSettings`, `WireGuardSecureStore`, `WireGuardProfile`,
   `WireGuardConfigParser`, `WireGuardUserspaceConfig`, `NetworkRouteSettings`.
 - UI:
