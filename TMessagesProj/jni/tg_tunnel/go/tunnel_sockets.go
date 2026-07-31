@@ -15,7 +15,7 @@ import (
 	wgnetstack "golang.zx2c4.com/wireguard/tun/netstack"
 )
 
-const tunnelSocketConnectTimeout = 15 * time.Second
+const tunnelSocketConnectTimeout = 20 * time.Second
 
 var (
 	errTunnelRuntimeUnavailable = errors.New("tunnel runtime is unavailable")

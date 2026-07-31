@@ -6,10 +6,9 @@ final class TunnelController {
             2000L,
             2000L,
             3000L,
+            3000L,
             5000L,
-            10000L,
-            10000L,
-            10000L
+            5000L
     };
 
     enum TunnelRouteState {

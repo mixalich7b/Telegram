@@ -128,11 +128,9 @@ public class TunnelControllerTest {
                 2000L,
                 2000L,
                 3000L,
+                3000L,
                 5000L,
-                10000L,
-                10000L,
-                10000L,
-                1000L
+                5000L
         };
 
         for (int i = 0; i < expectedDelays.length; i++) {

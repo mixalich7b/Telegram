@@ -208,8 +208,8 @@ to peer configuration. Zero or unset AmneziaWG values are omitted.
 Domain peer endpoints are resolved by the Go runtime to `IP:port` before calling
 the upstream UAPI parser. DNS resolution failure keeps startup failed and
 therefore fail-closed. Retryable runtime failures automatically schedule a
-fail-closed reconnect loop with backoff delays of 1s, 2s, 2s, 3s, 5s, 10s,
-10s, and 10s; if the runtime still cannot recover after that sequence, the
+fail-closed reconnect loop with backoff delays of 1s, 2s, 2s, 3s, 3s, 5s,
+5s; if the runtime still cannot recover after that sequence, the
 sequence starts again from 1s. Validation failures such as a missing profile are
 not retried.
 

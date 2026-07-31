@@ -146,11 +146,11 @@ public class WireGuardSettingsActivity extends BaseFragment {
             addField(context, fieldsContainer, FIELD_AMNEZIA_H2, getString(R.string.AmneziaWGH2), currentProfile.amneziaH2, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
             addField(context, fieldsContainer, FIELD_AMNEZIA_H3, getString(R.string.AmneziaWGH3), currentProfile.amneziaH3, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
             addField(context, fieldsContainer, FIELD_AMNEZIA_H4, getString(R.string.AmneziaWGH4), currentProfile.amneziaH4, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
-            addField(context, fieldsContainer, FIELD_AMNEZIA_I1, getString(R.string.AmneziaWGI1), currentProfile.amneziaI1, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
-            addField(context, fieldsContainer, FIELD_AMNEZIA_I2, getString(R.string.AmneziaWGI2), currentProfile.amneziaI2, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
-            addField(context, fieldsContainer, FIELD_AMNEZIA_I3, getString(R.string.AmneziaWGI3), currentProfile.amneziaI3, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
-            addField(context, fieldsContainer, FIELD_AMNEZIA_I4, getString(R.string.AmneziaWGI4), currentProfile.amneziaI4, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
-            addField(context, fieldsContainer, FIELD_AMNEZIA_I5, getString(R.string.AmneziaWGI5), currentProfile.amneziaI5, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I1, getString(R.string.AmneziaWGI1), currentProfile.amneziaI1, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false, true);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I2, getString(R.string.AmneziaWGI2), currentProfile.amneziaI2, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false, true);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I3, getString(R.string.AmneziaWGI3), currentProfile.amneziaI3, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false, true);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I4, getString(R.string.AmneziaWGI4), currentProfile.amneziaI4, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false, true);
+            addField(context, fieldsContainer, FIELD_AMNEZIA_I5, getString(R.string.AmneziaWGI5), currentProfile.amneziaI5, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, false, true);
         }
 
         checkDoneEnabled();
@@ -158,6 +158,10 @@ public class WireGuardSettingsActivity extends BaseFragment {
     }
 
     private void addField(Context context, LinearLayout fieldsContainer, int index, String hint, String value, int inputType, boolean password) {
+        addField(context, fieldsContainer, index, hint, value, inputType, password, false);
+    }
+
+    private void addField(Context context, LinearLayout fieldsContainer, int index, String hint, String value, int inputType, boolean password, boolean dialogEditor) {
         FrameLayout container = new FrameLayout(context);
         fieldsContainer.addView(container, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
 
@@ -171,12 +175,15 @@ public class WireGuardSettingsActivity extends BaseFragment {
         field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         field.setCursorSize(AndroidUtilities.dp(20));
         field.setCursorWidth(1.5f);
+        field.setInputType(inputType);
         field.setSingleLine(true);
+        field.setMaxLines(1);
+        field.setHorizontallyScrolling(!dialogEditor);
+        field.setEllipsize(dialogEditor ? TextUtils.TruncateAt.END : null);
         field.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         field.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));
         field.setTransformHintToHeader(true);
         field.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField), Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated), Theme.getColor(Theme.key_text_RedRegular));
-        field.setInputType(inputType);
         if (password) {
             field.setTransformationMethod(PasswordTransformationMethod.getInstance());
         }
@@ -185,6 +192,12 @@ public class WireGuardSettingsActivity extends BaseFragment {
         field.setText(value == null ? "" : value);
         field.setSelection(field.length());
         field.setPadding(0, 0, 0, 0);
+        if (dialogEditor) {
+            field.setFocusable(false);
+            field.setCursorVisible(false);
+            field.setClickable(true);
+            field.setOnClickListener(v -> showLongTextEditor(index, hint));
+        }
         field.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -214,6 +227,51 @@ public class WireGuardSettingsActivity extends BaseFragment {
         });
 
         container.addView(field, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.LEFT | Gravity.TOP, 17, index == FIELD_NAME ? 12 : 0, 17, 0));
+    }
+
+    private void showLongTextEditor(int index, String title) {
+        if (getParentActivity() == null || inputFields == null || index < 0 || index >= inputFields.length || inputFields[index] == null) {
+            return;
+        }
+
+        EditTextBoldCursor editor = new EditTextBoldCursor(getParentActivity());
+        editor.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        editor.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        editor.setHintColor(Theme.getColor(Theme.key_dialogTextGray2));
+        editor.setBackground(null);
+        editor.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        editor.setSingleLine(false);
+        editor.setMinLines(5);
+        editor.setMaxLines(10);
+        editor.setHorizontallyScrolling(false);
+        editor.setGravity(Gravity.LEFT | Gravity.TOP);
+        editor.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        editor.setPadding(0, AndroidUtilities.dp(6), 0, AndroidUtilities.dp(6));
+        editor.setText(inputFields[index].getText());
+        editor.setSelection(editor.length());
+
+        LinearLayout container = new LinearLayout(getParentActivity());
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.addView(editor, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 0, 24, 10));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity())
+                .setTitle(title)
+                .setView(container)
+                .setNegativeButton(getString(R.string.Cancel), null)
+                .setPositiveButton(getString(R.string.OK), (dialog, which) -> {
+                    inputFields[index].setText(editor.getText());
+                    inputFields[index].setSelection(inputFields[index].length());
+                    checkDoneEnabled();
+                });
+        builder.makeCustomMaxHeight();
+        builder.setWidth(AndroidUtilities.dp(292));
+
+        AlertDialog dialog = builder.create();
+        showDialog(dialog);
+        AndroidUtilities.runOnUIThread(() -> {
+            editor.requestFocus();
+            AndroidUtilities.showKeyboard(editor);
+        }, 100);
     }
 
     private void checkDoneEnabled() {
