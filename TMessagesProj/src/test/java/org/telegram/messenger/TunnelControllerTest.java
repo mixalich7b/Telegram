@@ -218,12 +218,17 @@ public class TunnelControllerTest {
 
         controller.applyTunnelSettingsForAllAccounts(1);
         controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
+        assertFalse(controller.isReconnecting());
         lifecycleTaskScheduler.runNext();
+        assertTrue(controller.isReconnecting());
 
         controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
+        assertFalse(controller.isReconnecting());
         lifecycleTaskScheduler.runNext();
+        assertTrue(controller.isReconnecting());
 
         controller.onTunnelTcpConnected(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration);
+        assertFalse(controller.isReconnecting());
         controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
 
         assertEquals(3, lifecycleTaskScheduler.delays.size());
@@ -481,6 +486,7 @@ public class TunnelControllerTest {
         assertEquals(1, tunnelRuntime.stopCalls);
         assertFalse(controller.isRunningForTests());
         assertEquals("WireGuard TCP connection failed", controller.getFailureReason());
+        assertFalse(controller.isReconnecting());
         assertEquals(1, lifecycleTaskScheduler.delays.size());
         assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(0));
         assertTrue(lastCallForAccount(routeStateApplier, 0).blocked);
@@ -490,6 +496,7 @@ public class TunnelControllerTest {
 
         assertEquals(2, tunnelRuntime.startCalls);
         assertTrue(controller.isRunningForTests());
+        assertTrue(controller.isReconnecting());
         assertNull(controller.getFailureReason());
         assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
         assertFalse(lastCallForAccount(routeStateApplier, 1).blocked);

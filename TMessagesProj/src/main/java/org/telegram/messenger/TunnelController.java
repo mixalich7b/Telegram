@@ -63,6 +63,10 @@ final class TunnelController {
         void error(Throwable throwable);
     }
 
+    interface StatusListener {
+        void onStatusChanged();
+    }
+
     interface LifecycleTaskScheduler {
         void execute(Runnable runnable);
 
@@ -87,9 +91,11 @@ final class TunnelController {
     private final TunnelRouteStateApplier routeStateApplier;
     private final Logger logger;
     private final LifecycleTaskScheduler lifecycleTaskScheduler;
+    private final StatusListener statusListener;
 
     private RuntimeState runtimeState = RuntimeState.STOPPED;
     private String failureReason;
+    private boolean reconnecting;
     private Runnable pendingReconnect;
     private int nextReconnectDelayIndex;
     private long lifecycleGeneration;
@@ -107,24 +113,26 @@ final class TunnelController {
                 tunnelRuntime,
                 routeStateApplier,
                 logger,
-                new LifecycleTaskScheduler() {
-                    private final DispatchQueue queue = new DispatchQueue("tunnelLifecycleQueue");
+                defaultLifecycleTaskScheduler(),
+                null
+        );
+    }
 
-                    @Override
-                    public void execute(Runnable runnable) {
-                        queue.postRunnable(runnable);
-                    }
-
-                    @Override
-                    public void schedule(Runnable runnable, long delayMs) {
-                        queue.postRunnable(runnable, delayMs);
-                    }
-
-                    @Override
-                    public void cancel(Runnable runnable) {
-                        queue.cancelRunnable(runnable);
-                    }
-                });
+    TunnelController(
+            TunnelConfigProvider configProvider,
+            TunnelRuntime tunnelRuntime,
+            TunnelRouteStateApplier routeStateApplier,
+            Logger logger,
+            StatusListener statusListener
+    ) {
+        this(
+                configProvider,
+                tunnelRuntime,
+                routeStateApplier,
+                logger,
+                defaultLifecycleTaskScheduler(),
+                statusListener
+        );
     }
 
     TunnelController(
@@ -134,11 +142,51 @@ final class TunnelController {
             Logger logger,
             LifecycleTaskScheduler lifecycleTaskScheduler
     ) {
+        this(
+                configProvider,
+                tunnelRuntime,
+                routeStateApplier,
+                logger,
+                lifecycleTaskScheduler,
+                null
+        );
+    }
+
+    TunnelController(
+            TunnelConfigProvider configProvider,
+            TunnelRuntime tunnelRuntime,
+            TunnelRouteStateApplier routeStateApplier,
+            Logger logger,
+            LifecycleTaskScheduler lifecycleTaskScheduler,
+            StatusListener statusListener
+    ) {
         this.configProvider = configProvider;
         this.tunnelRuntime = tunnelRuntime;
         this.routeStateApplier = routeStateApplier;
         this.logger = logger;
         this.lifecycleTaskScheduler = lifecycleTaskScheduler;
+        this.statusListener = statusListener == null ? () -> { } : statusListener;
+    }
+
+    private static LifecycleTaskScheduler defaultLifecycleTaskScheduler() {
+        return new LifecycleTaskScheduler() {
+            private final DispatchQueue queue = new DispatchQueue("tunnelLifecycleQueue");
+
+            @Override
+            public void execute(Runnable runnable) {
+                queue.postRunnable(runnable);
+            }
+
+            @Override
+            public void schedule(Runnable runnable, long delayMs) {
+                queue.postRunnable(runnable, delayMs);
+            }
+
+            @Override
+            public void cancel(Runnable runnable) {
+                queue.cancelRunnable(runnable);
+            }
+        };
     }
 
     boolean isEnabled() {
@@ -237,6 +285,12 @@ final class TunnelController {
         }
     }
 
+    boolean isReconnecting() {
+        synchronized (stateLock) {
+            return reconnecting;
+        }
+    }
+
     void restart(int accountCount) {
         if (!configProvider.isEnabled()) {
             disable(accountCount);
@@ -248,6 +302,7 @@ final class TunnelController {
             rememberAccountCountLocked(accountCount);
             reconnectToCancel = clearPendingReconnectLocked(true);
             failureReason = null;
+            reconnecting = false;
             runtimeState = RuntimeState.STARTING;
             long generation = ++lifecycleGeneration;
             int knownAccountCount = maxKnownAccountCount;
@@ -265,6 +320,7 @@ final class TunnelController {
             ++lifecycleGeneration;
             runtimeState = RuntimeState.STOPPED;
             failureReason = null;
+            reconnecting = false;
             maxKnownAccountCount = 0;
             applyDirectRouteForAccountsLocked(accountCount);
         }
@@ -282,6 +338,7 @@ final class TunnelController {
             if (runtimeState == RuntimeState.RUNNING && callbackGeneration == lifecycleGeneration) {
                 runtimeState = RuntimeState.RECONNECT_WAIT;
                 failureReason = configProvider.protocolLabel() + " TCP connection failed";
+                reconnecting = false;
                 logger.error(configProvider.protocolLabel() + " runtime failed for account "
                         + sourceAccount + ": " + failureReason);
                 long generation = ++lifecycleGeneration;
@@ -290,6 +347,7 @@ final class TunnelController {
                 lifecycleTask = () -> stopAndScheduleReconnect(generation, knownAccountCount);
             }
         }
+        notifyStatusChanged();
         executeLifecycleTask(lifecycleTask);
     }
 
@@ -302,7 +360,9 @@ final class TunnelController {
             }
             nextReconnectDelayIndex = 0;
             failureReason = null;
+            reconnecting = false;
         }
+        notifyStatusChanged();
         logger.debug(configProvider.protocolLabel() + " TCP connection established for account " + sourceAccount);
     }
 
@@ -399,6 +459,7 @@ final class TunnelController {
             stopRuntimeSafely();
             return;
         }
+        notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.ACTIVE, activeGeneration);
         logger.debug(configProvider.protocolLabel() + " runtime started");
     }
@@ -419,6 +480,7 @@ final class TunnelController {
             }
             failureReason = reason;
             runtimeState = retryable ? RuntimeState.RECONNECT_WAIT : RuntimeState.FAILED;
+            reconnecting = false;
             knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
             failedGeneration = lifecycleGeneration;
             if (retryable) {
@@ -429,6 +491,7 @@ final class TunnelController {
             logger.error(throwable);
         }
         logger.error(configProvider.protocolLabel() + " runtime failed: " + reason);
+        notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.BLOCKED, failedGeneration);
         scheduleReconnect(scheduledReconnect);
     }
@@ -463,9 +526,11 @@ final class TunnelController {
             }
             runtimeState = RuntimeState.RUNNING;
             failureReason = null;
+            reconnecting = false;
             knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
             activeGeneration = lifecycleGeneration;
         }
+        notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.ACTIVE, activeGeneration);
     }
 
@@ -511,9 +576,11 @@ final class TunnelController {
                 return;
             }
             runtimeState = RuntimeState.STARTING;
+            reconnecting = true;
             generation = ++lifecycleGeneration;
             accountCount = Math.max(1, maxKnownAccountCount);
         }
+        notifyStatusChanged();
         applyTunnelRouteForAccounts(accountCount, TunnelRouteState.BLOCKED, generation);
         startRuntime(generation, accountCount, true);
     }
@@ -560,6 +627,10 @@ final class TunnelController {
         if (runnable != null) {
             lifecycleTaskScheduler.cancel(runnable);
         }
+    }
+
+    private void notifyStatusChanged() {
+        statusListener.onStatusChanged();
     }
 
     private void rememberAccountCountLocked(int accountCount) {

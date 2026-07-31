@@ -113,7 +113,10 @@ Cover these flows:
 - delete inactive and active profiles;
 - simulate startup and tunnel TCP connection failures, verify traffic fails
   closed, and verify reconnect delays cycle through 1s, 2s, 2s, 3s, 3s, 5s,
-  5s before restarting the sequence;
+  5s before restarting the sequence; verify the profile status changes from
+  `Tunnel failed` to `Tunnel failed, reconnecting` when each retry starts and
+  finally to `Tunnel connected` after TCP succeeds, and verify the failure
+  reason appears once in a short toast when `Tunnel failed` is entered;
 - switch Wi-Fi/LTE while each protocol is active;
 - send messages/media while each protocol is active;
 - start new private and group/live VoIP sessions while each protocol is active;

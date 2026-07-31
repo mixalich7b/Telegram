@@ -93,7 +93,10 @@ public final class TunnelManager {
                 public void error(Throwable throwable) {
                     FileLog.e(throwable);
                 }
-            });
+            },
+            () -> AndroidUtilities.runOnUIThread(() ->
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.tunnelStatusChanged))
+    );
 
     private TunnelManager() {
     }
@@ -207,6 +210,10 @@ public final class TunnelManager {
 
     public static String getFailureReason() {
         return controller.getFailureReason();
+    }
+
+    public static boolean isReconnecting() {
+        return controller.isReconnecting();
     }
 
     public static void onTunnelTcpConnectFailed(int account, long lifecycleGeneration) {

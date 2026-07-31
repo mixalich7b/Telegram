@@ -108,8 +108,10 @@ blocked-proxy-first path so there is no direct routing gap.
 
 Status surfaces in `DialogsActivity`, `LoginActivity`, and profile rows must not
 label an AmneziaWG profile as WireGuard. Top-level route status can be generic
-(`Tunnel connected`, `Tunnel connecting`, `Tunnel failed`) or protocol-specific
-when there is enough space.
+(`Tunnel connected`, `Tunnel connecting`, `Tunnel failed`, and
+`Tunnel failed, reconnecting`) or protocol-specific when there is enough space.
+When a tunnel enters `Tunnel failed`, the UI also briefly shows the failure
+reason in a toast.
 
 ## Non-Goals
 

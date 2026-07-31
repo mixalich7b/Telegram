@@ -2729,6 +2729,7 @@
     <string name="TunnelConnected">Tunnel connected</string>
     <string name="TunnelConnecting">Tunnel connecting</string>
     <string name="TunnelFailed">Tunnel failed</string>
+    <string name="TunnelFailedReconnecting">Tunnel failed, reconnecting</string>
     <string name="AmneziaWGDetails">AmneziaWG Details</string>
     <string name="AmneziaWGJc">AmneziaWG Jc</string>
     <string name="AmneziaWGJmin">AmneziaWG Jmin</string>

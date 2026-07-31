@@ -36,6 +36,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
@@ -102,6 +103,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private LinearLayoutManager layoutManager;
 
     private int currentConnectionState;
+    private String lastShownTunnelFailureReason;
 
     private boolean useProxySettings;
     private boolean useProxyForCalls;
@@ -427,8 +429,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             int colorKey;
             if (active) {
                 String failureReason = TunnelManager.getFailureReason();
-                if (failureReason != null) {
-                    valueTextView.setText(getString(R.string.TunnelFailed));
+                boolean reconnecting = TunnelManager.isReconnecting();
+                if (failureReason != null || reconnecting) {
+                    valueTextView.setText(getString(reconnecting
+                            ? R.string.TunnelFailedReconnecting
+                            : R.string.TunnelFailed));
                     colorKey = Theme.key_text_RedRegular;
                 } else if (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
                     valueTextView.setText(getString(R.string.TunnelConnected));
@@ -486,6 +491,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxyChangedByRotation);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxySettingsChanged);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxyCheckDone);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.tunnelStatusChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.didUpdateConnectionState);
 
         final SharedPreferences preferences = MessagesController.getGlobalMainSettings();
@@ -505,6 +511,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.proxyChangedByRotation);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.proxySettingsChanged);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.proxyCheckDone);
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.tunnelStatusChanged);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.didUpdateConnectionState);
     }
 
@@ -1241,18 +1248,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             }
                         }
                     }
-                    WireGuardProfile activeProfile = TunnelManager.getActiveProfile();
-                    if (activeProfile != null && wireGuardStartRow != -1) {
-                        for (int i = 0; i < wireGuardProfiles.size(); i++) {
-                            if (activeProfile.id.equals(wireGuardProfiles.get(i).id)) {
-                                RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(i + wireGuardStartRow);
-                                if (holder != null && holder.itemView instanceof TextDetailWireGuardCell) {
-                                    ((TextDetailWireGuardCell) holder.itemView).updateStatus();
-                                }
-                                break;
-                            }
-                        }
-                    }
+                    updateActiveWireGuardStatus();
 
                     if (currentConnectionState == ConnectionsManager.ConnectionStateConnected) {
                         updateRows(true);
@@ -1286,6 +1282,34 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 if (!checking) {
                     updateRows(true);
                 }
+            }
+        } else if (id == NotificationCenter.tunnelStatusChanged) {
+            updateActiveWireGuardStatus();
+            String failureReason = TunnelManager.getFailureReason();
+            if (TextUtils.isEmpty(failureReason)) {
+                lastShownTunnelFailureReason = null;
+            } else if (!failureReason.equals(lastShownTunnelFailureReason) && getParentActivity() != null) {
+                lastShownTunnelFailureReason = failureReason;
+                Toast.makeText(getParentActivity(), failureReason, Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void updateActiveWireGuardStatus() {
+        if (listView == null || wireGuardStartRow == -1) {
+            return;
+        }
+        WireGuardProfile activeProfile = TunnelManager.getActiveProfile();
+        if (activeProfile == null) {
+            return;
+        }
+        for (int i = 0; i < wireGuardProfiles.size(); i++) {
+            if (activeProfile.id.equals(wireGuardProfiles.get(i).id)) {
+                RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(i + wireGuardStartRow);
+                if (holder != null && holder.itemView instanceof TextDetailWireGuardCell) {
+                    ((TextDetailWireGuardCell) holder.itemView).updateStatus();
+                }
+                break;
             }
         }
     }
