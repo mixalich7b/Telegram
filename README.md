@@ -30,16 +30,16 @@ MTproto protocol manuals: https://core.telegram.org/mtproto
 
 ### Compilation Guide
 
-**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore and filled variables inside BuildVars.java. The Firebase config is read from `$HOME/.android-keys/google-services-tg-wg.json`, and `TG_APP_ID` / `TG_APP_HASH` are taken from your global Gradle properties. Before publishing your own APKs please make sure to provide your own values.
+**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore and filled variables inside BuildVars.java. The Firebase config is read from `$HOME/.android-keys/google-services-tg-wg.json`. `TG_APP_ID`, `TG_APP_HASH`, `TG_RELEASE_KEYSTORE_PATH`, `TG_RELEASE_STORE_PASSWORD`, `TG_RELEASE_KEY_ALIAS`, and `TG_RELEASE_KEY_PASSWORD` are taken from the user's global Gradle properties and must be provided before running Gradle. Do not add these values to the repository.
 
 You will require Android Studio 3.4, Android NDK rev. 20 and Android SDK 8.1
 
 1. Download the Telegram source code from https://github.com/DrKLO/Telegram ( git clone https://github.com/DrKLO/Telegram.git )
-2. Copy your release.keystore into TMessagesProj/config
-3. Fill out RELEASE_KEY_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD in gradle.properties to access your  release.keystore
+2. Debug builds use the checked-in debug keystore and signing properties. Do not copy or commit a release keystore.
+3. The checked-in debug signing properties are already used by debug builds. For release signing, provide `TG_RELEASE_KEYSTORE_PATH`, `TG_RELEASE_STORE_PASSWORD`, `TG_RELEASE_KEY_ALIAS`, and `TG_RELEASE_KEY_PASSWORD` in the global `gradle.properties`.
 4.  Go to https://console.firebase.google.com/, create two android apps with application IDs `net.mixalich7b.telegram` and `net.mixalich7b.telegram.beta`, turn on firebase messaging and save the downloaded `google-services.json` as `$HOME/.android-keys/google-services-tg-wg.json`.
 5. Open the project in the Studio (note that it should be opened, NOT imported).
-6. Set `TG_APP_ID` and `TG_APP_HASH` in your global `gradle.properties`; `BuildVars.java` now reads them during the build.
+6. Set `TG_APP_ID` and `TG_APP_HASH` in your global `gradle.properties`; the build reads them during Gradle configuration.
 7. You are ready to compile Telegram.
 
 ### Localization

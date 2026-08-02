@@ -16,3 +16,86 @@ buildscript {
 repositories {
     google()
 }
+
+tasks.register("verifyTunnelCommandContract") {
+    description = "Checks that the documented tunnel commands and Gradle entry points stay aligned."
+    group = "verification"
+    doLast {
+        def agentsText = rootProject.file("AGENTS.md").text
+        def testingDocsText = rootProject.file("docs/tunnel-testing.md").text
+        def integrationDocsText = rootProject.file("docs/tunnel-integration.md").text
+        def rootBuildText = rootProject.file("build.gradle").text
+        def appBuildText = rootProject.file("TMessagesProj_App/build.gradle").text
+
+        [
+                "tasks.register(\"tunnelCheck\")",
+                "tasks.register(\"tunnelPackageDebug\")",
+                "dependsOn \":TMessagesProj:testDebugUnitTest\"",
+                "dependsOn \":TMessagesProj:testTunnelGo\"",
+                "dependsOn \":TMessagesProj:verifyTunnelStaticGuards\"",
+                "dependsOn \":TMessagesProj_App:assembleAfatDebug\""
+        ].each { token ->
+            if (!rootBuildText.contains(token)) {
+                throw new GradleException("Canonical tunnel command entry points are missing token '${token}'")
+            }
+        }
+
+        [
+                "./gradlew --no-daemon tunnelCheck",
+                "./gradlew --no-daemon tunnelPackageDebug"
+        ].each { command ->
+            if (!agentsText.contains(command)) {
+                throw new GradleException("AGENTS.md is missing canonical tunnel command '${command}'")
+            }
+            if (!testingDocsText.contains(command)) {
+                throw new GradleException("docs/tunnel-testing.md is missing canonical tunnel command '${command}'")
+            }
+        }
+
+        if (!integrationDocsText.contains("tunnelPackageDebug")) {
+            throw new GradleException("docs/tunnel-integration.md must refer to tunnelPackageDebug")
+        }
+        if (!appBuildText.contains('dependsOn ":tunnelCheck"')) {
+            throw new GradleException("assembleAfatDebug must depend on the canonical tunnelCheck task")
+        }
+
+        def tunnelCheckTask = tasks.named("tunnelCheck").get()
+        def tunnelCheckDependencyPaths = tunnelCheckTask.taskDependencies.getDependencies(tunnelCheckTask)*.path as Set
+        [
+                ":TMessagesProj:testDebugUnitTest",
+                ":TMessagesProj:testTunnelGo",
+                ":TMessagesProj:verifyTunnelStaticGuards"
+        ].each { path ->
+            if (!tunnelCheckDependencyPaths.contains(path)) {
+                throw new GradleException("tunnelCheck is missing dependency '${path}'")
+            }
+        }
+
+        def tunnelPackageTask = tasks.named("tunnelPackageDebug").get()
+        def tunnelPackageDependencyPaths = tunnelPackageTask.taskDependencies.getDependencies(tunnelPackageTask)*.path as Set
+        if (!tunnelPackageDependencyPaths.contains(":TMessagesProj_App:assembleAfatDebug")) {
+            throw new GradleException("tunnelPackageDebug must depend on :TMessagesProj_App:assembleAfatDebug")
+        }
+
+        def appAssembleTask = project(":TMessagesProj_App").tasks.named("assembleAfatDebug").get()
+        def appAssembleDependencyPaths = appAssembleTask.taskDependencies.getDependencies(appAssembleTask)*.path as Set
+        if (!appAssembleDependencyPaths.contains(":tunnelCheck")) {
+            throw new GradleException("assembleAfatDebug must depend on :tunnelCheck")
+        }
+    }
+}
+
+tasks.register("tunnelCheck") {
+    description = "Runs the canonical no-emulator tunnel checks."
+    group = "verification"
+    dependsOn "verifyTunnelCommandContract"
+    dependsOn ":TMessagesProj:testDebugUnitTest"
+    dependsOn ":TMessagesProj:testTunnelGo"
+    dependsOn ":TMessagesProj:verifyTunnelStaticGuards"
+}
+
+tasks.register("tunnelPackageDebug") {
+    description = "Builds and verifies the canonical afat debug tunnel APK."
+    group = "build"
+    dependsOn ":TMessagesProj_App:assembleAfatDebug"
+}

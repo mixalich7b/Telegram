@@ -261,9 +261,10 @@ Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
 scans JNI directories recursively and may otherwise package dependency shared
 objects or cache files.
 
-`TMessagesProj_App:assembleAfatDebug` verifies that tunnel libraries are present
-for every supported ABI and that Go cache/module artifacts are absent from the
-APK.
+`./gradlew --no-daemon tunnelPackageDebug` verifies that tunnel libraries are
+present for every supported ABI and that Go cache/module artifacts are absent
+from the APK. This is the canonical packaging command; it also runs the
+canonical no-emulator tunnel checks first.
 
 ## VoIP
 

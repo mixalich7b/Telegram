@@ -237,10 +237,7 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
 
 afterEvaluate {
     tasks.matching { it.name == "assembleAfatDebug" }.configureEach {
-        dependsOn ":TMessagesProj:testDebugUnitTest"
-        dependsOn ":TMessagesProj:testWireGuardGo"
-        dependsOn ":TMessagesProj:testAmneziaWGGo"
-        dependsOn ":TMessagesProj:verifyTunnelStaticGuards"
+        dependsOn ":tunnelCheck"
         finalizedBy "verifyWireGuardAfatDebugPackaging"
     }
     tasks.named("verifyWireGuardAfatDebugPackaging").configure {

@@ -1,22 +1,26 @@
 # Tunnel Testing
 
-## Commands
+## Canonical Commands
 
-Fast no-emulator checks:
+Run exactly one command according to the requested scope. The Telegram and
+signing properties are prerequisites supplied in the user's global
+`gradle.properties`; do not pass them through `-P` arguments or modify them.
 
-```bash
-./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
-```
-
-Packaging check:
+For Java/Go tunnel checks without APK packaging:
 
 ```bash
-./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
+./gradlew --no-daemon tunnelCheck
 ```
 
-`:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests,
-WireGuard Go tests, AmneziaWG Go tests, static guards, and APK packaging
-verification.
+For JNI/CMake/native changes or a complete debug APK check:
+
+```bash
+./gradlew --no-daemon tunnelPackageDebug
+```
+
+`tunnelPackageDebug` transitively runs `tunnelCheck`, the native APK packaging
+verification, and the APK build. The lower-level Gradle tasks are implementation
+details, not alternative canonical commands.
 
 ## Automated Coverage
 

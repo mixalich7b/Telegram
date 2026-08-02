@@ -233,23 +233,34 @@ AmneziaWG peer.
 
 ## Tests and Verification
 
-Fast no-emulator checks:
+Canonical tunnel commands:
+
+Run exactly one of these commands according to the requested scope. Do not add
+`-P` arguments for Telegram or signing properties; `TG_APP_ID`, `TG_APP_HASH`,
+and `TG_RELEASE_*` are expected to be provided in the user's global
+`gradle.properties`.
+
+For Java/Go tunnel checks without APK packaging:
 
 ```bash
-./gradlew --no-daemon :TMessagesProj:testDebugUnitTest :TMessagesProj:testWireGuardGo :TMessagesProj:testAmneziaWGGo :TMessagesProj:verifyTunnelStaticGuards
+./gradlew --no-daemon tunnelCheck
 ```
 
-Packaging check:
+For JNI/CMake/native changes or a complete debug APK check:
 
 ```bash
-./gradlew --no-daemon :TMessagesProj_App:assembleAfatDebug
+./gradlew --no-daemon tunnelPackageDebug
 ```
+
+`tunnelPackageDebug` transitively runs `tunnelCheck`, the native APK packaging
+verification, and the APK build. The lower-level `testTunnelGo`,
+`verifyTunnelStaticGuards`, and `assembleAfatDebug` tasks are implementation
+details, not alternative canonical commands.
 
 Important details:
 
-- `:TMessagesProj_App:assembleAfatDebug` is expected to run JVM unit tests,
-  WireGuard Go tests, AmneziaWG Go tests, static guards, and APK packaging
-  verification.
+- `tunnelPackageDebug` is expected to run JVM unit tests, the shared WireGuard /
+  AmneziaWG Go tests, static guards, and APK packaging verification.
 - Static guards are part of the safety net. If an invariant intentionally
   changes, update tests, guards, docs, and this file together.
 - Long Gradle builds can take many minutes. Do not kill a running Gradle build
