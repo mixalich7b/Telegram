@@ -217,24 +217,37 @@ public class TunnelControllerTest {
         );
 
         controller.applyTunnelSettingsForAllAccounts(1);
-        controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        lifecycleTaskScheduler.runNext();
         assertFalse(controller.isReconnecting());
         lifecycleTaskScheduler.runNext();
         assertTrue(controller.isReconnecting());
 
-        controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
+        lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        lifecycleTaskScheduler.runNext();
         assertFalse(controller.isReconnecting());
         lifecycleTaskScheduler.runNext();
         assertTrue(controller.isReconnecting());
 
-        controller.onTunnelTcpConnected(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration);
+        lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnected(0, lifecycleGeneration);
         assertFalse(controller.isReconnecting());
-        controller.onTunnelTcpConnectFailed(0, lastCallForAccount(routeStateApplier, 0).lifecycleGeneration, 1);
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        lifecycleTaskScheduler.runNext();
 
-        assertEquals(3, lifecycleTaskScheduler.delays.size());
-        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(0));
-        assertEquals(2000L, (long) lifecycleTaskScheduler.delays.get(1));
-        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(2));
+        assertEquals(6, lifecycleTaskScheduler.delays.size());
+        assertEquals(250L, (long) lifecycleTaskScheduler.delays.get(0));
+        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(1));
+        assertEquals(250L, (long) lifecycleTaskScheduler.delays.get(2));
+        assertEquals(2000L, (long) lifecycleTaskScheduler.delays.get(3));
+        assertEquals(250L, (long) lifecycleTaskScheduler.delays.get(4));
+        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(5));
     }
 
     @Test
@@ -252,12 +265,89 @@ public class TunnelControllerTest {
 
         controller.applyTunnelSettingsForAllAccounts(1);
         long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
         controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
         controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
 
         assertEquals(1, lifecycleTaskScheduler.delays.size());
+        assertEquals(250L, (long) lifecycleTaskScheduler.delays.get(0));
+        assertEquals(0, tunnelRuntime.stopCalls);
+        assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
+
+        lifecycleTaskScheduler.runNext();
+
         assertEquals(1, tunnelRuntime.stopCalls);
+        assertEquals(2, lifecycleTaskScheduler.delays.size());
+        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(1));
         assertTrue(lastCallForAccount(routeStateApplier, 0).blocked);
+    }
+
+    @Test
+    public void ipv4OnlyProfileKeepsParallelIpv4AttemptAfterIpv6NoRouteFailure() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        config.protocol = TunnelProtocol.AMNEZIA_WG;
+        config.localAddresses = new String[]{"10.8.0.2/32"};
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler lifecycleTaskScheduler = new FakeLifecycleTaskScheduler();
+        TunnelController controller = newController(
+                config,
+                tunnelRuntime,
+                routeStateApplier,
+                lifecycleTaskScheduler
+        );
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+
+        // tgnet starts an unsupported IPv6 destination and a usable IPv4 destination in parallel.
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+
+        assertTrue(controller.isRunningForTests());
+        assertEquals(0, tunnelRuntime.stopCalls);
+        assertEquals(0, lifecycleTaskScheduler.delays.size());
+        assertTrue(lastCallForAccount(routeStateApplier, 0).enabled);
+        assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
+
+        controller.onTunnelTcpConnected(0, lifecycleGeneration);
+
+        assertTrue(controller.isRunningForTests());
+        assertEquals(0, tunnelRuntime.stopCalls);
+        assertEquals(0, lifecycleTaskScheduler.delays.size());
+        assertNull(controller.getFailureReason());
+        assertTrue(lastCallForAccount(routeStateApplier, 0).enabled);
+        assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
+    }
+
+    @Test
+    public void sequentialIpv4AlternateAttemptCancelsSettlingIpv6Failure() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        config.protocol = TunnelProtocol.AMNEZIA_WG;
+        config.localAddresses = new String[]{"10.8.0.2/32"};
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler lifecycleTaskScheduler = new FakeLifecycleTaskScheduler();
+        TunnelController controller = newController(config, tunnelRuntime, routeStateApplier, lifecycleTaskScheduler);
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        assertEquals(1, lifecycleTaskScheduler.delays.size());
+
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnected(0, lifecycleGeneration);
+        lifecycleTaskScheduler.runNext();
+
+        assertTrue(controller.isRunningForTests());
+        assertEquals(0, tunnelRuntime.stopCalls);
+        assertTrue(lifecycleTaskScheduler.cancelCalls >= 1);
+        assertNull(controller.getFailureReason());
+        assertTrue(lastCallForAccount(routeStateApplier, 0).enabled);
+        assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
     }
 
     @Test
@@ -476,19 +566,29 @@ public class TunnelControllerTest {
         TunnelController controller = newController(config, tunnelRuntime, routeStateApplier, lifecycleTaskScheduler);
 
         controller.applyTunnelSettingsForAccount(1, 2);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
         controller.onTunnelTcpConnectFailed(
                 0,
-                lastCallForAccount(routeStateApplier, 0).lifecycleGeneration,
+                lifecycleGeneration,
                 2
         );
 
         assertEquals(1, tunnelRuntime.startCalls);
+        assertEquals(0, tunnelRuntime.stopCalls);
+        assertTrue(controller.isRunningForTests());
+        assertEquals(1, lifecycleTaskScheduler.delays.size());
+        assertEquals(250L, (long) lifecycleTaskScheduler.delays.get(0));
+        assertFalse(lastCallForAccount(routeStateApplier, 0).blocked);
+
+        lifecycleTaskScheduler.runNext();
+
         assertEquals(1, tunnelRuntime.stopCalls);
         assertFalse(controller.isRunningForTests());
-        assertEquals("WireGuard TCP connection failed", controller.getFailureReason());
+        assertEquals("WireGuard TCP connections failed", controller.getFailureReason());
         assertFalse(controller.isReconnecting());
-        assertEquals(1, lifecycleTaskScheduler.delays.size());
-        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(0));
+        assertEquals(2, lifecycleTaskScheduler.delays.size());
+        assertEquals(1000L, (long) lifecycleTaskScheduler.delays.get(1));
         assertTrue(lastCallForAccount(routeStateApplier, 0).blocked);
         assertTrue(lastCallForAccount(routeStateApplier, 1).blocked);
 
@@ -605,6 +705,7 @@ public class TunnelControllerTest {
         boolean enabled = true;
         String validationError;
         TunnelProtocol protocol = TunnelProtocol.WIREGUARD;
+        String[] localAddresses = new String[]{"10.0.0.2"};
 
         @Override
         public boolean isEnabled() {
@@ -633,7 +734,7 @@ public class TunnelControllerTest {
 
         @Override
         public String[] localAddresses() {
-            return new String[]{"10.0.0.2"};
+            return localAddresses;
         }
 
         @Override

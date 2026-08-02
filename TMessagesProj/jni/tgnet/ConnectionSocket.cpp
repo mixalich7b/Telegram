@@ -103,6 +103,7 @@ private:
 
 struct TunnelSocketState {
     std::atomic<bool> closed{false};
+    std::atomic<bool> connectAttemptCompleted{false};
     std::atomic<int64_t> handle{0};
     int64_t lifecycleGeneration = 0;
     std::mutex fdMutex;
@@ -656,6 +657,7 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
     waitingForHostResolve = "";
     adjustWriteOpAfterResolve = false;
     tlsState = 0;
+    proxyAuthState = 0;
     ConnectionsManager::getInstance(instanceNum).attachConnection(this);
 
     memset(&socketAddress, 0, sizeof(sockaddr_in));
@@ -668,24 +670,7 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
             closeSocket(1, ENETDOWN);
             return;
         }
-        proxyAuthState = 0;
-        uint32_t tempBuffLength;
-        if (secret.size() > 17 && secret[0] == '\xee') {
-            proxyAuthState = 10;
-            currentSecret = secret.substr(1, 16);
-            currentSecretDomain = secret.substr(17);
-            tempBuffLength = 65 * 1024;
-        } else {
-            tempBuffLength = 0;
-        }
-        if (tempBuffLength > 0) {
-            if (tempBuffer == nullptr || tempBuffer->length < tempBuffLength) {
-                if (tempBuffer != nullptr) {
-                    delete tempBuffer;
-                }
-                tempBuffer = new ByteArray(tempBuffLength);
-            }
-        }
+        configureSecretTransport(secret, false);
         if (LOGS_ENABLED) DEBUG_D("connection(%p) connecting via tunnel %s:%d", this, address.c_str(), port);
         openTunnelConnection(address, port);
         return;
@@ -707,27 +692,7 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
             closeSocket(1, -1);
             return;
         }
-        uint32_t tempBuffLength;
-        if (proxySecret->empty()) {
-            proxyAuthState = 1;
-            tempBuffLength = 1024;
-        } else if (proxySecret->size() > 17 && (*proxySecret)[0] == '\xee') {
-            proxyAuthState = 10;
-            currentSecret = proxySecret->substr(1, 16);
-            currentSecretDomain = proxySecret->substr(17);
-            tempBuffLength = 65 * 1024;
-        } else {
-            proxyAuthState = 0;
-            tempBuffLength = 0;
-        }
-        if (tempBuffLength > 0) {
-            if (tempBuffer == nullptr || tempBuffer->length < tempBuffLength) {
-                if (tempBuffer != nullptr) {
-                    delete tempBuffer;
-                }
-                tempBuffer = new ByteArray(tempBuffLength);
-            }
-        }
+        configureSecretTransport(*proxySecret, true);
         socketAddress.sin_family = AF_INET;
         socketAddress.sin_port = htons(proxyPort);
         bool continueCheckAddress;
@@ -772,7 +737,6 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
             }
         }
     } else {
-        proxyAuthState = 0;
         if ((socketFd = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0)) < 0) {
             if (LOGS_ENABLED) DEBUG_E("connection(%p) can't create socket", this);
             closeSocket(1, -1);
@@ -795,27 +759,29 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
                 return;
             }
         }
-        uint32_t tempBuffLength;
-        if (secret.size() > 17 && secret[0] == '\xee') {
-            proxyAuthState = 10;
-            currentSecret = secret.substr(1, 16);
-            currentSecretDomain = secret.substr(17);
-            tempBuffLength = 65 * 1024;
-        } else {
-            proxyAuthState = 0;
-            tempBuffLength = 0;
-        }
-        if (tempBuffLength > 0) {
-            if (tempBuffer == nullptr || tempBuffer->length < tempBuffLength) {
-                if (tempBuffer != nullptr) {
-                    delete tempBuffer;
-                }
-                tempBuffer = new ByteArray(tempBuffLength);
-            }
-        }
+        configureSecretTransport(secret, false);
     }
 
     openConnectionInternal(ipv6);
+}
+
+void ConnectionSocket::configureSecretTransport(const std::string &secret, bool socksWhenEmpty) {
+    uint32_t tempBuffLength = 0;
+    if (socksWhenEmpty && secret.empty()) {
+        proxyAuthState = 1;
+        tempBuffLength = 1024;
+    } else if (secret.size() > 17 && secret[0] == '\xee') {
+        proxyAuthState = 10;
+        currentSecret = secret.substr(1, 16);
+        currentSecretDomain = secret.substr(17);
+        tempBuffLength = 65 * 1024;
+    }
+    if (tempBuffLength > 0 && (tempBuffer == nullptr || tempBuffer->length < tempBuffLength)) {
+        if (tempBuffer != nullptr) {
+            delete tempBuffer;
+        }
+        tempBuffer = new ByteArray(tempBuffLength);
+    }
 }
 
 void ConnectionSocket::openConnectionInternal(bool ipv6) {
@@ -868,6 +834,12 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
     state->bridgeFd = fds[1];
     state->lifecycleGeneration = ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration;
     tunnelSocketState = state;
+    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectStarted(
+                instanceNum,
+                state->lifecycleGeneration
+        );
+    }
 
     int32_t connectionInstanceNum = instanceNum;
     std::thread([this, state, address, port, connectionInstanceNum] {
@@ -895,7 +867,9 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
         state->handle.store(handle);
         startTunnelRelays(state);
         if (state->closed.load()) {
-            closeTunnelSocketState(state);
+            ConnectionsManager::getInstance(connectionInstanceNum).scheduleTask([this, state] {
+                failTunnelConnection(state);
+            });
             return;
         }
         ConnectionsManager::getInstance(connectionInstanceNum).scheduleTask([this, state] {
@@ -910,6 +884,7 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
 void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocketState> &state) {
     if (tunnelSocketState != state || state == nullptr || state->closed.load()) {
         closeTunnelSocketState(state);
+        cancelTunnelConnectAttempt(state);
         return;
     }
     int fd = -1;
@@ -939,7 +914,8 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
         adjustWriteOpAfterResolve = false;
     }
     adjustWriteOp();
-    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+    if (!state->connectAttemptCompleted.exchange(true)
+            && ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
         ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnected(
                 instanceNum,
                 state->lifecycleGeneration
@@ -950,11 +926,13 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
 void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state) {
     if (tunnelSocketState != state) {
         closeTunnelSocketState(state);
+        cancelTunnelConnectAttempt(state);
         return;
     }
+    bool reportFailure = state != nullptr && !state->connectAttemptCompleted.exchange(true);
     closeTunnelSocketState(state);
     tunnelSocketState = nullptr;
-    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+    if (reportFailure && ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
         ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectFailed(
                 instanceNum,
                 state->lifecycleGeneration
@@ -966,7 +944,20 @@ void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketSt
 void ConnectionSocket::closeTunnelConnection() {
     auto state = tunnelSocketState;
     tunnelSocketState = nullptr;
+    cancelTunnelConnectAttempt(state);
     closeTunnelSocketState(state);
+}
+
+void ConnectionSocket::cancelTunnelConnectAttempt(const std::shared_ptr<TunnelSocketState> &state) {
+    if (state == nullptr || state->connectAttemptCompleted.exchange(true)) {
+        return;
+    }
+    if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectCancelled(
+                instanceNum,
+                state->lifecycleGeneration
+        );
+    }
 }
 
 int32_t ConnectionSocket::checkSocketError(int32_t *error) {

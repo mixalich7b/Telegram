@@ -27,7 +27,8 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
   errors, and UAPI output;
 - profile serialization, encrypted envelope behavior, schema round trips, and
   legacy WireGuard profile migration;
-- controller startup, restart, network refresh, and fail-closed behavior;
+- controller startup, restart, network refresh, fail-closed behavior, and
+  aggregation of parallel/sequential tunnel TCP attempts for IPv4-only profiles;
 - tunnel marker metadata;
 - VoIP route policy for direct, enabled/disabled tunnel-for-calls, active
   tunnel, blocked tunnel, and tunnel-routed P2P cases.
@@ -117,6 +118,9 @@ Cover these flows:
   `Tunnel failed` to `Tunnel failed, reconnecting` when each retry starts and
   finally to `Tunnel connected` after TCP succeeds, and verify the failure
   reason appears once in a short toast when `Tunnel failed` is entered;
+- with an IPv4-only profile, trigger parallel and sequential IPv6/IPv4 tgnet
+  attempts; verify an immediate IPv6 `no route to host` closes only that attempt,
+  IPv4 continues through the tunnel, and no direct socket fallback occurs;
 - switch Wi-Fi/LTE while each protocol is active;
 - send messages/media while each protocol is active;
 - start new private and group/live VoIP sessions while each protocol is active;

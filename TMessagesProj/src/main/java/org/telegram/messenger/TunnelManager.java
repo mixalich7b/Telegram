@@ -216,12 +216,20 @@ public final class TunnelManager {
         return controller.isReconnecting();
     }
 
+    public static void onTunnelTcpConnectStarted(int account, long lifecycleGeneration) {
+        controller.onTunnelTcpConnectStarted(account, lifecycleGeneration);
+    }
+
     public static void onTunnelTcpConnectFailed(int account, long lifecycleGeneration) {
         controller.onTunnelTcpConnectFailed(account, lifecycleGeneration, UserConfig.MAX_ACCOUNT_COUNT);
     }
 
     public static void onTunnelTcpConnected(int account, long lifecycleGeneration) {
         controller.onTunnelTcpConnected(account, lifecycleGeneration);
+    }
+
+    public static void onTunnelTcpConnectCancelled(int account, long lifecycleGeneration) {
+        controller.onTunnelTcpConnectCancelled(account, lifecycleGeneration);
     }
 
     private static final class TunnelRuntimeSelector implements TunnelController.TunnelRuntime {

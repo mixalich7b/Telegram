@@ -100,6 +100,15 @@ socket path reports `onTunnelTcpConnected` only after a tunnel TCP handle has
 been attached to the socket. That callback resets reconnect backoff. A runtime
 that repeatedly starts but cannot establish tgnet TCP connections therefore
 continues through the configured backoff sequence.
+
+tgnet can try several datacenter addresses and address families concurrently.
+The socket path reports start, success, failure, and cancellation for each
+tunnel TCP attempt. `TunnelController` aggregates those events per lifecycle
+generation: one failed destination, including an IPv6 `no route to host` from
+an IPv4-only profile, does not stop the runtime while another attempt is pending
+or has succeeded. A 250 ms settlement window lets a sequential alternate-address
+attempt join the same failed group. Every alternate attempt still uses the Go
+tunnel socket API; aggregation never permits a direct socket fallback.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
 ## Profile Storage
@@ -213,10 +222,12 @@ fail-closed reconnect loop with backoff delays of 1s, 2s, 2s, 3s, 3s, 5s,
 sequence starts again from 1s. Validation failures such as a missing profile are
 not retried.
 
-When tgnet tunnel TCP connect fails while the native tunnel route is active, the
-route is blocked, the current runtime is stopped, and the same reconnect backoff
-is used. The native route remains blocked until a retry starts the runtime
-successfully and reapplies tunnel settings.
+When all tgnet tunnel TCP attempts in the current group fail while the native
+tunnel route is active, the route is blocked, the current runtime is stopped,
+and the same reconnect backoff is used. The native route remains blocked until a
+retry starts the runtime successfully and reapplies tunnel settings. A failure
+of only one destination or address family closes that connection only and lets
+tgnet continue alternate-address attempts through the same tunnel runtime.
 
 ## Native Runtime And Build
 

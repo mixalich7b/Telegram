@@ -137,6 +137,11 @@ AmneziaWG peer.
   controller state lock across native start, stop, or network-refresh calls.
 - Reconnect backoff resets after tgnet reports a successfully established tunnel
   TCP connection, not merely after the userspace runtime starts.
+- Track concurrent tgnet tunnel TCP attempts per lifecycle generation. A failure
+  for one destination or unsupported address family must not restart the runtime
+  while another tunnel TCP attempt is pending or has succeeded. Restart only
+  after the current attempt group has no success; alternate-address attempts
+  must remain on the tunnel route and must never fall back to direct sockets.
 - `NetworkRouteSettings` is the route-mode policy layer for proxy/tunnel mutual
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the

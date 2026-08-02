@@ -530,13 +530,16 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def tgnetConnectionSocketText = file("jni/tgnet/ConnectionSocket.cpp").text
-        ["tunnelRouteEnabled", "tunnelRouteBlocked", "socketpair", "libtg-tunnel-go.so", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "MSG_NOSIGNAL", "onTunnelTcpConnectFailed", "onTunnelTcpConnected"].each { token ->
+        ["tunnelRouteEnabled", "tunnelRouteBlocked", "socketpair", "libtg-tunnel-go.so", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "MSG_NOSIGNAL", "connectAttemptCompleted", "onTunnelTcpConnectStarted", "onTunnelTcpConnectFailed", "onTunnelTcpConnected", "onTunnelTcpConnectCancelled"].each { token ->
             if (!tgnetConnectionSocketText.contains(token)) {
                 throw new GradleException("tgnet tunnel route must use direct tunnel TCP transport token '${token}'")
             }
         }
+        if (!tgnetConnectionSocketText.contains("openTunnelConnection(address, port);\n        return;")) {
+            throw new GradleException("tgnet tunnel route must return after opening a tunnel connection and never fall through to a direct socket")
+        }
         def tunnelControllerText = file("src/main/java/org/telegram/messenger/TunnelController.java").text
-        ["DispatchQueue(\"tunnelLifecycleQueue\")", "RECONNECT_BACKOFF_DELAYS_MS", "onTunnelTcpConnected", "nextReconnectDelayIndex = 0", "lifecycleGeneration"].each { token ->
+        ["DispatchQueue(\"tunnelLifecycleQueue\")", "TCP_CONNECT_FAILURE_SETTLE_DELAY_MS", "RECONNECT_BACKOFF_DELAYS_MS", "pendingTcpConnectAttempts", "onTunnelTcpConnectStarted", "onTunnelTcpConnected", "onTunnelTcpConnectCancelled", "nextReconnectDelayIndex = 0", "lifecycleGeneration"].each { token ->
             if (!tunnelControllerText.contains(token)) {
                 throw new GradleException("TunnelController must keep lifecycle work off UI and reset reconnect backoff after TCP success token '${token}'")
             }
@@ -545,7 +548,7 @@ tasks.register("verifyWireGuardStaticGuards") {
             throw new GradleException("TunnelController must not schedule lifecycle or reconnect work on the UI thread")
         }
         def javaConnectionsManagerText = file("src/main/java/org/telegram/tgnet/ConnectionsManager.java").text
-        ["onTunnelTcpConnectFailed", "onTunnelTcpConnected"].each { token ->
+        ["onTunnelTcpConnectStarted", "onTunnelTcpConnectFailed", "onTunnelTcpConnected", "onTunnelTcpConnectCancelled"].each { token ->
             if (!javaConnectionsManagerText.contains(token)) {
                 throw new GradleException("Java ConnectionsManager must forward tunnel TCP lifecycle callback '${token}'")
             }

@@ -1,6 +1,7 @@
 package org.telegram.messenger;
 
 final class TunnelController {
+    private static final long TCP_CONNECT_FAILURE_SETTLE_DELAY_MS = 250L;
     private static final long[] RECONNECT_BACKOFF_DELAYS_MS = new long[]{
             1000L,
             2000L,
@@ -101,6 +102,12 @@ final class TunnelController {
     private long lifecycleGeneration;
     private long reconnectScheduleGeneration;
     private int maxKnownAccountCount;
+    private long tcpAttemptLifecycleGeneration;
+    private int pendingTcpConnectAttempts;
+    private boolean tcpConnectFailureSeen;
+    private boolean tcpConnectSuccessSeen;
+    private Runnable pendingTcpConnectFailureEvaluation;
+    private long tcpConnectFailureEvaluationScheduleGeneration;
 
     TunnelController(
             TunnelConfigProvider configProvider,
@@ -266,9 +273,11 @@ final class TunnelController {
             return;
         }
         Runnable lifecycleTask = null;
+        Runnable tcpFailureEvaluationToCancel = null;
         synchronized (stateLock) {
             rememberAccountCountLocked(accountCount);
             if (runtimeState == RuntimeState.RUNNING) {
+                tcpFailureEvaluationToCancel = resetTcpConnectAttemptsLocked();
                 runtimeState = RuntimeState.STARTING;
                 long generation = ++lifecycleGeneration;
                 int knownAccountCount = maxKnownAccountCount;
@@ -276,6 +285,7 @@ final class TunnelController {
                 lifecycleTask = () -> refreshNetworkBindings(generation, knownAccountCount);
             }
         }
+        cancelScheduledTask(tcpFailureEvaluationToCancel);
         executeLifecycleTask(lifecycleTask);
     }
 
@@ -297,10 +307,12 @@ final class TunnelController {
             return;
         }
         Runnable reconnectToCancel;
+        Runnable tcpFailureEvaluationToCancel;
         Runnable lifecycleTask;
         synchronized (stateLock) {
             rememberAccountCountLocked(accountCount);
             reconnectToCancel = clearPendingReconnectLocked(true);
+            tcpFailureEvaluationToCancel = resetTcpConnectAttemptsLocked();
             failureReason = null;
             reconnecting = false;
             runtimeState = RuntimeState.STARTING;
@@ -310,13 +322,16 @@ final class TunnelController {
             lifecycleTask = () -> startRuntime(generation, knownAccountCount, true);
         }
         cancelScheduledTask(reconnectToCancel);
+        cancelScheduledTask(tcpFailureEvaluationToCancel);
         executeLifecycleTask(lifecycleTask);
     }
 
     void disable(int accountCount) {
         Runnable reconnectToCancel;
+        Runnable tcpFailureEvaluationToCancel;
         synchronized (stateLock) {
             reconnectToCancel = clearPendingReconnectLocked(true);
+            tcpFailureEvaluationToCancel = resetTcpConnectAttemptsLocked();
             ++lifecycleGeneration;
             runtimeState = RuntimeState.STOPPED;
             failureReason = null;
@@ -325,45 +340,103 @@ final class TunnelController {
             applyDirectRouteForAccountsLocked(accountCount);
         }
         cancelScheduledTask(reconnectToCancel);
+        cancelScheduledTask(tcpFailureEvaluationToCancel);
         lifecycleTaskScheduler.execute(this::stopRuntimeSafely);
+    }
+
+    void onTunnelTcpConnectStarted(int sourceAccount, long callbackGeneration) {
+        Runnable tcpFailureEvaluationToCancel = null;
+        synchronized (stateLock) {
+            if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
+                return;
+            }
+            if (tcpAttemptLifecycleGeneration != callbackGeneration) {
+                tcpFailureEvaluationToCancel = resetTcpConnectAttemptsLocked();
+                tcpAttemptLifecycleGeneration = callbackGeneration;
+            } else if (pendingTcpConnectAttempts == 0) {
+                boolean continuingFailedBatch = pendingTcpConnectFailureEvaluation != null;
+                tcpFailureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
+                if (!continuingFailedBatch) {
+                    tcpConnectFailureSeen = false;
+                }
+                tcpConnectSuccessSeen = false;
+            }
+            pendingTcpConnectAttempts++;
+        }
+        cancelScheduledTask(tcpFailureEvaluationToCancel);
+        logger.debug(configProvider.protocolLabel() + " TCP connection attempt started for account " + sourceAccount);
     }
 
     void onTunnelTcpConnectFailed(int sourceAccount, long callbackGeneration, int accountCount) {
         if (!configProvider.isEnabled()) {
             return;
         }
-        Runnable lifecycleTask = null;
+        Runnable failureEvaluation = null;
         synchronized (stateLock) {
             rememberAccountCountLocked(accountCount);
-            if (runtimeState == RuntimeState.RUNNING && callbackGeneration == lifecycleGeneration) {
-                runtimeState = RuntimeState.RECONNECT_WAIT;
-                failureReason = configProvider.protocolLabel() + " TCP connection failed";
-                reconnecting = false;
-                logger.error(configProvider.protocolLabel() + " runtime failed for account "
-                        + sourceAccount + ": " + failureReason);
-                long generation = ++lifecycleGeneration;
-                int knownAccountCount = maxKnownAccountCount;
-                applyTunnelRouteForAccountsLocked(knownAccountCount);
-                lifecycleTask = () -> stopAndScheduleReconnect(generation, knownAccountCount);
+            if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
+                return;
+            }
+            ensureTcpAttemptGenerationLocked(callbackGeneration);
+            if (pendingTcpConnectAttempts > 0) {
+                pendingTcpConnectAttempts--;
+            }
+            tcpConnectFailureSeen = true;
+            if (pendingTcpConnectAttempts == 0 && !tcpConnectSuccessSeen) {
+                failureEvaluation = prepareTcpConnectFailureEvaluationLocked(
+                        sourceAccount,
+                        callbackGeneration,
+                        maxKnownAccountCount
+                );
             }
         }
-        notifyStatusChanged();
-        executeLifecycleTask(lifecycleTask);
+        if (failureEvaluation != null) {
+            lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
+        }
     }
 
     void onTunnelTcpConnected(int sourceAccount, long callbackGeneration) {
+        Runnable tcpFailureEvaluationToCancel;
         synchronized (stateLock) {
-            if (runtimeState != RuntimeState.RUNNING
-                    || callbackGeneration != lifecycleGeneration
-                    || !configProvider.isEnabled()) {
+            if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
             }
+            ensureTcpAttemptGenerationLocked(callbackGeneration);
+            if (pendingTcpConnectAttempts > 0) {
+                pendingTcpConnectAttempts--;
+            }
+            tcpConnectSuccessSeen = true;
+            tcpConnectFailureSeen = false;
+            tcpFailureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
             nextReconnectDelayIndex = 0;
             failureReason = null;
             reconnecting = false;
         }
+        cancelScheduledTask(tcpFailureEvaluationToCancel);
         notifyStatusChanged();
         logger.debug(configProvider.protocolLabel() + " TCP connection established for account " + sourceAccount);
+    }
+
+    void onTunnelTcpConnectCancelled(int sourceAccount, long callbackGeneration) {
+        Runnable failureEvaluation = null;
+        synchronized (stateLock) {
+            if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)
+                    || tcpAttemptLifecycleGeneration != callbackGeneration
+                    || pendingTcpConnectAttempts <= 0) {
+                return;
+            }
+            pendingTcpConnectAttempts--;
+            if (pendingTcpConnectAttempts == 0 && tcpConnectFailureSeen && !tcpConnectSuccessSeen) {
+                failureEvaluation = prepareTcpConnectFailureEvaluationLocked(
+                        sourceAccount,
+                        callbackGeneration,
+                        maxKnownAccountCount
+                );
+            }
+        }
+        if (failureEvaluation != null) {
+            lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
+        }
     }
 
     boolean isRunningForTests() {
@@ -562,6 +635,59 @@ final class TunnelController {
         return new ScheduledReconnect(reconnect, delayMs);
     }
 
+    private Runnable prepareTcpConnectFailureEvaluationLocked(
+            int sourceAccount,
+            long callbackGeneration,
+            int accountCount
+    ) {
+        if (pendingTcpConnectFailureEvaluation != null) {
+            return null;
+        }
+        long scheduleGeneration = ++tcpConnectFailureEvaluationScheduleGeneration;
+        Runnable evaluation = () -> evaluateTcpConnectFailures(
+                scheduleGeneration,
+                sourceAccount,
+                callbackGeneration,
+                accountCount
+        );
+        pendingTcpConnectFailureEvaluation = evaluation;
+        return evaluation;
+    }
+
+    private void evaluateTcpConnectFailures(
+            long scheduleGeneration,
+            int sourceAccount,
+            long callbackGeneration,
+            int accountCount
+    ) {
+        Runnable lifecycleTask = null;
+        synchronized (stateLock) {
+            if (scheduleGeneration != tcpConnectFailureEvaluationScheduleGeneration
+                    || pendingTcpConnectFailureEvaluation == null) {
+                return;
+            }
+            pendingTcpConnectFailureEvaluation = null;
+            if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)
+                    || pendingTcpConnectAttempts != 0
+                    || tcpConnectSuccessSeen
+                    || !tcpConnectFailureSeen) {
+                return;
+            }
+            runtimeState = RuntimeState.RECONNECT_WAIT;
+            failureReason = configProvider.protocolLabel() + " TCP connections failed";
+            reconnecting = false;
+            logger.error(configProvider.protocolLabel() + " runtime failed after all TCP attempts for account "
+                    + sourceAccount + ": " + failureReason);
+            long generation = ++lifecycleGeneration;
+            int knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
+            resetTcpConnectAttemptsLocked();
+            applyTunnelRouteForAccountsLocked(knownAccountCount);
+            lifecycleTask = () -> stopAndScheduleReconnect(generation, knownAccountCount);
+        }
+        notifyStatusChanged();
+        executeLifecycleTask(lifecycleTask);
+    }
+
     private void runReconnect(long scheduleGeneration) {
         long generation;
         int accountCount;
@@ -593,6 +719,36 @@ final class TunnelController {
             nextReconnectDelayIndex = 0;
         }
         return reconnectToCancel;
+    }
+
+    private boolean isCurrentTunnelTcpCallbackLocked(long callbackGeneration) {
+        return runtimeState == RuntimeState.RUNNING
+                && callbackGeneration == lifecycleGeneration
+                && configProvider.isEnabled();
+    }
+
+    private void ensureTcpAttemptGenerationLocked(long callbackGeneration) {
+        if (tcpAttemptLifecycleGeneration == callbackGeneration) {
+            return;
+        }
+        resetTcpConnectAttemptsLocked();
+        tcpAttemptLifecycleGeneration = callbackGeneration;
+    }
+
+    private Runnable resetTcpConnectAttemptsLocked() {
+        Runnable failureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
+        tcpAttemptLifecycleGeneration = 0;
+        pendingTcpConnectAttempts = 0;
+        tcpConnectFailureSeen = false;
+        tcpConnectSuccessSeen = false;
+        return failureEvaluationToCancel;
+    }
+
+    private Runnable clearPendingTcpConnectFailureEvaluationLocked() {
+        Runnable failureEvaluationToCancel = pendingTcpConnectFailureEvaluation;
+        pendingTcpConnectFailureEvaluation = null;
+        ++tcpConnectFailureEvaluationScheduleGeneration;
+        return failureEvaluationToCancel;
     }
 
     private boolean isCurrentLifecycleOperation(long generation, RuntimeState expectedState) {

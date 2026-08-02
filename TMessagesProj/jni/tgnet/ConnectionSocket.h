@@ -92,6 +92,8 @@ private:
     void finishTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
     void failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
     void closeTunnelConnection();
+    void cancelTunnelConnectAttempt(const std::shared_ptr<TunnelSocketState> &state);
+    void configureSecretTransport(const std::string &secret, bool socksWhenEmpty);
     void adjustWriteOp();
 
     friend class EventObject;
