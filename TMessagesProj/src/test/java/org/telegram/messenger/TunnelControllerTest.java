@@ -351,6 +351,65 @@ public class TunnelControllerTest {
     }
 
     @Test
+    public void tcpAttemptDiagnosticsExposeGenerationPendingAndSettleDecision() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler lifecycleTaskScheduler = new FakeLifecycleTaskScheduler();
+        RecordingLogger logger = new RecordingLogger();
+        TunnelController controller = new TunnelController(
+                config,
+                tunnelRuntime,
+                routeStateApplier,
+                logger,
+                lifecycleTaskScheduler
+        );
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnected(0, lifecycleGeneration);
+
+        assertDebugLogContains(logger, "tunnel_trace event=runtime_active protocol=WireGuard generation="
+                + lifecycleGeneration);
+        assertDebugLogContains(logger, "tunnel_trace event=tcp_attempt_started protocol=WireGuard account=0 generation="
+                + lifecycleGeneration + " pending=1 settle_cancelled=false");
+        assertDebugLogContains(logger, "tunnel_trace event=tcp_attempt_failed protocol=WireGuard account=0 generation="
+                + lifecycleGeneration + " pending=0 success_seen=false settle_scheduled=true");
+        assertDebugLogContains(logger, "tunnel_trace event=tcp_attempt_started protocol=WireGuard account=0 generation="
+                + lifecycleGeneration + " pending=1 settle_cancelled=true");
+        assertDebugLogContains(logger, "tunnel_trace event=tcp_attempt_connected protocol=WireGuard account=0 generation="
+                + lifecycleGeneration + " pending=0 success_seen=true settle_cancelled=false");
+    }
+
+    @Test
+    public void tcpAttemptDiagnosticsReportSettledGroupFailure() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler lifecycleTaskScheduler = new FakeLifecycleTaskScheduler();
+        RecordingLogger logger = new RecordingLogger();
+        TunnelController controller = new TunnelController(
+                config,
+                tunnelRuntime,
+                routeStateApplier,
+                logger,
+                lifecycleTaskScheduler
+        );
+
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long lifecycleGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onTunnelTcpConnectStarted(0, lifecycleGeneration);
+        controller.onTunnelTcpConnectFailed(0, lifecycleGeneration, 1);
+        lifecycleTaskScheduler.runNext();
+
+        assertErrorLogContains(logger, "tunnel_trace event=tcp_attempt_group_failed protocol=WireGuard account=0 generation="
+                + lifecycleGeneration + " pending=0 success_seen=false action=restart_runtime");
+    }
+
+    @Test
     public void staleTcpFailureFromPreviousLifecycleGenerationIsIgnored() {
         FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
         FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
@@ -512,6 +571,30 @@ public class TunnelControllerTest {
         controller.applyTunnelSettingsForAccount(1);
         controller.onNetworkChanged(2);
         assertEquals(1, tunnelRuntime.networkChangedCalls);
+    }
+
+    @Test
+    public void successfulNetworkRefreshLogsItsLifecycleGeneration() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        RecordingLogger logger = new RecordingLogger();
+        TunnelController controller = new TunnelController(
+                config,
+                tunnelRuntime,
+                routeStateApplier,
+                logger,
+                new FakeLifecycleTaskScheduler()
+        );
+
+        controller.applyTunnelSettingsForAccount(0);
+        long initialGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+        controller.onNetworkChanged(1);
+        long refreshedGeneration = lastCallForAccount(routeStateApplier, 0).lifecycleGeneration;
+
+        assertTrue(refreshedGeneration > initialGeneration);
+        assertDebugLogContains(logger, "tunnel_trace event=runtime_refreshed protocol=WireGuard generation="
+                + refreshedGeneration);
     }
 
     @Test
@@ -699,6 +782,35 @@ public class TunnelControllerTest {
             public void error(Throwable throwable) {
             }
         };
+    }
+
+    private static void assertDebugLogContains(RecordingLogger logger, String expectedMessage) {
+        assertTrue("Missing debug log: " + expectedMessage + " in " + logger.debugMessages,
+                logger.debugMessages.contains(expectedMessage));
+    }
+
+    private static void assertErrorLogContains(RecordingLogger logger, String expectedMessage) {
+        assertTrue("Missing error log: " + expectedMessage + " in " + logger.errorMessages,
+                logger.errorMessages.contains(expectedMessage));
+    }
+
+    private static final class RecordingLogger implements TunnelController.Logger {
+        final List<String> debugMessages = new ArrayList<>();
+        final List<String> errorMessages = new ArrayList<>();
+
+        @Override
+        public void debug(String message) {
+            debugMessages.add(message);
+        }
+
+        @Override
+        public void error(String message) {
+            errorMessages.add(message);
+        }
+
+        @Override
+        public void error(Throwable throwable) {
+        }
     }
 
     private static final class FakeTunnelConfigProvider implements TunnelController.TunnelConfigProvider {

@@ -346,6 +346,7 @@ final class TunnelController {
 
     void onTunnelTcpConnectStarted(int sourceAccount, long callbackGeneration) {
         Runnable tcpFailureEvaluationToCancel = null;
+        int pendingAttempts;
         synchronized (stateLock) {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
@@ -362,9 +363,14 @@ final class TunnelController {
                 tcpConnectSuccessSeen = false;
             }
             pendingTcpConnectAttempts++;
+            pendingAttempts = pendingTcpConnectAttempts;
         }
         cancelScheduledTask(tcpFailureEvaluationToCancel);
-        logger.debug(configProvider.protocolLabel() + " TCP connection attempt started for account " + sourceAccount);
+        logger.debug("tunnel_trace event=tcp_attempt_started protocol=" + configProvider.protocolLabel()
+                + " account=" + sourceAccount
+                + " generation=" + callbackGeneration
+                + " pending=" + pendingAttempts
+                + " settle_cancelled=" + (tcpFailureEvaluationToCancel != null));
     }
 
     void onTunnelTcpConnectFailed(int sourceAccount, long callbackGeneration, int accountCount) {
@@ -372,6 +378,8 @@ final class TunnelController {
             return;
         }
         Runnable failureEvaluation = null;
+        int pendingAttempts;
+        boolean successSeen;
         synchronized (stateLock) {
             rememberAccountCountLocked(accountCount);
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
@@ -389,7 +397,15 @@ final class TunnelController {
                         maxKnownAccountCount
                 );
             }
+            pendingAttempts = pendingTcpConnectAttempts;
+            successSeen = tcpConnectSuccessSeen;
         }
+        logger.debug("tunnel_trace event=tcp_attempt_failed protocol=" + configProvider.protocolLabel()
+                + " account=" + sourceAccount
+                + " generation=" + callbackGeneration
+                + " pending=" + pendingAttempts
+                + " success_seen=" + successSeen
+                + " settle_scheduled=" + (failureEvaluation != null));
         if (failureEvaluation != null) {
             lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
         }
@@ -397,6 +413,7 @@ final class TunnelController {
 
     void onTunnelTcpConnected(int sourceAccount, long callbackGeneration) {
         Runnable tcpFailureEvaluationToCancel;
+        int pendingAttempts;
         synchronized (stateLock) {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
@@ -411,14 +428,22 @@ final class TunnelController {
             nextReconnectDelayIndex = 0;
             failureReason = null;
             reconnecting = false;
+            pendingAttempts = pendingTcpConnectAttempts;
         }
         cancelScheduledTask(tcpFailureEvaluationToCancel);
         notifyStatusChanged();
-        logger.debug(configProvider.protocolLabel() + " TCP connection established for account " + sourceAccount);
+        logger.debug("tunnel_trace event=tcp_attempt_connected protocol=" + configProvider.protocolLabel()
+                + " account=" + sourceAccount
+                + " generation=" + callbackGeneration
+                + " pending=" + pendingAttempts
+                + " success_seen=true"
+                + " settle_cancelled=" + (tcpFailureEvaluationToCancel != null));
     }
 
     void onTunnelTcpConnectCancelled(int sourceAccount, long callbackGeneration) {
         Runnable failureEvaluation = null;
+        int pendingAttempts;
+        boolean successSeen;
         synchronized (stateLock) {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)
                     || tcpAttemptLifecycleGeneration != callbackGeneration
@@ -433,7 +458,15 @@ final class TunnelController {
                         maxKnownAccountCount
                 );
             }
+            pendingAttempts = pendingTcpConnectAttempts;
+            successSeen = tcpConnectSuccessSeen;
         }
+        logger.debug("tunnel_trace event=tcp_attempt_cancelled protocol=" + configProvider.protocolLabel()
+                + " account=" + sourceAccount
+                + " generation=" + callbackGeneration
+                + " pending=" + pendingAttempts
+                + " success_seen=" + successSeen
+                + " settle_scheduled=" + (failureEvaluation != null));
         if (failureEvaluation != null) {
             lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
         }
@@ -534,7 +567,8 @@ final class TunnelController {
         }
         notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.ACTIVE, activeGeneration);
-        logger.debug(configProvider.protocolLabel() + " runtime started");
+        logger.debug("tunnel_trace event=runtime_active protocol=" + configProvider.protocolLabel()
+                + " generation=" + activeGeneration);
     }
 
     private void completeStartFailure(
@@ -605,6 +639,8 @@ final class TunnelController {
         }
         notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.ACTIVE, activeGeneration);
+        logger.debug("tunnel_trace event=runtime_refreshed protocol=" + configProvider.protocolLabel()
+                + " generation=" + activeGeneration);
     }
 
     private void stopAndScheduleReconnect(long generation, int accountCount) {
@@ -676,8 +712,10 @@ final class TunnelController {
             runtimeState = RuntimeState.RECONNECT_WAIT;
             failureReason = configProvider.protocolLabel() + " TCP connections failed";
             reconnecting = false;
-            logger.error(configProvider.protocolLabel() + " runtime failed after all TCP attempts for account "
-                    + sourceAccount + ": " + failureReason);
+            logger.error("tunnel_trace event=tcp_attempt_group_failed protocol=" + configProvider.protocolLabel()
+                    + " account=" + sourceAccount
+                    + " generation=" + callbackGeneration
+                    + " pending=0 success_seen=false action=restart_runtime");
             long generation = ++lifecycleGeneration;
             int knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
             resetTcpConnectAttemptsLocked();

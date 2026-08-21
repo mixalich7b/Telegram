@@ -52,6 +52,40 @@ Go bridge tests cover:
 The Gradle Go test tasks keep `GOCACHE` and `GOMODCACHE` under the Gradle
 user home directory, never under `TMessagesProj/jni`.
 
+## Tunnel Connection Trace
+
+Debug builds emit a compact `tunnel_trace` timeline for tunnel connection
+diagnostics. Capture the Java controller, tgnet, and Go bridge logs with:
+
+```bash
+adb logcat -v threadtime tgnet:D tmessages:D 'Telegram/Tunnel:D' '*:S' | rg 'tunnel_trace|tunnel TCP connect failed'
+```
+
+Read one lifecycle generation in this order:
+
+- `runtime_active`: the WireGuard or AmneziaWG userspace runtime started;
+  `runtime_refreshed` starts a new lifecycle generation after a successful
+  network-binding refresh without restarting that runtime;
+- `route_state`: the native route reached an account's tgnet queue;
+- `tcp_dial_start` followed by `tcp_dial_connected`, `tcp_dial_failed`, or
+  `tcp_dial_cancelled`: one direct tunnel TCP attempt, correlated by `attempt`;
+  terminal events include time spent in the tunnel TCP dial as `elapsed_ms`;
+- `tcp_attempt_*`: the Java aggregate state after the native callback, including
+  `pending`, `success_seen`, and whether the 250 ms failure settlement was
+  scheduled or cancelled; `tcp_attempt_group_failed` confirms that settlement
+  completed with no success and selected a runtime restart;
+- `mtproto_ready`: the first valid packet on the current datacenter's generic
+  connection for that active route generation; `route_elapsed_ms` measures from
+  active native route application.
+
+The trace includes Telegram datacenter destinations but never profile contents,
+WireGuard or AmneziaWG peer endpoints, private/preshared keys, or request
+payloads. If `tcp_dial_connected` is slow, investigate the tunnel handshake or
+netstack path. If it is fast but `mtproto_ready` is slow, investigate tgnet
+address selection, MTProto handshake, or request processing. If no attempt
+succeeds, use the aggregate `pending` and settlement events to distinguish a
+long-running attempt from reconnect backoff.
+
 ## Static Guards
 
 `verifyTunnelStaticGuards` protects invariants that should not be removed

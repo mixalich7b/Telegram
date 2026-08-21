@@ -194,6 +194,8 @@ private:
     bool tunnelRouteEnabled = false;
     bool tunnelRouteBlocked = false;
     int64_t tunnelRouteGeneration = 0;
+    int64_t tunnelRouteActiveSince = 0;
+    bool tunnelRouteReadyLogged = false;
     int32_t lastPingProxyId = 2000000;
     std::vector<std::unique_ptr<ProxyCheckInfo>> proxyCheckQueue;
     std::vector<std::unique_ptr<ProxyCheckInfo>> proxyActiveChecks;

@@ -20,6 +20,7 @@
 #include <openssl/hmac.h>
 #include <algorithm>
 #include <atomic>
+#include <cinttypes>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -51,6 +52,8 @@ using TunnelTcpConnectFunc = int64_t (*)(const char *, int);
 using TunnelTcpReadFunc = int (*)(int64_t, void *, int);
 using TunnelTcpWriteFunc = int (*)(int64_t, const void *, int);
 using TunnelTcpCloseFunc = void (*)(int64_t);
+
+std::atomic<uint64_t> nextTunnelTraceAttemptId{1};
 
 class TunnelBridge {
 public:
@@ -106,6 +109,8 @@ struct TunnelSocketState {
     std::atomic<bool> connectAttemptCompleted{false};
     std::atomic<int64_t> handle{0};
     int64_t lifecycleGeneration = 0;
+    uint64_t traceAttemptId = 0;
+    int64_t traceStartedAtMs = 0;
     std::mutex fdMutex;
     int appFd = -1;
     int bridgeFd = -1;
@@ -671,7 +676,6 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
             return;
         }
         configureSecretTransport(secret, false);
-        if (LOGS_ENABLED) DEBUG_D("connection(%p) connecting via tunnel %s:%d", this, address.c_str(), port);
         openTunnelConnection(address, port);
         return;
     }
@@ -833,7 +837,18 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
     state->appFd = fds[0];
     state->bridgeFd = fds[1];
     state->lifecycleGeneration = ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration;
+    state->traceAttemptId = nextTunnelTraceAttemptId.fetch_add(1);
+    state->traceStartedAtMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
     tunnelSocketState = state;
+    if (LOGS_ENABLED) {
+        DEBUG_D("tunnel_trace event=tcp_dial_start attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " target=%s:%u",
+                state->traceAttemptId,
+                this,
+                instanceNum,
+                state->lifecycleGeneration,
+                address.c_str(),
+                static_cast<unsigned int>(port));
+    }
     if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
         ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectStarted(
                 instanceNum,
@@ -914,12 +929,24 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
         adjustWriteOpAfterResolve = false;
     }
     adjustWriteOp();
-    if (!state->connectAttemptCompleted.exchange(true)
-            && ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
-        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnected(
-                instanceNum,
-                state->lifecycleGeneration
-        );
+    bool reportConnected = !state->connectAttemptCompleted.exchange(true);
+    if (reportConnected) {
+        if (LOGS_ENABLED) {
+            int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
+                    - state->traceStartedAtMs;
+            DEBUG_D("tunnel_trace event=tcp_dial_connected attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+                    state->traceAttemptId,
+                    this,
+                    instanceNum,
+                    state->lifecycleGeneration,
+                    elapsedMs);
+        }
+        if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+            ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnected(
+                    instanceNum,
+                    state->lifecycleGeneration
+            );
+        }
     }
 }
 
@@ -932,11 +959,23 @@ void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketSt
     bool reportFailure = state != nullptr && !state->connectAttemptCompleted.exchange(true);
     closeTunnelSocketState(state);
     tunnelSocketState = nullptr;
-    if (reportFailure && ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
-        ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectFailed(
-                instanceNum,
-                state->lifecycleGeneration
-        );
+    if (reportFailure) {
+        if (LOGS_ENABLED) {
+            int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
+                    - state->traceStartedAtMs;
+            DEBUG_E("tunnel_trace event=tcp_dial_failed attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+                    state->traceAttemptId,
+                    this,
+                    instanceNum,
+                    state->lifecycleGeneration,
+                    elapsedMs);
+        }
+        if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
+            ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectFailed(
+                    instanceNum,
+                    state->lifecycleGeneration
+            );
+        }
     }
     closeSocket(1, ENETDOWN);
 }
@@ -951,6 +990,16 @@ void ConnectionSocket::closeTunnelConnection() {
 void ConnectionSocket::cancelTunnelConnectAttempt(const std::shared_ptr<TunnelSocketState> &state) {
     if (state == nullptr || state->connectAttemptCompleted.exchange(true)) {
         return;
+    }
+    if (LOGS_ENABLED) {
+        int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
+                - state->traceStartedAtMs;
+        DEBUG_D("tunnel_trace event=tcp_dial_cancelled attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+                state->traceAttemptId,
+                this,
+                instanceNum,
+                state->lifecycleGeneration,
+                elapsedMs);
     }
     if (ConnectionsManager::getInstance(instanceNum).delegate != nullptr) {
         ConnectionsManager::getInstance(instanceNum).delegate->onTunnelTcpConnectCancelled(

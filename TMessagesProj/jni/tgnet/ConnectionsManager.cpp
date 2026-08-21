@@ -868,6 +868,20 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
     Datacenter *datacenter = connection->getDatacenter();
 
     if (connectionState != ConnectionStateConnected && connection->getConnectionType() == ConnectionTypeGeneric && datacenter->getDatacenterId() == currentDatacenterId) {
+        if (tunnelRouteEnabled && !tunnelRouteBlocked && !tunnelRouteReadyLogged) {
+            tunnelRouteReadyLogged = true;
+            if (LOGS_ENABLED) {
+                int64_t routeElapsedMs = tunnelRouteActiveSince == 0
+                        ? -1
+                        : getCurrentTimeMonotonicMillis() - tunnelRouteActiveSince;
+                DEBUG_D("tunnel_trace event=mtproto_ready connection=%p account=%d generation=%" PRId64 " dc=%u route_elapsed_ms=%" PRId64,
+                        connection,
+                        instanceNum,
+                        tunnelRouteGeneration,
+                        datacenter->getDatacenterId(),
+                        routeElapsedMs);
+            }
+        }
         connectionState = ConnectionStateConnected;
         if (delegate != nullptr) {
             delegate->onConnectionStateChanged(connectionState, instanceNum);
@@ -3713,6 +3727,8 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
         tunnelRouteEnabled = false;
         tunnelRouteBlocked = false;
         tunnelRouteGeneration = 0;
+        tunnelRouteActiveSince = 0;
+        tunnelRouteReadyLogged = false;
         proxyAddress = address;
         proxyPort = port;
         proxyUser = username;
@@ -3757,9 +3773,29 @@ void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked, int64_t l
                 || !proxyUser.empty()
                 || !proxyPassword.empty()
                 || !proxySecret.empty();
+        bool routeBecameActive = enabled
+                && !blocked
+                && (!tunnelRouteEnabled
+                    || tunnelRouteBlocked
+                    || tunnelRouteGeneration != lifecycleGeneration
+                    || tunnelRouteActiveSince == 0);
         tunnelRouteEnabled = enabled;
         tunnelRouteBlocked = enabled && blocked;
         tunnelRouteGeneration = lifecycleGeneration;
+        if (routeBecameActive) {
+            tunnelRouteActiveSince = getCurrentTimeMonotonicMillis();
+            tunnelRouteReadyLogged = false;
+        } else if (!enabled || blocked) {
+            tunnelRouteActiveSince = 0;
+            tunnelRouteReadyLogged = false;
+        }
+        if (LOGS_ENABLED) {
+            DEBUG_D("tunnel_trace event=route_state account=%d generation=%" PRId64 " enabled=%d blocked=%d",
+                    instanceNum,
+                    tunnelRouteGeneration,
+                    tunnelRouteEnabled,
+                    tunnelRouteBlocked);
+        }
         proxyAddress = "";
         proxyPort = 1080;
         proxyUser = "";

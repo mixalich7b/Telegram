@@ -111,6 +111,14 @@ attempt join the same failed group. Every alternate attempt still uses the Go
 tunnel socket API; aggregation never permits a direct socket fallback.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
+Debug builds emit `tunnel_trace` events at runtime activation or successful
+network refresh, native route application, each direct tunnel TCP attempt,
+aggregate attempt decisions, and the first current-datacenter MTProto packet
+per active route generation. Attempt and lifecycle identifiers correlate
+concurrent work; monotonic elapsed values separate tunnel TCP dial latency from
+tgnet/MTProto readiness latency without logging tunnel profile secrets or
+request payloads.
+
 ## Profile Storage
 
 Route state lives in global `mainconfig`:
