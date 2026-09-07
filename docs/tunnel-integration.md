@@ -254,6 +254,9 @@ with a linker version script that exports only `tgWg*`, `tgAwg*`, and
 
 Android bridge builds use the managed Go 1.24.4 toolchain from the native build
 directory instead of whatever `go` binary is first on `PATH`.
+Android Gradle native target filters explicitly build `tmessages.49`, `tg-wg`,
+and `tg-awg`; the shared `tg-tunnel-go` target is built transitively by the two
+JNI wrappers.
 
 Bridge behavior shared by both protocols:
 

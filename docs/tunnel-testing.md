@@ -122,6 +122,10 @@ APK verification requires these libraries for every supported ABI:
 - `libtg-tunnel-go.so`;
 - `libtg-awg.so`;
 
+Static command-contract checks also require every Android Gradle native target
+filter to include `tmessages.49`, `tg-wg`, and `tg-awg`. The shared Go library
+is produced transitively from the JNI wrapper targets.
+
 APK verification rejects entries containing:
 
 - `gomod/`;

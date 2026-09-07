@@ -32,7 +32,7 @@ MTproto protocol manuals: https://core.telegram.org/mtproto
 
 **Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore and filled variables inside BuildVars.java. The Firebase config is read from `$HOME/.android-keys/google-services-tg-wg.json`. `TG_APP_ID`, `TG_APP_HASH`, `TG_RELEASE_KEYSTORE_PATH`, `TG_RELEASE_STORE_PASSWORD`, `TG_RELEASE_KEY_ALIAS`, and `TG_RELEASE_KEY_PASSWORD` are taken from the user's global Gradle properties and must be provided before running Gradle. Do not add these values to the repository.
 
-You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 35.
+You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 36.
 
 1. Clone the Telegram source code with its submodules:
    ```bash

@@ -164,6 +164,8 @@ AmneziaWG peer.
 - WireGuard and AmneziaWG must be built into one Go c-shared library
   (`libtg-tunnel-go.so`) so the app process has a single Go runtime. Do not
   reintroduce separate `libtg-wg-go.so` and `libtg-awg-go.so` libraries.
+- Android Gradle native target filters must include `tmessages.49`, `tg-wg`,
+  and `tg-awg`; `tg-tunnel-go` is built transitively by both JNI wrappers.
 - Direct tunnel socket handles must be tied to the active runtime generation;
   stale handles from a stopped/restarted runtime must fail closed.
 - Tunnel TCP writes must write complete protocol frames or fail; do not treat
