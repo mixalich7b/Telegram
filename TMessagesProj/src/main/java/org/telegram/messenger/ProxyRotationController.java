@@ -19,6 +19,9 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
 
     private boolean isCurrentlyChecking;
     private Runnable checkProxyAndSwitchRunnable = () -> {
+        if (TunnelManager.isUserEnabled() || !SharedConfig.isProxyEnabled() || !SharedConfig.proxyRotationEnabled) {
+            return;
+        }
         isCurrentlyChecking = true;
 
         int currentAccount = UserConfig.selectedAccount;
@@ -30,7 +33,7 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             }
             startedCheck = true;
             proxyInfo.checking = true;
-            proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.address, proxyInfo.port, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
+            ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.settings, time -> AndroidUtilities.runOnUIThread(() -> {
                 proxyInfo.availableCheckTime = SystemClock.elapsedRealtime();
                 proxyInfo.checking = false;
                 if (time == -1) {
@@ -58,7 +61,7 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
     private void switchToAvailable() {
         isCurrentlyChecking = false;
 
-        if (!SharedConfig.proxyRotationEnabled) {
+        if (TunnelManager.isUserEnabled() || !SharedConfig.isProxyEnabled() || !SharedConfig.proxyRotationEnabled) {
             return;
         }
 
@@ -93,8 +96,9 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             switchToAvailable();
         } else if (id == NotificationCenter.proxySettingsChanged) {
             AndroidUtilities.cancelRunOnUIThread(checkProxyAndSwitchRunnable);
+            isCurrentlyChecking = false;
         } else if (id == NotificationCenter.didUpdateConnectionState && account == UserConfig.selectedAccount) {
-            if (!SharedConfig.isProxyEnabled() && !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1) {
+            if (TunnelManager.isUserEnabled() || !SharedConfig.isProxyEnabled() || !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1) {
                 return;
             }
 

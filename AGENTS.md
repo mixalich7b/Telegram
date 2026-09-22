@@ -146,6 +146,10 @@ AmneziaWG peer.
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the
   native tunnel route while a tunnel is enabled.
+- Ordinary proxy settings use `org.telegram.proxy.ProxySettings`, including
+  the persisted `proxy_type`. WEB proxy carrier startup must be gated by tunnel
+  state; enabling a tunnel must stop the ordinary WEB carrier without clearing
+  the native tunnel route. Delayed proxy rotation must not disable a tunnel.
 - If tunnel startup, restart, or network-refresh recovery fails, apply blocked
   tunnel route state to all accounts instead of going direct.
 - Network changes should call the native refresh path. If native bind refresh
@@ -182,6 +186,7 @@ AmneziaWG peer.
 - Disabling a tunnel leaves ordinary proxy, proxy-for-calls, and proxy rotation
   disabled.
 - `Use Proxy For Calls` must not be available while a tunnel is active.
+- Ordinary proxy-for-calls is supported only for SOCKS5, not MTPROTO or WEB.
 - `Use Tunnel For Calls` must be available while a tunnel is active and must
   default to enabled for existing and new installs.
 - Manual entry, config-file import, and QR-code import must use the same

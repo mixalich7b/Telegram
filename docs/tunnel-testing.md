@@ -33,6 +33,8 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
   legacy WireGuard profile migration;
 - controller startup, restart, network refresh, fail-closed behavior, and
   aggregation of parallel/sequential tunnel TCP attempts for IPv4-only profiles;
+- repeated route updates across all accounts retain a blocked enabled tunnel
+  after native failure or a missing profile, until explicit disable;
 - tunnel marker metadata;
 - VoIP route policy for direct, enabled/disabled tunnel-for-calls, active
   tunnel, blocked tunnel, and tunnel-routed P2P cases.
@@ -99,6 +101,11 @@ accidentally:
 - all route-mode changes go through `NetworkRouteSettings`;
 - `ConnectionsManager.setProxySettings(...)` preserves the active native tunnel
   route;
+- account startup and proxy updates gate the main WEB carrier behind tunnel
+  selection; tunnel activation stops the main WEB carrier without resetting the
+  native route, and delayed rotation cannot switch away from the tunnel;
+- ordinary proxy persistence retains `proxy_type`, and ordinary VoIP proxies
+  are restricted to SOCKS5;
 - unsupported-device UI checks exist for add/import/scan/enable/select;
 - parser rejects multiple peers;
 - VoIP paths use `PROTOCOL_TUNNEL`, `TunnelPacketSocketFactory`, and the
@@ -186,3 +193,28 @@ Cover these flows:
 - Do not add real-server tests to default Gradle tasks.
 - When an invariant intentionally changes, update tests, static guards, docs,
   and `AGENTS.md` together.
+
+## Upstream Proxy / Media Migration Smoke Checks
+
+Before building a fresh checkout, initialize the pinned submodules with
+`git submodule update --init --recursive`. The Media3 settings script and the
+BoringSSL/TD headers are submodule inputs; native archives live under
+`TMessagesProj/jni/prebuild/lib/<ABI>`.
+
+On a device, exercise both WG and AWG with a saved WEB proxy: cold start,
+WEB-to-tunnel switching, a blocked tunnel, and more than one Telegram account.
+The main WEB carrier must not run while the tunnel is selected, and a failed
+tunnel must not reconnect directly. Check a delayed rotation callback and a
+proxy-error dialog opened before tunnel activation: neither may change the
+selected tunnel route. Diagnostic proxy availability probes are separate from
+the selected Telegram route.
+
+Check SOCKS5/MTPROTO/WEB links and editor saves. Editing the disabled current
+proxy must retain its type without enabling it; explicit proxy activation must
+disable the tunnel. Verify ordinary proxy-for-calls appears only for SOCKS5,
+and tunnel-for-calls continues to control only newly created sessions. Include
+private P2P/relay, group and live sessions in the server-backed smoke test.
+
+After the Media3 migration, also check photo/video swipe dismissal, upward
+swipe to PiP and the proxy/tunnel entry before login. Static guards do not
+replace these UI/WebView lifecycle or real-server checks.

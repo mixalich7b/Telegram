@@ -60,6 +60,7 @@ import org.telegram.messenger.TunnelConfigParser;
 import org.telegram.messenger.TunnelManager;
 import org.telegram.messenger.TunnelProtocol;
 import org.telegram.messenger.WireGuardProfile;
+import org.telegram.proxy.ProxySettings;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
@@ -208,7 +209,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
 
         public void setProxy(SharedConfig.ProxyInfo proxyInfo) {
-            textView.setText(proxyInfo.address + ":" + proxyInfo.port);
+            textView.setText(proxyInfo.settings.getType() == ProxySettings.Type.WEB
+                    ? proxyInfo.settings.getAddress() + " (WEB)"
+                    : proxyInfo.settings.getAddress() + ":" + proxyInfo.settings.getPort());
             currentInfo = proxyInfo;
         }
 
@@ -555,13 +558,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         SharedConfig.currentProxy = proxyList.get(0);
 
                         if (!useProxySettings) {
-                            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
                             SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                            editor.putString("proxy_ip", SharedConfig.currentProxy.address);
-                            editor.putString("proxy_pass", SharedConfig.currentProxy.password);
-                            editor.putString("proxy_user", SharedConfig.currentProxy.username);
-                            editor.putInt("proxy_port", SharedConfig.currentProxy.port);
-                            editor.putString("proxy_secret", SharedConfig.currentProxy.secret);
+                            SharedConfig.currentProxy.settings.toSharedPreferences(editor);
                             editor.commit();
                         }
                     } else {
@@ -570,9 +568,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     }
                 }
                 useProxySettings = !useProxySettings;
-                updateRows(true);
-
-                SharedPreferences preferences = MessagesController.getGlobalMainSettings();
 
                 TextCheckCell textCheckCell = (TextCheckCell) view;
                 textCheckCell.setChecked(useProxySettings);
@@ -592,6 +587,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     NetworkRouteSettings.disableProxy();
                 }
                 NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                updateRows(true);
 
                 for (int a = proxyStartRow; a < proxyEndRow; a++) {
                     RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
@@ -654,7 +650,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
                 useProxySettings = true;
-                if (!info.secret.isEmpty()) {
+                if (info.settings.getType() != ProxySettings.Type.SOCKS5) {
                     useProxyForCalls = false;
                 }
                 NetworkRouteSettings.enableProxy(info);
@@ -810,7 +806,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             if (links.length() > 0) {
                                 links.append("\n\n");
                             }
-                            links.append(info.getLink());
+                            links.append(info.settings.getLink());
                         }
 
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -1077,7 +1073,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         } else {
             tunnelCallsRow = -1;
         }
-        if (useProxySettings && SharedConfig.currentProxy != null && SharedConfig.proxyList.size() > 1 && IS_PROXY_ROTATION_AVAILABLE) {
+        if (useProxySettings && SharedConfig.currentProxy != null && SharedConfig.currentProxy.settings.getType() != ProxySettings.Type.WEB && SharedConfig.proxyList.size() > 1 && IS_PROXY_ROTATION_AVAILABLE) {
             rotationRow = rowCount++;
             if (SharedConfig.proxyRotationEnabled) {
                 rotationTimeoutRow = rowCount++;
@@ -1142,7 +1138,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
         proxyAddRow = rowCount++;
         proxyShadowRow = rowCount++;
-        if (!useWireGuardSettings && (SharedConfig.currentProxy == null || SharedConfig.currentProxy.secret.isEmpty())) {
+        if (!useWireGuardSettings && (SharedConfig.currentProxy == null || SharedConfig.currentProxy.settings.getType() == ProxySettings.Type.SOCKS5)) {
             boolean change = callsRow == -1;
             callsRow = rowCount++;
             callsDetailRow = rowCount++;
@@ -1190,7 +1186,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 continue;
             }
             proxyInfo.checking = true;
-            proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.address, proxyInfo.port, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
+            ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.settings, time -> AndroidUtilities.runOnUIThread(() -> {
                 proxyInfo.availableCheckTime = SystemClock.elapsedRealtime();
                 proxyInfo.checking = false;
                 if (time == -1) {

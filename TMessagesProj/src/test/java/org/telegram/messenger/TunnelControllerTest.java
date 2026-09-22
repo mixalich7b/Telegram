@@ -86,6 +86,53 @@ public class TunnelControllerTest {
     }
 
     @Test
+    public void failedTunnelConsumesRepeatedProxyUpdatesForEveryAccount() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        tunnelRuntime.failure = new RuntimeException("unavailable");
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        TunnelController controller = newController(config, tunnelRuntime, routeStateApplier);
+
+        // ConnectionsManager must treat a failed enabled tunnel as a consumed
+        // route update, so its ordinary proxy/direct branches are never used.
+        for (int update = 0; update < 2; update++) {
+            for (int account = 0; account < 4; account++) {
+                assertTrue(controller.applyTunnelSettingsForAccount(account, 4));
+                TunnelStateCall call = lastCallForAccount(routeStateApplier, account);
+                assertTrue(call.enabled);
+                assertTrue(call.blocked);
+            }
+        }
+        assertEquals(1, tunnelRuntime.startCalls);
+        for (TunnelStateCall call : routeStateApplier.calls) {
+            assertTrue(call.enabled);
+            assertTrue(call.blocked);
+        }
+    }
+
+    @Test
+    public void missingProfileConsumesRouteUpdatesUntilExplicitlyDisabled() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        config.validationError = "missing active tunnel profile";
+        FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routeStateApplier = new FakeTunnelRouteStateApplier();
+        TunnelController controller = newController(config, tunnelRuntime, routeStateApplier);
+
+        for (int account = 0; account < 4; account++) {
+            assertTrue(controller.applyTunnelSettingsForAccount(account, 4));
+            assertTrue(lastCallForAccount(routeStateApplier, account).blocked);
+        }
+        assertEquals(0, tunnelRuntime.startCalls);
+
+        config.enabled = false;
+        controller.disable(4);
+        for (int account = 0; account < 4; account++) {
+            assertFalse(controller.applyTunnelSettingsForAccount(account, 4));
+            assertFalse(lastCallForAccount(routeStateApplier, account).enabled);
+        }
+    }
+
+    @Test
     public void startupFailureSchedulesReconnectAndUnblocksAfterRetrySucceeds() {
         FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
         FakeTunnelRuntime tunnelRuntime = new FakeTunnelRuntime();

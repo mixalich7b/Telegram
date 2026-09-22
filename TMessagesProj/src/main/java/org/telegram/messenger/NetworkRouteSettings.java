@@ -2,6 +2,8 @@ package org.telegram.messenger;
 
 import android.content.SharedPreferences;
 
+import org.telegram.proxy.ProxySettings;
+import org.telegram.proxy.WebProxyTransport;
 import org.telegram.tgnet.ConnectionsManager;
 
 public final class NetworkRouteSettings {
@@ -20,17 +22,13 @@ public final class NetworkRouteSettings {
 
         SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
         editor.putBoolean("proxy_enabled", true);
-        editor.putString("proxy_ip", proxyInfo.address);
-        editor.putString("proxy_pass", proxyInfo.password);
-        editor.putString("proxy_user", proxyInfo.username);
-        editor.putInt("proxy_port", proxyInfo.port);
-        editor.putString("proxy_secret", proxyInfo.secret);
-        if (!proxyInfo.secret.isEmpty()) {
+        proxyInfo.settings.toSharedPreferences(editor);
+        if (proxyInfo.settings.getType() != ProxySettings.Type.SOCKS5) {
             editor.putBoolean("proxy_enabled_calls", false);
         }
         editor.commit();
 
-        ConnectionsManager.setProxySettings(true, proxyInfo.address, proxyInfo.port, proxyInfo.username, proxyInfo.password, proxyInfo.secret);
+        ConnectionsManager.setProxySettings(true, proxyInfo.settings);
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
     }
 
@@ -40,7 +38,7 @@ public final class NetworkRouteSettings {
         editor.putBoolean("proxy_enabled_calls", false);
         editor.commit();
 
-        ConnectionsManager.setProxySettings(false, "", 1080, "", "", "");
+        ConnectionsManager.setProxySettings(false, null);
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
     }
 
@@ -64,6 +62,8 @@ public final class NetworkRouteSettings {
         }
 
         TunnelManager.enable(profileId);
+        // Stop the ordinary proxy carrier without clearing the native tunnel route.
+        WebProxyTransport.stop();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
         return true;
     }

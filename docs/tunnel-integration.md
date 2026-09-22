@@ -70,6 +70,20 @@ behavior.
 `ConnectionsManager.setProxySettings(...)` must preserve the native tunnel route
 while a tunnel is enabled; user proxy or direct-route writes must not replace it.
 
+Ordinary SOCKS5, MTPROTO and WEB proxies use `org.telegram.proxy.ProxySettings`.
+`NetworkRouteSettings` persists the complete settings, including `proxy_type`,
+and calls `ConnectionsManager.setProxySettings(boolean, ProxySettings)`.
+Account startup selects tunnel/blocked routing before considering a WEB carrier.
+Proxy updates do not start a WEB carrier while a tunnel is user-enabled; enabling
+a tunnel applies its route before stopping the ordinary WEB carrier, without a
+native direct-route reset. Delayed rotation cannot enable an ordinary proxy while
+a tunnel is enabled. WEB connection probes use a separate diagnostic transport;
+they do not change the selected route or start the main carrier.
+
+The upstream TLS ClientHello generator lives in `tgnet/TLSHello.cpp/.h` and is
+shared by the existing secret transport paths. `ConnectionSocket.cpp` retains
+the tunnel bridge, socket-generation checks and complete-write relay behavior.
+
 ## Java Architecture
 
 The public Java entry point is protocol-neutral:

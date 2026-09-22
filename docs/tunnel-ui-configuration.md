@@ -24,6 +24,13 @@ When a tunnel is active, ordinary proxy rows remain visible but inactive,
 `Use Proxy For Calls` is hidden, and selecting or enabling an ordinary proxy
 disables the active tunnel first.
 
+Ordinary proxies can be SOCKS5, MTPROTO or WEB. `Use Proxy For Calls` is available
+only for SOCKS5 when no tunnel is active; rotation controls are hidden for a
+selected WEB proxy. Editing a saved, disabled proxy preserves its type and does
+not enable it or disable the tunnel. Adding or explicitly enabling a proxy is a
+route change and disables the tunnel. Switching to a tunnel stops the active
+WEB carrier and leaves ordinary proxy, proxy-for-calls and rotation disabled.
+
 `Use tunnel for calls` defaults to enabled and is persisted independently from
 the selected tunnel profile. It controls private-call P2P, private-call relay,
 group/conference calls, and live/group streaming for newly created sessions.

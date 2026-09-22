@@ -121,6 +121,7 @@ import org.telegram.messenger.TunnelProxySettings;
 import org.telegram.messenger.TunnelVoipRouting;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.utils.tlutils.TlUtils;
+import org.telegram.proxy.ProxySettings;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
@@ -170,7 +171,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressLint("NewApi")
-public class VoIPService extends Service implements SensorEventListener, AudioManager.OnAudioFocusChangeListener, VoIPController.ConnectionStateListener, NotificationCenter.NotificationCenterDelegate, VoIPServiceState {
+public class VoIPService extends Service implements SensorEventListener, AudioManager.OnAudioFocusChangeListener, NotificationCenter.NotificationCenterDelegate, VoIPServiceState {
 
 	public static final int CALL_MIN_LAYER = 65;
 
@@ -2615,7 +2616,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 								BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
 								if (lastFragment != null) {
 									BulletinFactory.of(lastFragment)
-										.createSimpleBulletin(R.raw.linkbroken, getString(R.string.ConferenceClosed))
+										.createSimpleBulletin(R.raw.linkbroken, LocaleController.getString(R.string.ConferenceClosed))
 										.show()
 										.hideAfterBottomSheet = false;
 								}
@@ -3469,10 +3470,9 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			if (routeVoipViaTunnel) {
 				proxy = createTunnelVoipProxy(tunnelProxySettings);
 			} else if (!tunnelEnabled && preferences.getBoolean("proxy_enabled", false) && preferences.getBoolean("proxy_enabled_calls", false)) {
-				final String server = preferences.getString("proxy_ip", null);
-				final String secret = preferences.getString("proxy_secret", null);
-				if (!TextUtils.isEmpty(server) && TextUtils.isEmpty(secret)) {
-					proxy = new Instance.Proxy(server, preferences.getInt("proxy_port", 0), preferences.getString("proxy_user", null), preferences.getString("proxy_pass", null));
+				final ProxySettings settings = ProxySettings.fromSharedPreferences(preferences);
+				if (settings.getType() == ProxySettings.Type.SOCKS5 && settings.isValid()) {
+					proxy = new Instance.Proxy(settings.getAddress(), settings.getPort(), settings.getUser(), settings.getPassword());
 				}
 			}
 
@@ -5436,7 +5436,6 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		}
 	}
 
-	@Override
 	public void onConnectionStateChanged(int newState, boolean inTransition) {
 		AndroidUtilities.runOnUIThread(() -> {
 			if (convertingVoip != null) {
@@ -5506,7 +5505,6 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		Utilities.globalQueue.postRunnable(() -> soundPool.play(spAllowTalkId, 0.5f, 0.5f, 0, 0, 1));
 	}
 
-	@Override
 	public void onSignalBarCountChanged(int newCount) {
 		AndroidUtilities.runOnUIThread(() -> {
 			signalBarCount = newCount;
