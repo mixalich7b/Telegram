@@ -469,4 +469,102 @@ void AsyncHttpsProxySocket::Error(int error) {
   SignalCloseEvent(this, error);
 }
 
+AsyncSocksProxySocket::AsyncSocksProxySocket(
+    Socket* socket, const SocketAddress& proxy, absl::string_view username,
+    const CryptString& password)
+    : BufferedReadAdapter(socket, 1024), proxy_(proxy), user_(username),
+      password_(password) {}
+
+AsyncSocksProxySocket::~AsyncSocksProxySocket() { *alive_ = false; }
+
+int AsyncSocksProxySocket::Connect(const SocketAddress& address) {
+  destination_ = address;
+  std::vector<uint8_t> encoded;
+  if (address.IsUnresolvedIP()) {
+    const auto& host = address.hostname();
+    if (host.empty() || host.size() > 255) { SetError(SOCKET_EACCES); return -1; }
+    encoded = {3, static_cast<uint8_t>(host.size())};
+    encoded.insert(encoded.end(), host.begin(), host.end());
+  } else if (address.family() == AF_INET) {
+    const auto ip = address.ipaddr().ipv4_address();
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&ip);
+    encoded = {1};
+    encoded.insert(encoded.end(), bytes, bytes + 4);
+  } else if (address.family() == AF_INET6) {
+    const auto ip = address.ipaddr().ipv6_address();
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&ip);
+    encoded = {4};
+    encoded.insert(encoded.end(), bytes, bytes + 16);
+  }
+  std::string password(password_.GetLength(), '\0');
+  password_.CopyTo(password.data(), false);
+  handshake_ = std::make_unique<Socks5Handshake>(std::move(encoded), address.port(), user_, password);
+  if (!password.empty()) ExplicitZeroMemory(password.data(), password.size());
+  if (handshake_->failed()) { SetError(SOCKET_EACCES); return -1; }
+  BufferInput(true);
+  // Always dial the proxy, never the destination, including authentication failure.
+  const int result = BufferedReadAdapter::Connect(proxy_);
+  if (result < 0) handshake_.reset();
+  return result;
+}
+
+SocketAddress AsyncSocksProxySocket::GetRemoteAddress() const { return destination_; }
+
+Socket::ConnState AsyncSocksProxySocket::GetState() const {
+  if (!handshake_ || handshake_->failed()) return CS_CLOSED;
+  return handshake_->connected() ? CS_CONNECTED : CS_CONNECTING;
+}
+
+int AsyncSocksProxySocket::Close() {
+  handshake_.reset();
+  BufferInput(true);
+  return BufferedReadAdapter::Close();
+}
+
+void AsyncSocksProxySocket::Fail() {
+  Close();
+  SetError(SOCKET_EACCES);
+  SignalCloseEvent(this, SOCKET_EACCES);
+}
+
+bool AsyncSocksProxySocket::FlushHandshake() {
+  while (handshake_ && handshake_->pending_size()) {
+    const int sent = DirectSend(handshake_->pending_data(), handshake_->pending_size());
+    if (sent < 0 && (GetError() == EWOULDBLOCK || GetError() == EINPROGRESS)) return true;
+    if (sent <= 0) { Fail(); return false; }
+    handshake_->Sent(static_cast<size_t>(sent));
+    if (handshake_->failed()) { Fail(); return false; }
+  }
+  return true;
+}
+
+void AsyncSocksProxySocket::OnConnectEvent(Socket*) { FlushHandshake(); }
+
+void AsyncSocksProxySocket::OnWriteEvent(Socket* socket) {
+  if (handshake_ && handshake_->connected()) BufferedReadAdapter::OnWriteEvent(socket);
+  else FlushHandshake();
+}
+
+void AsyncSocksProxySocket::OnCloseEvent(Socket* socket, int error) {
+  handshake_.reset();
+  BufferInput(true);
+  BufferedReadAdapter::OnCloseEvent(socket, error);
+}
+
+void AsyncSocksProxySocket::ProcessInput(char* data, size_t* len) {
+  if (!handshake_) return;
+  const size_t consumed = handshake_->Receive(reinterpret_cast<const uint8_t*>(data), *len);
+  if (handshake_->failed()) { Fail(); return; }
+  *len -= consumed;
+  memmove(data, data + consumed, *len);
+  if (!FlushHandshake()) return;
+  if (!handshake_->connected()) return;
+  const bool remainder = *len != 0;
+  BufferInput(false);
+  auto alive = alive_;
+  SignalConnectEvent(this);
+  // A connection callback may destroy or close the adapter.
+  if (*alive && remainder && GetState() == CS_CONNECTED) SignalReadEvent(this);
+}
+
 }  // namespace rtc

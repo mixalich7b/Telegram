@@ -113,6 +113,7 @@ AmneziaWG peer.
   - `TMessagesProj/jni/voip/tgcalls/NetworkManager.cpp`
   - `TMessagesProj/jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp`
   - `TMessagesProj/jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp`
+  - `TMessagesProj/jni/voip/tgcalls/v2wasm/CallCoreHost.cpp`
 - Group/live VoIP routing:
   - `TMessagesProj/src/main/java/org/telegram/ui/Stories/LivePlayer.java`
   - `TMessagesProj/jni/voip/tgcalls/group/GroupInstanceCustomImpl.cpp`
@@ -146,7 +147,7 @@ AmneziaWG peer.
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the
   native tunnel route while a tunnel is enabled.
-- Ordinary proxy settings use `org.telegram.proxy.ProxySettings`, including
+- Ordinary proxy settings use `org.telegram.utils.proxy.ProxySettings`, including
   the persisted `proxy_type`. WEB proxy carrier startup must be gated by tunnel
   state; enabling a tunnel must stop the ordinary WEB carrier without clearing
   the native tunnel route. Delayed proxy rotation must not disable a tunnel.
@@ -187,6 +188,9 @@ AmneziaWG peer.
   disabled.
 - `Use Proxy For Calls` must not be available while a tunnel is active.
 - Ordinary proxy-for-calls is supported only for SOCKS5, not MTPROTO or WEB.
+  TCP and raw reflector sockets must negotiate SOCKS5 CONNECT; ordinary proxy
+  mode must disable UDP relay because UDP ASSOCIATE is unsupported. Tunnel UDP
+  remains supported through the tunnel socket API.
 - `Use Tunnel For Calls` must be available while a tunnel is active and must
   default to enabled for existing and new installs.
 - Manual entry, config-file import, and QR-code import must use the same
@@ -232,8 +236,14 @@ AmneziaWG peer.
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;
   - V2 reference `InstanceV2ReferenceImpl.cpp`;
+  - native/WASM pump `v2wasm/CallCoreHost.cpp` (18.0.0/19.0.0 on arm64);
   - group `GroupNetworkManager.cpp`.
-- Private V2 reference networking must retain TCP TURN servers with
+- The pump host must retain descriptor proxy routing on creation and
+  reconfiguration, including tunnel DNS and P2P restrictions. Core commands
+  must not widen the descriptor route policy.
+- Legacy reflector factories must receive no underlying device socket factory
+  in tunnel mode.
+- Private V2 reference and pump networking must retain TCP TURN servers with
   `?transport=tcp` when a proxy is present.
 - Active VoIP sessions are not dynamically rerouted by UI toggles. New sessions
   read the current tunnel settings at creation time.
@@ -247,7 +257,7 @@ Run exactly one of these commands according to the requested scope. Do not add
 and `TG_RELEASE_*` are expected to be provided in the user's global
 `gradle.properties`.
 
-For Java/Go tunnel checks without APK packaging:
+For no-emulator Java/Go and host C++ tunnel checks without APK packaging:
 
 ```bash
 ./gradlew --no-daemon tunnelCheck
@@ -272,6 +282,8 @@ Important details:
   changes, update tests, guards, docs, and this file together.
 - Long Gradle builds can take many minutes. Do not kill a running Gradle build
   unless explicitly asked.
+- Canonical checks include host C++17 SOCKS5 handshake tests; `CXX` may select
+  the host compiler (defaults to `c++`). Outputs must stay outside JNI sources.
 - Prefer no-emulator coverage for glue logic. Real WireGuard/AmneziaWG server
   validation, packet captures, and active call checks belong to manual/device
   smoke testing.

@@ -32,6 +32,7 @@ tasks.register("verifyTunnelCommandContract") {
                 "tasks.register(\"tunnelPackageDebug\")",
                 "dependsOn \":TMessagesProj:testDebugUnitTest\"",
                 "dependsOn \":TMessagesProj:testTunnelGo\"",
+                "dependsOn \":TMessagesProj:testVoipSocks5\"",
                 "dependsOn \":TMessagesProj:verifyTunnelStaticGuards\"",
                 "dependsOn \":TMessagesProj_App:assembleAfatDebug\""
         ].each { token ->
@@ -78,6 +79,7 @@ tasks.register("verifyTunnelCommandContract") {
         [
                 ":TMessagesProj:testDebugUnitTest",
                 ":TMessagesProj:testTunnelGo",
+                ":TMessagesProj:testVoipSocks5",
                 ":TMessagesProj:verifyTunnelStaticGuards"
         ].each { path ->
             if (!tunnelCheckDependencyPaths.contains(path)) {
@@ -105,6 +107,7 @@ tasks.register("tunnelCheck") {
     dependsOn "verifyTunnelCommandContract"
     dependsOn ":TMessagesProj:testDebugUnitTest"
     dependsOn ":TMessagesProj:testTunnelGo"
+    dependsOn ":TMessagesProj:testVoipSocks5"
     dependsOn ":TMessagesProj:verifyTunnelStaticGuards"
 }
 

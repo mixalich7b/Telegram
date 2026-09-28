@@ -26,19 +26,11 @@
 #include "ReflectorPort.h"
 #include "FieldTrialsConfig.h"
 #include "EncryptedConnection.h"
+#include "v2/CustomParameters.h"
 
 namespace tgcalls {
 
 namespace {
-
-bool getCustomParameterBool(std::map<std::string, json11::Json> const &parameters, std::string const &name) {
-    const auto value = parameters.find(name);
-    if (value != parameters.end() && value->second.is_bool() && value->second.bool_value()) {
-        return true;
-    } else {
-        return false;
-    }
-}
 
 class CryptStringImpl : public rtc::CryptStringImpl {
 public:
@@ -598,7 +590,7 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         }
     }
     
-    _relayPortFactory.reset(new ReflectorRelayPortFactory(_rtcServers, standaloneReflectorMode, standaloneReflectorRoleId, _underlyingSocketFactory));
+    _relayPortFactory.reset(new ReflectorRelayPortFactory(_rtcServers, standaloneReflectorMode, standaloneReflectorRoleId, _underlyingSocketFactory, getCustomParameterBool(_customParameters, "network_reflector_resolve_remote_candidate_ip")));
 
     _portAllocator.reset(new cricket::BasicPortAllocator(_networkManager.get(), _socketFactory.get(), _turnCustomizer.get(), _relayPortFactory.get()));
 
@@ -627,13 +619,12 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
-        candidateFilter &= ~(cricket::CF_REFLEXIVE);
-        if (httpConnectProxy) {
-            candidateFilter &= ~(cricket::CF_HOST);
-        }
+        // TCP can still gather active host candidates without a listening socket.
+        candidateFilter &= ~(cricket::CF_HOST | cricket::CF_REFLEXIVE);
         _portAllocator->SetCandidateFilter(candidateFilter);
     }
     if (nativeProxy) {
+        flags |= cricket::PORTALLOCATOR_DISABLE_UDP_RELAY;
         _portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
     }
     
@@ -647,7 +638,7 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
 
     for (auto &server : _rtcServers) {
         if (server.isTurn) {
-            if (httpConnectProxy && !server.isTcp) {
+            if (nativeProxy && !server.isTcp) {
                 continue;
             }
             turnServers.push_back(cricket::RelayServerConfig(
@@ -674,7 +665,7 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
     iceConfig.continual_gathering_policy = cricket::GATHER_CONTINUALLY;
     iceConfig.prioritize_most_likely_candidate_pairs = true;
     iceConfig.regather_on_failed_networks_interval = cricket::REGATHER_ON_FAILED_NETWORKS_INTERVAL;
-    
+
     if (getCustomParameterBool(_customParameters, "network_skip_initial_ping")) {
         iceConfig.presume_writable_when_fully_relayed = true;
     }

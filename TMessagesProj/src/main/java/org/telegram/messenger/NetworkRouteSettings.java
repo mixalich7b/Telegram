@@ -2,8 +2,8 @@ package org.telegram.messenger;
 
 import android.content.SharedPreferences;
 
-import org.telegram.proxy.ProxySettings;
-import org.telegram.proxy.WebProxyTransport;
+import org.telegram.utils.proxy.ProxySettings;
+import org.telegram.utils.proxy.WebProxyTransport;
 import org.telegram.tgnet.ConnectionsManager;
 
 public final class NetworkRouteSettings {

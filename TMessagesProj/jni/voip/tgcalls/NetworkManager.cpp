@@ -122,7 +122,7 @@ void NetworkManager::start() {
         _turnCustomizer.reset(new TurnCustomizerImpl());
     }
     
-    _relayPortFactory.reset(new ReflectorRelayPortFactory(_rtcServers, false, 0, _thread->socketserver()));
+    _relayPortFactory.reset(new ReflectorRelayPortFactory(_rtcServers, false, 0, tunnelProxy ? nullptr : _thread->socketserver(), false));
     
     _portAllocator.reset(new cricket::BasicPortAllocator(_networkManager.get(), _socketFactory.get(), _turnCustomizer.get(), _relayPortFactory.get()));
 
@@ -133,25 +133,24 @@ void NetworkManager::start() {
         cricket::PORTALLOCATOR_ENABLE_IPV6 |
         cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
     
-    if (!_enableTCP && !tunnelProxy) {
-        flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
-    }
     const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
     const bool nativeProxy = _proxy && !tunnelProxy;
-    if (!_enableP2P) {
+    if (!_enableTCP && !nativeProxy && !tunnelProxy) {
+        flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
+    }
+    if (!_enableP2P || (nativeProxy && !httpConnectProxy)) {
         flags |= cricket::PORTALLOCATOR_DISABLE_UDP;
         flags |= cricket::PORTALLOCATOR_DISABLE_STUN;
         uint32_t candidateFilter = _portAllocator->candidate_filter();
-        candidateFilter &= ~(cricket::CF_REFLEXIVE);
-        if (httpConnectProxy) {
-            candidateFilter &= ~(cricket::CF_HOST);
-        }
+        // TCP can still gather active host candidates without a listening socket.
+        candidateFilter &= ~(cricket::CF_HOST | cricket::CF_REFLEXIVE);
         _portAllocator->SetCandidateFilter(candidateFilter);
     }
     
     _portAllocator->set_step_delay(cricket::kMinimumStepDelay);
     
     if (nativeProxy) {
+        flags |= cricket::PORTALLOCATOR_DISABLE_UDP_RELAY;
         rtc::ProxyInfo proxyInfo;
         proxyInfo.type = _proxy->protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
         proxyInfo.address = rtc::SocketAddress(_proxy->host, _proxy->port);
@@ -167,12 +166,12 @@ void NetworkManager::start() {
     std::vector<cricket::RelayServerConfig> turnServers;
 
     for (auto &server : _rtcServers) {
-        if (server.isTcp && !httpConnectProxy && !tunnelProxy) {
+        if (server.isTcp && !nativeProxy && !tunnelProxy) {
             continue;
         }
         
         if (server.isTurn) {
-            if (httpConnectProxy && !server.isTcp) {
+            if (nativeProxy && !server.isTcp) {
                 continue;
             }
             turnServers.push_back(cricket::RelayServerConfig(

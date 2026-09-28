@@ -12,11 +12,13 @@
 #define RTC_BASE_SOCKET_ADAPTERS_H_
 
 #include <string>
+#include <memory>
 
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "rtc_base/async_socket.h"
 #include "rtc_base/crypt_string.h"
+#include "rtc_base/socks5_handshake.h"
 
 namespace rtc {
 
@@ -135,6 +137,33 @@ class AsyncHttpsProxySocket : public BufferedReadAdapter {
   } state_;
   HttpAuthContext* context_;
   std::string unknown_mechanisms_;
+};
+
+// SOCKS5 CONNECT only. UDP ASSOCIATE is deliberately unsupported.
+class AsyncSocksProxySocket : public BufferedReadAdapter {
+ public:
+  AsyncSocksProxySocket(Socket* socket, const SocketAddress& proxy,
+                       absl::string_view username, const CryptString& password);
+  ~AsyncSocksProxySocket() override;
+  int Connect(const SocketAddress& address) override;
+  SocketAddress GetRemoteAddress() const override;
+  ConnState GetState() const override;
+  int Close() override;
+
+ protected:
+  void OnConnectEvent(Socket* socket) override;
+  void OnWriteEvent(Socket* socket) override;
+  void OnCloseEvent(Socket* socket, int error) override;
+  void ProcessInput(char* data, size_t* len) override;
+
+ private:
+  bool FlushHandshake();
+  void Fail();
+  SocketAddress proxy_, destination_;
+  std::string user_;
+  CryptString password_;
+  std::unique_ptr<Socks5Handshake> handshake_;
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 }  // namespace rtc

@@ -6,7 +6,7 @@ Run exactly one command according to the requested scope. The Telegram and
 signing properties are prerequisites supplied in the user's global
 `gradle.properties`; do not pass them through `-P` arguments or modify them.
 
-For Java/Go tunnel checks without APK packaging:
+For no-emulator Java/Go and host C++ tunnel checks without APK packaging:
 
 ```bash
 ./gradlew --no-daemon tunnelCheck
@@ -111,6 +111,10 @@ accidentally:
 - VoIP paths use `PROTOCOL_TUNNEL`, `TunnelPacketSocketFactory`, and the
   direct Go TCP/UDP tunnel socket bridge; private P2P UDP/STUN/ICE candidates
   remain available when Telegram allows P2P, but their sockets use the tunnel;
+- private Java call creation forwards the selected proxy instead of `null`;
+- native/WASM pump host retains descriptor routing and applies route policy on
+  both creation and reconfiguration; legacy reflector TCP has no device socket
+  factory in tunnel mode;
 - tunnel VoIP DNS uses `tgTunnelLookupHost`, reflector TCP uses raw reflector
   framing, and WebRTC TLS socket wrapping uses `SSLAdapter` over the Go tunnel
   TCP handle;
@@ -218,3 +222,22 @@ private P2P/relay, group and live sessions in the server-backed smoke test.
 After the Media3 migration, also check photo/video swipe dismissal, upward
 swipe to PiP and the proxy/tunnel entry before login. Static guards do not
 replace these UI/WebView lifecycle or real-server checks.
+
+### Native/WASM call versions after the 12.10.5 merge
+
+On arm64, exercise both 18.0.0 and 19.0.0 with WG and AWG. Cover P2P on/off,
+UDP relay, TCP-only TURN, hostname TURN with tunnel DNS, session reconfiguration,
+and stopped/restarted tunnel runtimes. Capture traffic to confirm no direct
+relay/peer or system DNS bypass when tunnel-for-calls is enabled. Repeat with
+tunnel-for-calls disabled and with an ordinary SOCKS5 call proxy.
+Static source guards and APK compilation cover wiring, not actual packet paths;
+these runtime cases require a device and test servers.
+
+SOCKS5 regression tests also run transitively in the canonical commands using a
+host C++17 compiler (`CXX`, default `c++`). They cover no-auth and authenticated
+CONNECT, IPv4/IPv6/domain destinations, byte-wise output draining, fragmented
+responses, coalesced application data, malformed replies and proxy rejection.
+The native socket adapters and both normal/raw TCP factories are compiled in
+the APK check; socket callback timing still requires a device smoke test.
+Ordinary SOCKS5 call tests must verify TCP relay traffic reaches the proxy and
+UDP relay is suppressed; proxy failure must not connect directly to a relay.

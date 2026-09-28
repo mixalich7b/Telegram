@@ -8,6 +8,7 @@ idea {
     module {
         excludeDirs += [
             file('jni/td'),
+            file('jni/third_party/absl'),
             file('jni/third_party/boringssl'),
             file('jni/third_party/dav1d'),
             file('jni/third_party/ffmpeg'),
@@ -499,6 +500,9 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def voipServiceText = file("src/main/java/org/telegram/messenger/voip/VoIPService.java").text
+        if (!(voipServiceText =~ /Instance\.makeInstance\([^;]*endpoints, proxy, getNetworkType\(\)/)) {
+            throw new GradleException("Private calls must pass the selected proxy into Instance.makeInstance")
+        }
         if (!voipServiceText.contains("settings.getType() == ProxySettings.Type.SOCKS5 && settings.isValid()")) {
             throw new GradleException("Ordinary call proxies must use SOCKS5 settings, never WEB or MTPROTO settings")
         }
@@ -537,7 +541,10 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def networkManagerText = file("jni/voip/tgcalls/NetworkManager.cpp").text
-        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "nativeProxy", "if (!_enableP2P)", "server.isTcp && !httpConnectProxy && !tunnelProxy", "PROTO_UDP", "PROTO_TCP", "CF_REFLEXIVE", "CF_HOST"].each { token ->
+        if (!networkManagerText.contains("tunnelProxy ? nullptr : _thread->socketserver()")) {
+            throw new GradleException("Legacy reflector TCP must not receive a device socket factory in tunnel mode")
+        }
+        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "nativeProxy", "!_enableP2P || (nativeProxy && !httpConnectProxy)", "server.isTcp && !nativeProxy && !tunnelProxy", "PROTO_UDP", "PROTO_TCP", "CF_REFLEXIVE", "CF_HOST"].each { token ->
             if (!networkManagerText.contains(token)) {
                 throw new GradleException("NetworkManager must keep private VoIP P2P/relay on tunnel sockets token '${token}'")
             }
@@ -546,18 +553,43 @@ tasks.register("verifyWireGuardStaticGuards") {
             throw new GradleException("NetworkManager must not disable P2P merely because tunnel sockets are present")
         }
         def nativeNetworkingV2Text = file("jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp").text
-        ["IsTunnelProxy(_proxy)", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "_underlyingSocketFactory = nullptr", "nativeProxy", "!_enableP2P || (nativeProxy && !httpConnectProxy)", "httpConnectProxy && !server.isTcp", "CF_REFLEXIVE", "CF_HOST", "!_enableTCP && !nativeProxy && !tunnelProxy"].each { token ->
+        [networkManagerText, nativeNetworkingV2Text].each { text ->
+            if (!(text =~ /if \(!_enableP2P[^\n]*\)\s*\{[^}]*candidateFilter &= ~\(cricket::CF_HOST \| cricket::CF_REFLEXIVE\);/)) {
+                throw new GradleException("Private P2P opt-out must filter TCP host and reflexive candidates, including tunnel mode")
+            }
+        }
+        ["IsTunnelProxy(_proxy)", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "_underlyingSocketFactory = nullptr", "nativeProxy", "!_enableP2P || (nativeProxy && !httpConnectProxy)", "nativeProxy && !server.isTcp", "CF_REFLEXIVE", "CF_HOST", "!_enableTCP && !nativeProxy && !tunnelProxy"].each { token ->
             if (!nativeNetworkingV2Text.contains(token)) {
                 throw new GradleException("NativeNetworkingImpl must route V2 private VoIP through tunnel sockets token '${token}'")
             }
         }
         def instanceV2ReferenceText = file("jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp").text
-        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "async_dns_resolver_factory", "nativeProxy", "!_enableP2P || !httpConnectProxy", "_enableP2P && (!nativeProxy || httpConnectProxy)", "httpConnectProxy && server.isTurn && !server.isTcp", "kTcpCandidatePolicyEnabled", "server.isTcp && !nativeProxy && !tunnelProxy", "?transport=tcp"].each { token ->
+        ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "async_dns_resolver_factory", "nativeProxy", "!_enableP2P || !httpConnectProxy", "_enableP2P && (!nativeProxy || httpConnectProxy)", "nativeProxy && server.isTurn && !server.isTcp", "kTcpCandidatePolicyEnabled", "server.isTcp && !nativeProxy && !tunnelProxy", "?transport=tcp"].each { token ->
             if (!instanceV2ReferenceText.contains(token)) {
                 throw new GradleException("InstanceV2ReferenceImpl must route reference VoIP through tunnel sockets token '${token}'")
             }
         }
         def reflectorPortText = file("jni/voip/tgcalls/v2/ReflectorPort.cpp").text
+        def basicSocketFactoryText = file("jni/voip/webrtc/p2p/base/basic_packet_socket_factory.cc").text
+        [reflectorPortText, basicSocketFactoryText].each { text ->
+            if (!text.contains("PROXY_SOCKS5") || !text.contains("new AsyncSocksProxySocket") && !text.contains("new rtc::AsyncSocksProxySocket")) {
+                throw new GradleException("Ordinary SOCKS5 call sockets must negotiate CONNECT instead of dialing the relay directly")
+            }
+        }
+        [networkManagerText, nativeNetworkingV2Text, instanceV2ReferenceText].each { text ->
+            if (!text.contains("PORTALLOCATOR_DISABLE_UDP_RELAY") || !text.contains("nativeProxy &&")) {
+                throw new GradleException("Ordinary call proxies must suppress UDP relay; SOCKS5 UDP ASSOCIATE is unsupported")
+            }
+        }
+        def callCoreHostText = file("jni/voip/tgcalls/v2wasm/CallCoreHost.cpp").text
+        if (!callCoreHostText.contains("PORTALLOCATOR_DISABLE_UDP_RELAY") || !callCoreHostText.contains("nativeProxy && server.isTurn && !server.isTcp")) {
+            throw new GradleException("Pump proxy calls must use TCP relays without restricting tunnel UDP")
+        }
+        ["_proxy(std::move(descriptor.proxy))", "IsTunnelProxy(_proxy.get())", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "async_dns_resolver_factory", "if (nativeProxy)", "?transport=tcp", "applyRoutePolicy(peerConnectionConfiguration)", "applyRoutePolicy(configuration)", "!_enableP2P || (nativeProxy && !httpConnectProxy)", "CF_HOST", "CF_REFLEXIVE"].each { token ->
+            if (!callCoreHostText.contains(token)) {
+                throw new GradleException("CallCoreHost must enforce descriptor routing for both native and WASM cores token '${token}'")
+            }
+        }
         ["underlying_socket_factory_", "socket_factory()->CreateClientTcpSocket", "kTunnelTcpRawReflectorOption"].each { token ->
             if (!reflectorPortText.contains(token)) {
                 throw new GradleException("ReflectorPort must use the tunnel packet socket factory when no underlying socket factory is available token '${token}'")
@@ -646,4 +678,19 @@ tasks.register("verifyTunnelStaticGuards") {
     description = "Alias for tunnel static guards."
     group = "verification"
     dependsOn "verifyWireGuardStaticGuards"
+}
+
+tasks.register("testVoipSocks5") {
+    group = "verification"
+    description = "Tests SOCKS5 CONNECT negotiation without an emulator. Requires a host C++17 compiler."
+    doLast {
+        def outputDir = layout.buildDirectory.dir("voip-socks5-tests").get().asFile
+        outputDir.mkdirs()
+        def binary = new File(outputDir, "socks5-test")
+        exec {
+            commandLine System.getenv("CXX") ?: "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                    "-I", file("jni/voip/webrtc"), file("src/test/cpp/Socks5HandshakeTest.cpp"), "-o", binary
+        }
+        exec { commandLine binary }
+    }
 }

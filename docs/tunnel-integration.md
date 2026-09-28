@@ -70,7 +70,7 @@ behavior.
 `ConnectionsManager.setProxySettings(...)` must preserve the native tunnel route
 while a tunnel is enabled; user proxy or direct-route writes must not replace it.
 
-Ordinary SOCKS5, MTPROTO and WEB proxies use `org.telegram.proxy.ProxySettings`.
+Ordinary SOCKS5, MTPROTO and WEB proxies use `org.telegram.utils.proxy.ProxySettings`.
 `NetworkRouteSettings` persists the complete settings, including `proxy_type`,
 and calls `ConnectionsManager.setProxySettings(boolean, ProxySettings)`.
 Account startup selects tunnel/blocked routing before considering a WEB carrier.
@@ -320,8 +320,23 @@ Tunnel VoIP behavior:
   STUN/TURN framing;
 - WebRTC TLS socket wrapping in tunnel mode uses `SSLAdapter` over the Go
   tunnel TCP handle; raw reflector TCP does not use TLS wrapping;
-- V2 reference networking keeps TCP TURN servers with `?transport=tcp` when a
+- V2 reference and native/WASM pump networking keep TCP TURN servers with `?transport=tcp` when a
   tunnel or ordinary proxy is present.
+
+On arm64, call versions 18.0.0 (native core) and 19.0.0 (embedded WASM core)
+share `v2wasm/CallCoreHost.cpp`. The host owns the descriptor proxy and selects
+tunnel socket/network/DNS factories before creating PeerConnection. Both initial
+creation and later configuration enforce descriptor P2P restrictions and rebuild
+proxy ICE servers from the descriptor, retaining TCP TURN without changing the
+core ABI or embedded module. Legacy reflector TCP also uses the tunnel factory.
+`InstanceV2CompatImpl` and `GroupInstanceReferenceImpl` are compiled upstream
+sources but are not selected by the current Android JNI registration/creation
+paths; registering them requires a routing audit first.
+
+Ordinary SOCKS5-for-calls uses CONNECT for both WebRTC TCP and raw reflector
+TCP. It suppresses UDP relay and P2P candidates because UDP ASSOCIATE is not
+implemented. Tunnel proxies retain UDP and Telegram-authorized P2P. A rejected
+proxy handshake fails the socket instead of dialing the relay directly.
 
 Active sessions are not dynamically rerouted by UI changes. UDP ASSOCIATE is not
 implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
