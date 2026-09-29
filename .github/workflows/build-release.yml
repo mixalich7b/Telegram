@@ -44,7 +44,7 @@ jobs:
 
           if [ ! -d "./.git" ]; then
             echo "Initial clone"
-            git clone --branch "${BRANCH}" "${REPO_URL}" .
+            git clone --recursive --shallow-submodules --branch "${BRANCH}" "${REPO_URL}" .
           else
             echo "Update existing repository"
             git fetch origin "${BRANCH}"
@@ -57,6 +57,101 @@ jobs:
           git submodule update --init --recursive --depth=1 --jobs 1
 
           git clean -fd
+
+      - name: Repair submodules
+        shell: bash
+        working-directory: /ci/repo
+        run: |
+          set -Eeuo pipefail
+          broken=0
+          check_submodules() {
+              git submodule foreach --quiet --recursive '
+                  failed=0
+
+                  # Git repository должен быть валидным.
+                  if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+                      echo "BROKEN_SUBMODULE:$displaypath:no-valid-HEAD"
+                      failed=1
+                  fi
+
+                  # Working tree не должен быть пустым.
+                  #
+                  # .git у submodule обычно является файлом, поэтому
+                  # исключаем его из проверки.
+                  if ! find . \
+                      -mindepth 1 \
+                      -maxdepth 1 \
+                      ! -name .git \
+                      -print -quit \
+                      | grep -q .
+                  then
+                      echo "BROKEN_SUBMODULE:$displaypath:empty-working-tree"
+                      failed=1
+                  fi
+
+                  exit "$failed"
+              '
+          }
+
+          if ! check_submodules; then
+              broken=1
+          fi
+
+          if [ "$broken" -eq 0 ]; then
+              echo "=== All submodules are healthy ==="
+              exit 0
+          fi
+
+          echo "::warning::Broken submodule state detected"
+          echo "=== Reinitializing all submodules ==="
+
+          #
+          # В аварийном случае лучше полностью сбросить состояние submodules,
+          # чем пытаться чинить отдельный .git/modules/... вручную.
+          #
+
+          git submodule deinit --all --force || true
+
+          # Удаляем cached git repositories submodules.
+          # Это заставит Git действительно клонировать их заново.
+          rm -rf .git/modules
+
+          #
+          # После deinit рабочие каталоги submodules обычно пустые,
+          # но Git может оставить файлы/каталоги после неудачного checkout.
+          # Удаляем именно пути, перечисленные в .gitmodules.
+          #
+          while IFS= read -r path; do
+              [ -n "$path" ] || continue
+
+              echo "Removing stale submodule working tree: $path"
+              rm -rf -- "$path"
+          done < <(
+              git config \
+                  --file .gitmodules \
+                  --get-regexp '^submodule\..*\.path$' \
+              | sed 's/^[^ ]* //'
+          )
+
+          echo "=== Sync submodule configuration after reset ==="
+          git submodule sync --recursive
+
+          echo "=== Fresh submodule checkout ==="
+
+          git submodule update \
+              --init \
+              --recursive \
+              --force \
+              --jobs 1
+
+          echo "=== Verify repaired submodules ==="
+
+          if ! check_submodules; then
+              echo "::error::Submodule repair failed"
+              exit 1
+          fi
+
+          echo "=== Submodules repaired successfully ==="
 
       - name: Copy firebase config
         shell: bash
