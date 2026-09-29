@@ -23,6 +23,15 @@ jobs:
     timeout-minutes: 40
 
     steps:
+      - name: Configure GitHub authentication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          AUTH="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
+          git config --global http.https://github.com/.extraheader "AUTHORIZATION: basic ${AUTH}"
+
       - name: Update repository
         shell: bash
         run: |
@@ -36,17 +45,15 @@ jobs:
           if [ ! -d "./.git" ]; then
             echo "Initial clone"
             git clone --branch "${BRANCH}" "${REPO_URL}" .
-            git submodule sync --recursive
-            git submodule update --init --recursive --jobs 1
           else
             echo "Update existing repository"
             git fetch origin "${BRANCH}"
             git checkout -B "${BRANCH}" "origin/${BRANCH}"
             git reset --hard "origin/${BRANCH}"
-
-            git submodule sync --recursive
-            git submodule update --init --recursive --jobs 1
           fi
+          
+          git submodule sync --recursive
+          git submodule update --init --recursive --jobs 1
 
           git clean -fd
 
@@ -85,3 +92,9 @@ jobs:
           cp -f "${APK}" "/ci/output/history/tgwg-${TIMESTAMP}-${SHORT_COMMIT}.apk"
           cp -f "${APK}" /ci/output/latest/tgwg.tmp
           mv -f /ci/output/latest/tgwg.tmp /ci/output/latest/tgwg.apk
+
+      - name: Remove GitHub authentication
+        if: always()
+        shell: bash
+        run: |
+          git config --global --unset-all http.https://github.com/.extraheader || true
