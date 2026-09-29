@@ -62,9 +62,9 @@ jobs:
         run: |
           set -euxo pipefail
 
-          cp /ci/firebase/google-services.json \
+          cp --remove-destination /ci/firebase/google-services.json \
              /ci/repo/TMessagesProj/google-services.json
-          cp /ci/firebase/google-services.json \
+          cp --remove-destination /ci/firebase/google-services.json \
              /ci/repo/TMessagesProj_App/google-services.json
 
       - name: Build release
