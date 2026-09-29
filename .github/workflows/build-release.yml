@@ -1,0 +1,86 @@
+name: tgwg release build
+
+on:
+  push:
+    branches:
+      - feat/wg-embed
+
+concurrency:
+  group: tgwg-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - tgwg-build
+
+    timeout-minutes: 30
+
+    steps:
+      - name: Update repository
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          REPO_URL="https://github.com/mixalich7b/Telegram.git"
+          BRANCH="feat/wg-embed"
+
+          cd /ci/repo
+
+          if [ ! -d ./.git" ]; then
+            echo "Initial clone"
+            git clone --branch "${BRANCH}" --recursive "${REPO_URL}" .
+            git submodule update --init --recursive
+          else
+            echo "Update existing repository"
+            git fetch origin "${BRANCH}"
+            git checkout -B "${BRANCH}" "origin/${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
+
+            git submodule sync --recursive
+            git submodule update --init --recursive
+          fi
+
+          git clean -fd
+
+      - name: Copy firebase config
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cp /ci/firebase/google-services.json \
+             /ci/repo/TMessagesProj/google-services.json
+          cp /ci/firebase/google-services.json \
+             /ci/repo/TMessagesProj_App/google-services.json
+
+      - name: Build release
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd /ci/repo
+
+          ./gradlew clean --no-daemon :TMessagesProj_App:assembleAfatRelease
+
+      - name: Publish APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd /ci/repo
+
+          SHORT_COMMIT="$(git rev-parse --short=10 HEAD)"
+          TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
+          APK="$(find TMessagesProj_App/build/outputs/apk/afat/release -type f -name '*.apk' | head -1)"
+
+          test -n "${APK}"
+
+          cp -f "${APK}" "/ci/output/history/tgwg-${TIMESTAMP}-${SHORT_COMMIT}.apk"
+          cp -f "${APK}" /ci/output/latest/tgwg.tmp
+          mv -f /ci/output/latest/tgwg.tmp /ci/output/latest/tgwg.apk
