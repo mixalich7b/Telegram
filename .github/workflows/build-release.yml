@@ -20,7 +20,7 @@ jobs:
       - x64
       - tgwg-build
 
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Configure GitHub authentication
