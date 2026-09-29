@@ -20,7 +20,7 @@ jobs:
       - x64
       - tgwg-build
 
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Update repository
@@ -35,8 +35,9 @@ jobs:
 
           if [ ! -d "./.git" ]; then
             echo "Initial clone"
-            git clone --branch "${BRANCH}" --recursive "${REPO_URL}" .
-            git submodule update --init --recursive
+            git clone --branch "${BRANCH}" "${REPO_URL}" .
+            git submodule sync --recursive
+            git submodule update --init --recursive --jobs 1
           else
             echo "Update existing repository"
             git fetch origin "${BRANCH}"
@@ -44,7 +45,7 @@ jobs:
             git reset --hard "origin/${BRANCH}"
 
             git submodule sync --recursive
-            git submodule update --init --recursive
+            git submodule update --init --recursive --jobs 1
           fi
 
           git clean -fd
