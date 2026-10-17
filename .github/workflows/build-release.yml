@@ -170,7 +170,7 @@ jobs:
 
           cd /ci/repo
 
-          ./gradlew clean --no-daemon :TMessagesProj_App:assembleAfatRelease
+          ./gradlew clean --no-daemon :TMessagesProj_App:assembleAfatRelease -Pandroid.injected.build.abi=arm64-v8a -Pandroid.buildOnlyTargetAbi=true -Pandroid.injected.testOnly=false
 
       - name: Publish APK
         shell: bash
