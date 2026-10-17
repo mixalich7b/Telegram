@@ -181,7 +181,7 @@ jobs:
 
           SHORT_COMMIT="$(git rev-parse --short=10 HEAD)"
           TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
-          APK="$(find TMessagesProj_App/build/outputs/apk/afat/release -type f -name '*.apk' | head -1)"
+          APK="$(find TMessagesProj_App/build/intermediates/apk/afat/release/ -type f -name '*.apk' | head -1)"
 
           test -n "${APK}"
 
