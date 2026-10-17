@@ -24,6 +24,19 @@ details, not alternative canonical commands.
 
 ## Automated Coverage
 
+Preparation tests under `Tools/tests/test_prepare_tgcalls.py` run through the
+canonical command. They exercise a real temporary Git repository: clean and
+repeated preparation, dirty upstream isolation, changed patches, missing/edited
+outputs, revision mismatch, unapplicable patches, concurrent preparation, and
+preparation inside a parent repository. Static guards read the prepared sources
+that CMake compiles, not old copies under `jni/voip/tgcalls`.
+
+Native configure/build tasks must prepare tgcalls, while `externalNativeBuildClean*`
+tasks must not. Making cleanup generate files under `build/` blocks Gradle's
+producer/delete ordering when `clean` and assemble run in one invocation.
+When investigating clean-build failures, reproduce the user's exact combined
+command; a successful incremental build does not exercise this ordering.
+
 JVM unit tests under `TMessagesProj/src/test/java` cover:
 
 - userspace config generation and key validation;
@@ -33,6 +46,8 @@ JVM unit tests under `TMessagesProj/src/test/java` cover:
   legacy WireGuard profile migration;
 - controller startup, restart, network refresh, fail-closed behavior, and
   aggregation of parallel/sequential tunnel TCP attempts for IPv4-only profiles;
+- eight concurrent download TCP attempts retain the runtime while pending or
+  successful; an all-failed group restarts only after the last failure settles;
 - repeated route updates across all accounts retain a blocked enabled tunnel
   after native failure or a missing profile, until explicit disable;
 - tunnel marker metadata;

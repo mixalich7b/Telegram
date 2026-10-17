@@ -370,6 +370,57 @@ public class TunnelControllerTest {
     }
 
     @Test
+    public void eightDownloadAttemptsKeepTunnelWhilePendingOrSuccessful() {
+        FakeTunnelRuntime runtime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routes = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler scheduler = new FakeLifecycleTaskScheduler();
+        TunnelController controller = newController(new FakeTunnelConfigProvider(), runtime, routes, scheduler);
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long generation = lastCallForAccount(routes, 0).lifecycleGeneration;
+        for (int i = 0; i < 8; i++) {
+            controller.onTunnelTcpConnectStarted(0, generation);
+        }
+        // A failed IPv6 destination must not cancel the other download sockets.
+        for (int i = 0; i < 6; i++) {
+            controller.onTunnelTcpConnectFailed(0, generation, 1);
+            assertEquals(0, runtime.stopCalls);
+            assertTrue(scheduler.delays.isEmpty());
+        }
+        controller.onTunnelTcpConnected(0, generation);
+        controller.onTunnelTcpConnectFailed(0, generation, 1);
+        assertEquals(0, runtime.stopCalls);
+        assertTrue(scheduler.delays.isEmpty());
+        assertTrue(controller.isRunningForTests());
+        assertFalse(lastCallForAccount(routes, 0).blocked);
+    }
+
+    @Test
+    public void eightFailedDownloadAttemptsRestartOnlyAfterLastFailureSettles() {
+        FakeTunnelRuntime runtime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routes = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler scheduler = new FakeLifecycleTaskScheduler();
+        TunnelController controller = newController(new FakeTunnelConfigProvider(), runtime, routes, scheduler);
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long generation = lastCallForAccount(routes, 0).lifecycleGeneration;
+        for (int i = 0; i < 8; i++) {
+            controller.onTunnelTcpConnectStarted(0, generation);
+        }
+        for (int i = 0; i < 7; i++) {
+            controller.onTunnelTcpConnectFailed(0, generation, 1);
+            assertTrue(scheduler.delays.isEmpty());
+        }
+        controller.onTunnelTcpConnectFailed(0, generation, 1);
+        assertEquals(0, runtime.stopCalls);
+        assertEquals(1, scheduler.delays.size());
+        assertEquals(250L, (long) scheduler.delays.get(0));
+        scheduler.runNext();
+        assertEquals(1, runtime.stopCalls);
+        assertTrue(lastCallForAccount(routes, 0).enabled);
+        assertTrue(lastCallForAccount(routes, 0).blocked);
+        assertEquals(1000L, (long) scheduler.delays.get(1));
+    }
+
+    @Test
     public void sequentialIpv4AlternateAttemptCancelsSettlingIpv6Failure() {
         FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
         config.protocol = TunnelProtocol.AMNEZIA_WG;

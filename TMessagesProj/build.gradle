@@ -4,6 +4,32 @@ apply plugin: 'com.android.library'
 apply plugin: 'org.telegram.build-plugin'
 apply plugin: 'idea'
 
+def tunnelTgcallsSources = layout.buildDirectory.dir("generated/tunnel-tgcalls")
+def prepareTunnelTgcalls = tasks.register("prepareTunnelTgcalls", Exec) {
+    description = "Prepares the pinned tgcalls sources with the tunnel routing patch series."
+    inputs.files(rootProject.file("Tools/prepare-tgcalls.py"), rootProject.fileTree("patches/tgcalls"))
+    outputs.dir(tunnelTgcallsSources)
+    // Always validate the checkout revision and generated contents; the helper
+    // preserves mtimes when the tree is already correct.
+    outputs.upToDateWhen { false }
+    commandLine "python3", rootProject.file("Tools/prepare-tgcalls.py"),
+            "--source", file("jni/tgcalls"), "--output", tunnelTgcallsSources.get().asFile,
+            "--series", rootProject.file("patches/tgcalls/series")
+}
+tasks.configureEach { task ->
+    // Native clean runs before Delete(buildDir). Generating sources here would
+    // make clean delete a producer's output before its build consumers run,
+    // leaving Gradle's clean + assemble execution plan unable to progress.
+    if (task.name.startsWith("externalNativeBuildClean")) {
+        return
+    }
+    if (task.name == "preBuild" || task.name.startsWith("configureCMake")
+            || task.name.startsWith("buildCMake") || task.name.startsWith("externalNativeBuild")
+            || task.name.startsWith("generateJsonModel")) {
+        task.dependsOn prepareTunnelTgcalls
+    }
+}
+
 idea {
     module {
         excludeDirs += [
@@ -16,6 +42,10 @@ idea {
             file('jni/third_party/libyuv'),
             file('jni/third_party/openh264'),
             file('jni/third_party/xiph'),
+            file('jni/third_party/wamr'),
+            file('jni/third_party/libprisma'),
+            file('jni/third_party/boost-regex'),
+            file('jni/tgcalls'),
             file('jni/tlottie'),
             file('jni/voip/webrtc'),
             file('jni/sqlite')
@@ -50,6 +80,7 @@ dependencies {
     implementation 'com.google.android.gms:play-services-cast-framework:21.4.0'
     implementation "androidx.mediarouter:mediarouter:1.7.0"
     implementation 'com.google.zxing:core:3.5.4'
+    implementation 'com.neovisionaries:nv-websocket-client:2.14'
 
     implementation 'androidx.car.app:app:1.4.0'
     implementation 'androidx.car.app:app-projected:1.4.0'
@@ -99,14 +130,6 @@ dependencies {
 
 //    implementation 'com.google.mlkit:translate:17.0.3'
 
-    constraints {
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.0") {
-            because("kotlin-stdlib-jdk7 is now a part of kotlin-stdlib")
-        }
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0") {
-            because("kotlin-stdlib-jdk8 is now a part of kotlin-stdlib")
-        }
-    }
     implementation 'com.google.android.recaptcha:recaptcha:18.7.1'
 
     testImplementation 'junit:junit:4.13.2'
@@ -119,7 +142,6 @@ android {
     buildToolsVersion '36.0.0'
     ndkVersion "27.2.12479018"
 
-    sourceSets.main.jniLibs.srcDirs = ['./jni/']
 
     externalNativeBuild {
         cmake {
@@ -140,9 +162,8 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-
     defaultConfig {
-        minSdkVersion 21
+        minSdkVersion 23
         targetSdkVersion 36
         buildConfigField "int", "TG_APP_ID", getRequiredGradleProperty("TG_APP_ID")
         buildConfigField "String", "TG_APP_HASH", "\"" + getRequiredGradleProperty("TG_APP_HASH") + "\""
@@ -155,6 +176,7 @@ android {
             cmake {
                 version '3.22.1'
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments "-DTG_TGCALLS_SOURCE_DIR=${tunnelTgcallsSources.get().asFile.absolutePath}"
                 targets 'tmessages.49', 'tg-wg', 'tg-awg'
             }
         }
@@ -315,6 +337,7 @@ tasks.register("testAmneziaWGGo") {
 tasks.register("verifyWireGuardStaticGuards") {
     description = "Checks static fail-closed and no-device-VPN invariants for tunnel integration."
     group = "verification"
+    dependsOn prepareTunnelTgcalls
     doLast {
         def checkedFiles = fileTree(projectDir) {
             include "src/main/java/org/telegram/messenger/WireGuard*.java"
@@ -525,22 +548,27 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("LivePlayer group-call streaming must route through tunnel token '${token}'")
             }
         }
-        def tunnelPacketSocketFactoryText = file("jni/voip/tgcalls/TunnelPacketSocketFactory.cpp").text
+        def tunnelPacketSocketFactoryText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/TunnelPacketSocketFactory.cpp").text
         ["tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "ADAPTER_TYPE_VPN", "CreateClientTcpSocket", "CreateUdpSocket", "TunnelTcpAsyncSocket", "SSLAdapter::Create", "StartSSL", "AsyncSSLSocket", "AsyncStunTCPSocket", "OPT_TLS_INSECURE", "kTunnelTcpRawReflectorOption", "kRawTcpPrologue", "RawReflector"].each { token ->
             if (!tunnelPacketSocketFactoryText.contains(token)) {
                 throw new GradleException("TunnelPacketSocketFactory must provide VPN-like VoIP sockets token '${token}'")
             }
         }
-        if (!file("jni/voip/CMakeLists.txt").text.contains("voip/tgcalls/TunnelPacketSocketFactory.cpp")) {
+        if (!file("jni/voip/CMakeLists.txt").text.contains('${TG_TGCALLS_SOURCE_DIR}/tgcalls/TunnelPacketSocketFactory.cpp')) {
             throw new GradleException("CMake must compile TunnelPacketSocketFactory.cpp")
         }
-        def groupNetworkManagerText = file("jni/voip/tgcalls/group/GroupNetworkManager.cpp").text
+        [file("jni/CMakeLists.txt"), file("jni/voip/CMakeLists.txt")].each { cmake ->
+            if (cmake.text.contains("voip/tgcalls/") || cmake.text.contains("tgcalls/tgcalls/")) {
+                throw new GradleException("CMake must use prepared tgcalls sources, not stale or unpatched copies: ${cmake}")
+            }
+        }
+        def groupNetworkManagerText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/group/GroupNetworkManager.cpp").text
         ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "nativeProxy", "set_proxy", "PROXY_HTTPS", "PORTALLOCATOR_DISABLE_UDP", "PORTALLOCATOR_DISABLE_STUN", "CF_REFLEXIVE", "CF_HOST"].each { token ->
             if (!groupNetworkManagerText.contains(token)) {
                 throw new GradleException("GroupNetworkManager must route tunnel VoIP through tunnel sockets token '${token}'")
             }
         }
-        def networkManagerText = file("jni/voip/tgcalls/NetworkManager.cpp").text
+        def networkManagerText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/NetworkManager.cpp").text
         if (!networkManagerText.contains("tunnelProxy ? nullptr : _thread->socketserver()")) {
             throw new GradleException("Legacy reflector TCP must not receive a device socket factory in tunnel mode")
         }
@@ -552,7 +580,7 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (networkManagerText.contains("if (!_enableP2P || httpConnectProxy)")) {
             throw new GradleException("NetworkManager must not disable P2P merely because tunnel sockets are present")
         }
-        def nativeNetworkingV2Text = file("jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp").text
+        def nativeNetworkingV2Text = new File(tunnelTgcallsSources.get().asFile, "tgcalls/v2/NativeNetworkingImpl.cpp").text
         [networkManagerText, nativeNetworkingV2Text].each { text ->
             if (!(text =~ /if \(!_enableP2P[^\n]*\)\s*\{[^}]*candidateFilter &= ~\(cricket::CF_HOST \| cricket::CF_REFLEXIVE\);/)) {
                 throw new GradleException("Private P2P opt-out must filter TCP host and reflexive candidates, including tunnel mode")
@@ -563,13 +591,13 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("NativeNetworkingImpl must route V2 private VoIP through tunnel sockets token '${token}'")
             }
         }
-        def instanceV2ReferenceText = file("jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp").text
+        def instanceV2ReferenceText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/v2/InstanceV2ReferenceImpl.cpp").text
         ["IsTunnelProxy", "CreateTunnelPacketSocketFactory", "CreateTunnelNetworkManager", "CreateTunnelAsyncDnsResolverFactory", "async_dns_resolver_factory", "nativeProxy", "!_enableP2P || !httpConnectProxy", "_enableP2P && (!nativeProxy || httpConnectProxy)", "nativeProxy && server.isTurn && !server.isTcp", "kTcpCandidatePolicyEnabled", "server.isTcp && !nativeProxy && !tunnelProxy", "?transport=tcp"].each { token ->
             if (!instanceV2ReferenceText.contains(token)) {
                 throw new GradleException("InstanceV2ReferenceImpl must route reference VoIP through tunnel sockets token '${token}'")
             }
         }
-        def reflectorPortText = file("jni/voip/tgcalls/v2/ReflectorPort.cpp").text
+        def reflectorPortText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/v2/ReflectorPort.cpp").text
         def basicSocketFactoryText = file("jni/voip/webrtc/p2p/base/basic_packet_socket_factory.cc").text
         [reflectorPortText, basicSocketFactoryText].each { text ->
             if (!text.contains("PROXY_SOCKS5") || !text.contains("new AsyncSocksProxySocket") && !text.contains("new rtc::AsyncSocksProxySocket")) {
@@ -581,7 +609,7 @@ tasks.register("verifyWireGuardStaticGuards") {
                 throw new GradleException("Ordinary call proxies must suppress UDP relay; SOCKS5 UDP ASSOCIATE is unsupported")
             }
         }
-        def callCoreHostText = file("jni/voip/tgcalls/v2wasm/CallCoreHost.cpp").text
+        def callCoreHostText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/v2wasm/CallCoreHost.cpp").text
         if (!callCoreHostText.contains("PORTALLOCATOR_DISABLE_UDP_RELAY") || !callCoreHostText.contains("nativeProxy && server.isTurn && !server.isTcp")) {
             throw new GradleException("Pump proxy calls must use TCP relays without restricting tunnel UDP")
         }
@@ -678,6 +706,14 @@ tasks.register("verifyTunnelStaticGuards") {
     description = "Alias for tunnel static guards."
     group = "verification"
     dependsOn "verifyWireGuardStaticGuards"
+    dependsOn "testTunnelTgcallsPreparation"
+}
+
+tasks.register("testTunnelTgcallsPreparation", Exec) {
+    group = "verification"
+    description = "Checks clean, repeatable and fail-closed tgcalls source preparation."
+    workingDir rootProject.projectDir
+    commandLine "python3", "-B", "-m", "unittest", "discover", "-s", "Tools/tests", "-p", "test_prepare_tgcalls.py"
 }
 
 tasks.register("testVoipSocks5") {

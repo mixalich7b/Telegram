@@ -108,18 +108,22 @@ AmneziaWG peer.
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/NativeInstance.java`
   - `TMessagesProj/src/main/java/org/telegram/messenger/voip/VoIPService.java`
   - `TMessagesProj/jni/voip/org_telegram_messenger_voip_Instance.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/Instance.h`
-  - `TMessagesProj/jni/voip/tgcalls/TunnelPacketSocketFactory.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/NetworkManager.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/v2/NativeNetworkingImpl.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/v2wasm/CallCoreHost.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/Instance.h`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/TunnelPacketSocketFactory.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/NetworkManager.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/v2/NativeNetworkingImpl.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/v2/InstanceV2ReferenceImpl.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/v2wasm/CallCoreHost.cpp`
 - Group/live VoIP routing:
   - `TMessagesProj/src/main/java/org/telegram/ui/Stories/LivePlayer.java`
-  - `TMessagesProj/jni/voip/tgcalls/group/GroupInstanceCustomImpl.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/group/GroupInstanceImpl.h`
-  - `TMessagesProj/jni/voip/tgcalls/group/GroupNetworkManager.cpp`
-  - `TMessagesProj/jni/voip/tgcalls/group/GroupNetworkManager.h`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/group/GroupInstanceCustomImpl.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/group/GroupInstanceImpl.h`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/group/GroupNetworkManager.cpp`
+  - `TMessagesProj/build/generated/tunnel-tgcalls/tgcalls/group/GroupNetworkManager.h`
+- Patched VoIP source ownership:
+  - `TMessagesProj/jni/tgcalls` is the pinned, unmodified upstream submodule.
+  - `patches/tgcalls/series` and `upstream-revision` are the committed patch inputs.
+  - `Tools/prepare-tgcalls.py` prepares the generated paths above; edit patches, not generated files.
 - Build and static guards:
   - `TMessagesProj/build.gradle`
   - `TMessagesProj_App/build.gradle`
@@ -232,6 +236,12 @@ AmneziaWG peer.
 - WebRTC TLS socket wrapping for tunnel TCP sockets must use `SSLAdapter`
   over the Go tunnel TCP handle, not a device socket or a separate Go TLS stack.
   Raw reflector TCP does not use TLS wrapping.
+- tgcalls patches must be reproducible from the pinned submodule. CMake and
+  static guards must use the same prepared tree outside JNI sources. A revision
+  mismatch or patch failure must stop the build, never select unpatched sources.
+- Native clean tasks must not depend on tgcalls source preparation. Otherwise
+  combined `clean` and assemble invocations can deadlock Gradle's producer/delete
+  ordering for the generated sources under `build/`.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;

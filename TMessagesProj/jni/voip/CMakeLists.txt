@@ -112,9 +112,10 @@ target_compile_definitions(tgcalls_tp PUBLIC
 target_include_directories(tgcalls_tp PUBLIC
         ./
         voip
+        ${TG_TGCALLS_SOURCE_DIR}
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls
         third_party/boringssl/include/
         openssl/include
-        voip/tgcalls/
         voip/webrtc/
         third_party/absl
         third_party/xiph/opus/include
@@ -133,81 +134,81 @@ target_include_directories(tgcalls_tp PUBLIC
 
 #tgcalls+webrtc
 add_library(tgcalls STATIC
-        voip/tgcalls/AudioDeviceHelper.cpp
-        voip/tgcalls/ChannelManager.cpp
-        voip/tgcalls/CodecSelectHelper.cpp
-        voip/tgcalls/CryptoHelper.cpp
-        voip/tgcalls/desktop_capturer/DesktopCaptureSource.cpp
-        voip/tgcalls/desktop_capturer/DesktopCaptureSourceHelper.cpp
-        voip/tgcalls/desktop_capturer/DesktopCaptureSourceManager.cpp
-        voip/tgcalls/EncryptedConnection.cpp
-        voip/tgcalls/FakeAudioDeviceModule.cpp
-        voip/tgcalls/FakeVideoTrackSource.cpp
-        voip/tgcalls/FieldTrialsConfig.cpp
-        voip/tgcalls/TunnelPacketSocketFactory.cpp
-        voip/tgcalls/group/AudioStreamingPart.cpp
-        voip/tgcalls/group/AudioStreamingPartInternal.cpp
-        voip/tgcalls/group/AudioStreamingPartPersistentDecoder.cpp
-        voip/tgcalls/group/AVIOContextImpl.cpp
-        voip/tgcalls/group/GroupAudioCapturePostProcessor.cpp
-        voip/tgcalls/group/GroupFrameTransformer.cpp
-        voip/tgcalls/group/GroupFrameTransformerTest.cpp
-        voip/tgcalls/group/GroupInstanceCustomImpl.cpp
-        voip/tgcalls/group/GroupInstanceReferenceImpl.cpp
-        voip/tgcalls/group/GroupJoinPayloadInternal.cpp
-        voip/tgcalls/group/GroupNetworkManager.cpp
-        voip/tgcalls/group/StreamingAudioRenderer.cpp
-        voip/tgcalls/group/StreamingAudioRendererTest.cpp
-        voip/tgcalls/group/StreamingMediaContext.cpp
-        voip/tgcalls/group/VideoStreamingPart.cpp
-        voip/tgcalls/Instance.cpp
-        voip/tgcalls/InstanceImpl.cpp
-        voip/tgcalls/LogSinkImpl.cpp
-        voip/tgcalls/Manager.cpp
-        voip/tgcalls/MediaManager.cpp
-        voip/tgcalls/Message.cpp
-        voip/tgcalls/NetworkManager.cpp
-        voip/tgcalls/SctpDataChannelProviderInterfaceImpl.cpp
-        voip/tgcalls/StaticThreads.cpp
-        voip/tgcalls/third-party/json11.cpp
-        voip/tgcalls/ThreadLocalObject.cpp
-        voip/tgcalls/TurnCustomizerImpl.cpp
-        voip/tgcalls/utils/gzip.cpp
-        voip/tgcalls/v2_4_0_0/Signaling_4_0_0.cpp
-        voip/tgcalls/v2/ContentNegotiation.cpp
-        voip/tgcalls/v2/CustomDcSctpSocket.cpp
-        voip/tgcalls/v2/DirectNetworkingImpl.cpp
-        voip/tgcalls/v2/ExternalSignalingConnection.cpp
-        voip/tgcalls/v2/InstanceV2CompatImpl.cpp
-        voip/tgcalls/v2/InstanceV2Impl.cpp
-        voip/tgcalls/v2/InstanceV2ReferenceImpl.cpp
-        voip/tgcalls/v2/MtProtoIceTransport.cpp
-        voip/tgcalls/v2/MtProtoIceTransportTest.cpp
-        voip/tgcalls/v2/NativeNetworkingImpl.cpp
-        voip/tgcalls/v2/RawTcpSocket.cpp
-        voip/tgcalls/v2/ReflectorPort.cpp
-        voip/tgcalls/v2/ReflectorRelayPortFactory.cpp
-        voip/tgcalls/v2/SignalingConnection.cpp
-        voip/tgcalls/v2/Signaling.cpp
-        voip/tgcalls/v2/SignalingEncryption.cpp
-        voip/tgcalls/v2/SignalingSctpConnection.cpp
-        voip/tgcalls/v2/SignalingTranslator.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/TunnelPacketSocketFactory.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/AudioDeviceHelper.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/ChannelManager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/CodecSelectHelper.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/CryptoHelper.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/desktop_capturer/DesktopCaptureSource.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/desktop_capturer/DesktopCaptureSourceHelper.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/desktop_capturer/DesktopCaptureSourceManager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/EncryptedConnection.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/FakeAudioDeviceModule.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/FakeVideoTrackSource.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/FieldTrialsConfig.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/AudioStreamingPart.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/AudioStreamingPartInternal.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/AudioStreamingPartPersistentDecoder.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/AVIOContextImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupAudioCapturePostProcessor.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupFrameTransformer.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupFrameTransformerTest.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupInstanceCustomImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupInstanceReferenceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupJoinPayloadInternal.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/GroupNetworkManager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/StreamingAudioRenderer.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/StreamingAudioRendererTest.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/StreamingMediaContext.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/group/VideoStreamingPart.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/Instance.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/InstanceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/LogSinkImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/Manager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/MediaManager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/Message.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/NetworkManager.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/SctpDataChannelProviderInterfaceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/StaticThreads.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/third-party/json11.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/ThreadLocalObject.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/TurnCustomizerImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/utils/gzip.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2_4_0_0/Signaling_4_0_0.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/ContentNegotiation.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/CustomDcSctpSocket.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/DirectNetworkingImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/ExternalSignalingConnection.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2CompatImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2Impl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2ReferenceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/MtProtoIceTransport.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/MtProtoIceTransportTest.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/NativeNetworkingImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/RawTcpSocket.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/ReflectorPort.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/ReflectorRelayPortFactory.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/SignalingConnection.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/Signaling.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/SignalingEncryption.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/SignalingSctpConnection.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/SignalingTranslator.cpp
 
         voip/ReferenceCoreEmbedded.cpp
-        voip/tgcalls/v2wasm/CallCoreHost.cpp
-        voip/tgcalls/v2wasm/CoreGzip.cpp
-        voip/tgcalls/v2wasm/HostCompressionService.cpp
-        voip/tgcalls/v2wasm/InstanceV2PumpImpl.cpp
-        voip/tgcalls/v2wasm/NativeCoreBackend.cpp
-        voip/tgcalls/v2wasm/ReferenceCallCore.cpp
-        voip/tgcalls/v2wasm/reference_core_factory.cpp
-        voip/tgcalls/v2wasm/SignalingFraming.cpp
-        voip/tgcalls/v2wasm/VariantCallCore.cpp
-        voip/tgcalls/v2wasm/variant_core_factory.cpp
-        voip/tgcalls/v2wasm/WamrCoreBackend.cpp
-        voip/tgcalls/v2wasm/wasm_module_entry.cpp
-        voip/tgcalls/VideoCaptureInterface.cpp
-        voip/tgcalls/VideoCaptureInterfaceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/CallCoreHost.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/CoreGzip.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/HostCompressionService.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/InstanceV2PumpImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/NativeCoreBackend.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/ReferenceCallCore.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/reference_core_factory.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/SignalingFraming.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/VariantCallCore.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/variant_core_factory.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/WamrCoreBackend.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2wasm/wasm_module_entry.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/VideoCaptureInterface.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/VideoCaptureInterfaceImpl.cpp
 
         voip/webrtc/rtc_base/bit_buffer.cc
         voip/webrtc/rtc_base/ssl_identity.cc
@@ -1504,9 +1505,10 @@ target_compile_definitions(tgcalls PUBLIC
 target_include_directories(tgcalls PUBLIC
         ./
         voip
+        ${TG_TGCALLS_SOURCE_DIR}
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls
         third_party/boringssl/include
         openssl/include
-        voip/tgcalls
         voip/rnnoise/include
         voip/webrtc
         third_party/absl
@@ -1580,10 +1582,10 @@ endif()
 
 #voipandroid
 add_library(voipandroid STATIC
-        voip/tgcalls/platform/android/AndroidInterface.cpp
-        voip/tgcalls/platform/android/VideoCameraCapturer.cpp
-        voip/tgcalls/platform/android/AndroidContext.cpp
-        voip/tgcalls/platform/android/VideoCapturerInterfaceImpl.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/platform/android/AndroidInterface.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/platform/android/VideoCameraCapturer.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/platform/android/AndroidContext.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/platform/android/VideoCapturerInterfaceImpl.cpp
         voip/webrtc/modules/audio_device/android/audio_manager.cc
         voip/webrtc/modules/audio_device/android/audio_record_jni.cc
         voip/webrtc/modules/audio_device/android/audio_screen_record_jni.cc
@@ -1692,10 +1694,11 @@ target_compile_definitions(voipandroid PUBLIC
 target_include_directories(voipandroid PUBLIC
         ./
         voip
+        ${TG_TGCALLS_SOURCE_DIR}
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls
         rlottie/src/lottie
         third_party/boringssl/include
         openssl/include
-        voip/tgcalls
         voip/webrtc
         third_party/xiph/opus/include
         third_party/xiph/opus/silk

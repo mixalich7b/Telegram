@@ -84,6 +84,21 @@ The upstream TLS ClientHello generator lives in `tgnet/TLSHello.cpp/.h` and is
 shared by the existing secret transport paths. `ConnectionSocket.cpp` retains
 the tunnel bridge, socket-generation checks and complete-write relay behavior.
 
+## Patched VoIP Sources
+
+Telegram 13 moves tgcalls into the pinned `TMessagesProj/jni/tgcalls` submodule.
+Local routing changes live in `patches/tgcalls/0001-tunnel-routing.patch`, with
+application order and expected commit in `series` and `upstream-revision`.
+`Tools/prepare-tgcalls.py` exports committed sources and applies the patches into
+`TMessagesProj/build/generated/tunnel-tgcalls`; it does not modify the submodule.
+
+Gradle preparation, CMake/IDE configuration, and static guards share that tree.
+Preparation validates the revision, patches and output content, serializes ABI
+preparations, and fails on incompatible inputs instead of compiling unpatched
+sources. CMake checks that the routed implementations are actual target inputs.
+All private, group/live and native/WASM pump implementations retain the routing
+policy described below. See `patches/tgcalls/README.md` for upstream updates.
+
 ## Java Architecture
 
 The public Java entry point is protocol-neutral:

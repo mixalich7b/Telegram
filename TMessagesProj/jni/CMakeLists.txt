@@ -1,5 +1,22 @@
 cmake_minimum_required(VERSION 3.16)
 
+# Gradle and standalone IDE/CMake configurations use the same patched sources.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+get_filename_component(TG_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+set(TG_TGCALLS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/generated/tunnel-tgcalls"
+        CACHE PATH "Prepared tgcalls sources with tunnel routing patches")
+file(GLOB TG_TGCALLS_PATCH_INPUTS CONFIGURE_DEPENDS "${TG_REPOSITORY_ROOT}/patches/tgcalls/*")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${TG_REPOSITORY_ROOT}/Tools/prepare-tgcalls.py" ${TG_TGCALLS_PATCH_INPUTS})
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${TG_REPOSITORY_ROOT}/Tools/prepare-tgcalls.py"
+        --source "${CMAKE_CURRENT_SOURCE_DIR}/tgcalls"
+        --output "${TG_TGCALLS_SOURCE_DIR}"
+        --series "${TG_REPOSITORY_ROOT}/patches/tgcalls/series"
+        RESULT_VARIABLE TG_TGCALLS_PREPARE_RESULT)
+if(NOT TG_TGCALLS_PREPARE_RESULT EQUAL 0)
+    message(FATAL_ERROR "Cannot prepare tunnel-enabled tgcalls sources")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -98,6 +115,9 @@ set_target_properties(tde2e PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}
 add_library(tdutils STATIC IMPORTED)
 set_target_properties(tdutils PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}/prebuild/lib/${ANDROID_ABI}/libtdutils.a)
 
+add_library(prisma STATIC IMPORTED)
+set_target_properties(prisma PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}/prebuild/lib/${ANDROID_ABI}/libprisma.a)
+
 #tgnet
 add_library(tgnet STATIC
         openssl/aes_ige.c
@@ -186,6 +206,30 @@ add_library(tlottie STATIC IMPORTED)
 set_target_properties(tlottie PROPERTIES
         IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}/prebuild/lib/${ANDROID_ABI}/libtlottie.a)
 
+# Wallet Engine: matching Rust archive and generated UniFFI C++20 wrapper.
+set(WALLET_ENGINE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/prebuild/include/wallet-engine)
+add_library(wallet_engine STATIC IMPORTED)
+set_target_properties(wallet_engine PROPERTIES
+        IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/prebuild/lib/${ANDROID_ABI}/libwallet_engine.a)
+
+add_library(wallet_engine_cpp STATIC
+        ${WALLET_ENGINE_INCLUDE_DIR}/wallet_engine.cpp
+        ${WALLET_ENGINE_INCLUDE_DIR}/gram_wallet.cpp)
+# Keep C++20 local: existing JNI sources include Breakpad's C++17-only headers.
+# Any new source that includes wallet_engine.hpp must also opt into C++20.
+target_compile_features(wallet_engine_cpp PRIVATE cxx_std_20)
+# Keep unused bindings discardable even when voip resets CMAKE_CXX_FLAGS below.
+target_compile_options(wallet_engine_cpp PRIVATE -ffunction-sections -fdata-sections)
+target_include_directories(wallet_engine_cpp PUBLIC ${WALLET_ENGINE_INCLUDE_DIR})
+target_link_libraries(wallet_engine_cpp PUBLIC wallet_engine dl m)
+
+# Compile the JNI bridge as C++20 without changing the legacy JNI sources.
+# An object library keeps its JNI entry points in the existing tmessages .so.
+add_library(wallet_engine_jni OBJECT wallet/WalletEngineBridge.cpp wallet/GramWalletAdapter.cpp)
+target_compile_features(wallet_engine_jni PRIVATE cxx_std_20)
+set_target_properties(wallet_engine_jni PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(wallet_engine_jni PRIVATE wallet_engine_cpp)
+
 #sqlite
 add_library(sqlite STATIC
         sqlite/sqlite3.c)
@@ -230,6 +274,19 @@ target_include_directories(breakpad PUBLIC
 #voip
 include(${CMAKE_HOME_DIRECTORY}/voip/CMakeLists.txt)
 
+# Check actual target inputs, not just the presence of tunnel source files.
+get_target_property(TG_TGCALLS_COMPILED_SOURCES tgcalls SOURCES)
+foreach(TG_ROUTED_SOURCE IN ITEMS TunnelPacketSocketFactory.cpp NetworkManager.cpp
+        group/GroupInstanceCustomImpl.cpp group/GroupNetworkManager.cpp
+        v2/NativeNetworkingImpl.cpp v2/InstanceV2ReferenceImpl.cpp v2/ReflectorPort.cpp
+        v2wasm/CallCoreHost.cpp)
+    list(FIND TG_TGCALLS_COMPILED_SOURCES
+            "${TG_TGCALLS_SOURCE_DIR}/tgcalls/${TG_ROUTED_SOURCE}" TG_ROUTED_SOURCE_INDEX)
+    if(TG_ROUTED_SOURCE_INDEX EQUAL -1)
+        message(FATAL_ERROR "tgcalls target is missing patched source: ${TG_ROUTED_SOURCE}")
+    endif()
+endforeach()
+
 set(NATIVE_LIB "tmessages.49")
 
 #tmessages
@@ -251,6 +308,20 @@ add_library(${NATIVE_LIB} SHARED
         tde2e/bridge.cpp
         tests.cpp
 )
+
+# Compile JNI directly into the shared library so archive extraction cannot drop its exports.
+set(PRISMA_BRIDGE_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/prisma/bridge/PrismaEngine.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/prisma/bridge/PrismaJni.cpp")
+target_sources(${NATIVE_LIB} PRIVATE ${PRISMA_BRIDGE_SOURCES})
+target_include_directories(${NATIVE_LIB} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/prisma/bridge"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost-regex/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libprisma/libprisma")
+set_property(SOURCE ${PRISMA_BRIDGE_SOURCES} APPEND PROPERTY
+        COMPILE_OPTIONS -fexceptions -frtti)
+set_property(SOURCE ${PRISMA_BRIDGE_SOURCES} APPEND PROPERTY
+        COMPILE_DEFINITIONS BOOST_REGEX_STANDALONE)
 
 target_compile_options(${NATIVE_LIB} PUBLIC
         -ffast-math -Oz -funroll-loops -ffast-math -fno-strict-aliasing -fno-math-errno)
@@ -287,7 +358,7 @@ target_include_directories(${NATIVE_LIB} PUBLIC
         exoplayer/include
         intro
         tlottie/include
-        tgcalls/
+        ${TG_TGCALLS_SOURCE_DIR}
         webrtc/
         td/tde2e
         td/tde2e/td/e2e
@@ -303,7 +374,10 @@ target_link_libraries(${NATIVE_LIB}
         wasm
         tgcalls_tp
         tgnet
+        prisma
         tlottie
+        wallet_engine_jni
+        wallet_engine_cpp
         sqlite
         swscale
         avformat
