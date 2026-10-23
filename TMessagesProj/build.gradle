@@ -16,11 +16,19 @@ def prepareTunnelTgcalls = tasks.register("prepareTunnelTgcalls", Exec) {
             "--source", file("jni/tgcalls"), "--output", tunnelTgcallsSources.get().asFile,
             "--series", rootProject.file("patches/tgcalls/series")
 }
+def fullCleanRequested = gradle.startParameter.taskNames.any { requestedTask ->
+    requestedTask == "clean" || requestedTask.endsWith(":clean")
+}
 tasks.configureEach { task ->
     // Native clean runs before Delete(buildDir). Generating sources here would
     // make clean delete a producer's output before its build consumers run,
     // leaving Gradle's clean + assemble execution plan unable to progress.
     if (task.name.startsWith("externalNativeBuildClean")) {
+        // A full clean removes the complete .cxx cache, so per-variant Ninja
+        // cleanup is redundant and can fail on stale or shared CMake metadata.
+        if (fullCleanRequested) {
+            task.enabled = false
+        }
         return
     }
     if (task.name == "preBuild" || task.name.startsWith("configureCMake")

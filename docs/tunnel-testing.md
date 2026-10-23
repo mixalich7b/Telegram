@@ -36,6 +36,8 @@ tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.
 When investigating clean-build failures, reproduce the user's exact combined
 command; a successful incremental build does not exercise this ordering.
+Each module's `clean` task also removes its `.cxx` directory, which holds
+regenerable Android Gradle Plugin CMake state outside `build/`.
 
 JVM unit tests under `TMessagesProj/src/test/java` cover:
 

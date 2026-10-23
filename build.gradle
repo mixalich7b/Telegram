@@ -117,6 +117,29 @@ tasks.register("tunnelPackageDebug") {
     dependsOn ":TMessagesProj_App:assembleAfatDebug"
 }
 
+// Android Gradle Plugin keeps CMake state in <module>/.cxx, outside buildDir.
+// Remove it after the module's native clean dependencies have finished.
+allprojects { moduleProject ->
+    moduleProject.tasks.matching { it.name == "clean" }.configureEach { cleanTask ->
+        cleanTask.doLast {
+            def cxxDirectory = moduleProject.file(".cxx")
+            if (cxxDirectory.exists()) {
+                // Go module source trees can contain read-only directories. POSIX
+                // needs write permission on each parent to unlink its children.
+                cxxDirectory.eachFileRecurse { entry ->
+                    if (entry.isDirectory()) {
+                        entry.setWritable(true, true)
+                    }
+                }
+                cxxDirectory.setWritable(true, true)
+                if (!cxxDirectory.deleteDir()) {
+                    throw new GradleException("Could not remove ${cxxDirectory}")
+                }
+            }
+        }
+    }
+}
+
 // Strip JLatexMath fonts we don't ship (transitive AAR assets from
 // io.noties.markwon:ext-latex -> ru.noties:jlatexmath-android, ~764 KB total under
 // assets/org/scilab/forge/jlatexmath/fonts/). Has to live in the APK modules — a
