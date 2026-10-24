@@ -39,8 +39,6 @@ fails on a clean checkout or CI.
 Native configure/build tasks must prepare tgcalls, while `externalNativeBuildClean*`
 tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.
-When investigating clean-build failures, reproduce the user's exact combined
-command; a successful incremental build does not exercise this ordering.
 `./gradlew clean` removes root/module `build/` directories, `buildSrc/build/`,
 and native staging trees (`.cxx/` and legacy `.externalNativeBuild/`). This includes
 APKs, object files, generated tgcalls sources, downloaded native Go toolchains
@@ -51,9 +49,7 @@ source submodules remain build inputs and are not deleted.
 
 Cleanup uses Gradle `Delete` tasks, makes read-only Go cache directories writable,
 and never follows symlinks. Permission failures identify the affected path.
-The canonical checks exercise root/module cleanup, read-only directories,
-symlink preservation and combined clean/build ordering in temporary Gradle
-projects. A qualified module clean only removes that module's build outputs;
+A qualified module clean only removes that module's build outputs;
 both `clean` and `:clean` at the repository root cover all modules.
 
 JVM unit tests under `TMessagesProj/src/test/java` cover:
