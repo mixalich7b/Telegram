@@ -4,6 +4,13 @@ apply plugin: 'com.android.library'
 apply plugin: 'org.telegram.build-plugin'
 apply plugin: 'idea'
 
+// One independent switch for Java, tgnet, JNI, VoIP and the shared Go runtime.
+def tunnelLogsValue = providers.gradleProperty("TG_TUNNEL_LOGS_ENABLED").getOrElse("true")
+if (!(tunnelLogsValue in ["true", "false"])) {
+    throw new GradleException("TG_TUNNEL_LOGS_ENABLED must be true or false")
+}
+def tunnelLogsEnabled = tunnelLogsValue == "true"
+
 def tunnelTgcallsSources = layout.buildDirectory.dir("generated/tunnel-tgcalls")
 def prepareTunnelTgcalls = tasks.register("prepareTunnelTgcalls", Exec) {
     description = "Prepares the pinned tgcalls sources with the tunnel routing patch series."
@@ -171,6 +178,7 @@ android {
     }
 
     defaultConfig {
+        buildConfigField "boolean", "TG_TUNNEL_LOGS_ENABLED", tunnelLogsValue
         minSdkVersion 23
         targetSdkVersion 36
         buildConfigField "int", "TG_APP_ID", getRequiredGradleProperty("TG_APP_ID")
@@ -184,6 +192,7 @@ android {
             cmake {
                 version '3.22.1'
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments "-DTG_TUNNEL_LOGS_ENABLED=${tunnelLogsEnabled ? 'ON' : 'OFF'}"
                 arguments "-DTG_TGCALLS_SOURCE_DIR=${tunnelTgcallsSources.get().asFile.absolutePath}"
                 targets 'tmessages.49', 'tg-wg', 'tg-awg'
             }
@@ -434,6 +443,29 @@ tasks.register("verifyWireGuardStaticGuards") {
             if (!wireGuardManagerText.contains(token)) {
                 throw new GradleException("WireGuardManager.isSupported must gate secure storage support token '${token}'")
             }
+        }
+        // Dedicated tunnel diagnostics must never inherit global app log settings.
+        ["src/main/java/org/telegram/messenger/TunnelLog.java",
+         "src/main/java/org/telegram/messenger/TunnelManager.java",
+         "src/main/java/org/telegram/messenger/WireGuardSecureStore.java",
+         "src/main/java/org/telegram/ui/WireGuardSettingsActivity.java",
+         "src/main/java/org/telegram/ui/ProxyListActivity.java"].each { path ->
+            def text = file(path).text
+            if (text.contains("BuildVars.LOGS_ENABLED") || text.contains("FileLog.")) {
+                throw new GradleException("Tunnel logging must be independent of app logging: ${path}")
+            }
+        }
+        def tunnelLogText = file("src/main/java/org/telegram/messenger/TunnelLog.java").text
+        if (!tunnelLogText.contains("BuildConfig.TG_TUNNEL_LOGS_ENABLED")) {
+            throw new GradleException("Java tunnel logs must use the independent build flag")
+        }
+        def goRuntimeText = file("jni/tg_tunnel/go/tg_tunnel.go").text
+        if (goRuntimeText.contains("NewLogger(")) {
+            throw new GradleException("Tunnel device logs must use the gated Go logger instead of stdout")
+        }
+        def tunnelVoipText = new File(tunnelTgcallsSources.get().asFile, "tgcalls/TunnelPacketSocketFactory.cpp").text
+        if (tunnelVoipText.contains("RTC_LOG(") || tunnelVoipText.contains("__android_log_")) {
+            throw new GradleException("Dedicated VoIP tunnel logs must use the independent tunnel logger")
         }
         def tunnelManagerText = file("src/main/java/org/telegram/messenger/TunnelManager.java").text
         ["nativeWireGuardStart", "nativeAmneziaWGStart", "nativeAmneziaWGOnNetworkChanged", "nativeAmneziaWGStop", "missing active tunnel profile"].each { token ->
@@ -715,6 +747,7 @@ tasks.register("verifyTunnelStaticGuards") {
     group = "verification"
     dependsOn "verifyWireGuardStaticGuards"
     dependsOn "testTunnelTgcallsPreparation"
+    dependsOn "testTunnelLogging"
 }
 
 tasks.register("testTunnelTgcallsPreparation", Exec) {
@@ -736,5 +769,24 @@ tasks.register("testVoipSocks5") {
                     "-I", file("jni/voip/webrtc"), file("src/test/cpp/Socks5HandshakeTest.cpp"), "-o", binary
         }
         exec { commandLine binary }
+    }
+}
+
+
+tasks.register("testTunnelLogging") {
+    group = "verification"
+    description = "Checks tunnel logging independently of app logging, with the build switch on and off."
+    doLast {
+        def outputDir = layout.buildDirectory.dir("tunnel-logging-tests").get().asFile
+        outputDir.mkdirs()
+        [0, 1].each { enabled ->
+            def binary = new File(outputDir, "tunnel-logging-${enabled}")
+            exec {
+                commandLine System.getenv("CXX") ?: "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                        "-DTG_TUNNEL_LOGS_ENABLED=${enabled}", "-I", file("src/test/cpp/tunnel_logging"),
+                        "-I", file("jni"), file("src/test/cpp/TunnelLoggingTest.cpp"), "-o", binary
+            }
+            exec { commandLine binary }
+        }
     }
 }

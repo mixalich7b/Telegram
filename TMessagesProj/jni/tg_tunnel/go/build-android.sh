@@ -10,6 +10,11 @@ output_so="$1"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 build_dir="${TG_TUNNEL_BUILD_DIR:-"$script_dir/build"}"
 go_version="${TG_TUNNEL_GO_VERSION:-1.24.4}"
+tunnel_logs_enabled="${TG_TUNNEL_LOGS_ENABLED:-true}"
+case "$tunnel_logs_enabled" in
+  true|false) ;;
+  *) echo "TG_TUNNEL_LOGS_ENABLED must be true or false" >&2; exit 2 ;;
+esac
 
 android_abi="${ANDROID_ABI:?ANDROID_ABI is required}"
 case "$android_abi" in
@@ -78,4 +83,4 @@ fi
 export CC="${CC:?CC is required for Android cgo builds}"
 
 cd "$script_dir"
-"$go_bin" build -tags linux -trimpath -buildvcs=false -buildmode c-shared -ldflags "-linkmode=external -extldflags=-Wl,-soname,libtg-tunnel-go.so,--version-script=${version_script}" -o "$output_so" .
+"$go_bin" build -tags linux -trimpath -buildvcs=false -buildmode c-shared -ldflags "-X main.tunnelLogsEnabled=${tunnel_logs_enabled} -linkmode=external -extldflags=-Wl,-soname,libtg-tunnel-go.so,--version-script=${version_script}" -o "$output_so" .

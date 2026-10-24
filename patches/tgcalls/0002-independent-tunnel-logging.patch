@@ -1,0 +1,145 @@
+diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketFactory.cpp
+--- a/tgcalls/TunnelPacketSocketFactory.cpp
++++ b/tgcalls/TunnelPacketSocketFactory.cpp
+@@ -12,7 +12,7 @@
+ #include "rtc_base/ssl_adapter.h"
+ #include "rtc_base/time_utils.h"
+ 
+-#include <android/log.h>
++#include "tg_tunnel/TunnelLog.h"
+ #include <arpa/inet.h>
+ #include <dlfcn.h>
+ #include <errno.h>
+@@ -33,7 +33,6 @@
+ namespace tgcalls {
+ namespace {
+ 
+-constexpr const char *kTag = "Telegram/TunnelVoip";
+ constexpr size_t kMaxPacketSize = 64 * 1024;
+ constexpr size_t kTcpPacketLengthSize = 2;
+ constexpr size_t kStunHeaderSize = 20;
+@@ -68,7 +67,7 @@
+         _handle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
+         if (_handle == nullptr) {
+             const char *error = dlerror();
+-            __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-tunnel-go.so failed: %s", error != nullptr ? error : "unknown");
++            TG_TUNNEL_LOG_E("dlopen libtg-tunnel-go.so failed: %s", error != nullptr ? error : "unknown");
+             return false;
+         }
+         isRunning = reinterpret_cast<IsRunningFunc>(dlsym(_handle, "tgTunnelIsRunning"));
+@@ -85,7 +84,7 @@
+         udpClose = reinterpret_cast<UdpCloseFunc>(dlsym(_handle, "tgTunnelUdpClose"));
+         _loaded = isRunning && getLocalAddress && lookupHost && tcpConnect && tcpRead && tcpWrite && tcpClose && udpOpen && udpSendTo && udpRecvFrom && udpLocalAddress && udpClose;
+         if (!_loaded) {
+-            __android_log_write(ANDROID_LOG_ERROR, kTag, "required tunnel socket symbols are missing");
++            TG_TUNNEL_LOG_E("required tunnel socket symbols are missing");
+             dlclose(_handle);
+             _handle = nullptr;
+         }
+@@ -907,23 +906,23 @@
+ 
+     rtc::AsyncPacketSocket *CreateUdpSocket(const rtc::SocketAddress &address, uint16_t, uint16_t) override {
+         if (!TunnelBridge::Shared().running()) {
+-            RTC_LOG(LS_ERROR) << "Tunnel UDP socket requested while tunnel is not running";
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel UDP socket requested while tunnel is not running";
+             return nullptr;
+         }
+         const std::string host = SocketHost(address);
+         int64_t handle = TunnelBridge::Shared().udpOpen(host.c_str(), address.port());
+         if (handle <= 0) {
+-            RTC_LOG(LS_ERROR) << "Tunnel UDP open failed for " << address.ToSensitiveString();
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel UDP open failed for " << address.ToSensitiveString();
+             return nullptr;
+         }
+         char localHost[128] = {0};
+         int localPort = 0;
+         if (TunnelBridge::Shared().udpLocalAddress(handle, localHost, sizeof(localHost), &localPort) < 0) {
+             TunnelBridge::Shared().udpClose(handle);
+-            RTC_LOG(LS_ERROR) << "Tunnel UDP local address lookup failed";
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel UDP local address lookup failed";
+             return nullptr;
+         }
+-        RTC_LOG(LS_INFO) << "Tunnel UDP socket opened for " << address.ToSensitiveString();
++        TG_TUNNEL_LOG_STREAM(ANDROID_LOG_INFO) << "Tunnel UDP socket opened for " << address.ToSensitiveString();
+         return new TunnelUdpPacketSocket(_thread, handle, SocketAddressFromHostPort(localHost, localPort));
+     }
+ 
+@@ -933,7 +932,7 @@
+ 
+     rtc::AsyncPacketSocket *CreateClientTcpSocket(const rtc::SocketAddress &localAddress, const rtc::SocketAddress &remoteAddress, const rtc::ProxyInfo &, const std::string &, const rtc::PacketSocketTcpOptions &tcpOptions) override {
+         if (!TunnelBridge::Shared().running()) {
+-            RTC_LOG(LS_ERROR) << "Tunnel TCP socket requested while tunnel is not running";
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP socket requested while tunnel is not running";
+             return nullptr;
+         }
+         const int tlsOptions = tcpOptions.opts & (rtc::PacketSocketFactory::OPT_TLS | rtc::PacketSocketFactory::OPT_TLS_FAKE | rtc::PacketSocketFactory::OPT_TLS_INSECURE);
+@@ -943,17 +942,17 @@
+             return CreateWebRtcTcpSocket(localAddress, remoteAddress, tcpOptions, tlsOptions);
+         }
+         if (tlsOptions != 0) {
+-            RTC_LOG(LS_ERROR) << "Tunnel raw reflector TCP does not support TLS wrapping; failing closed";
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel raw reflector TCP does not support TLS wrapping; failing closed";
+             return nullptr;
+         }
+         const std::string host = SocketHost(remoteAddress);
+         int64_t handle = TunnelBridge::Shared().tcpConnect(host.c_str(), remoteAddress.port());
+         if (handle <= 0) {
+-            RTC_LOG(LS_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString();
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString();
+             return nullptr;
+         }
+         TunnelTcpFraming framing = TunnelTcpFraming::RawReflector;
+-        RTC_LOG(LS_INFO) << "Tunnel TCP socket opened for " << remoteAddress.ToSensitiveString() << " framing=" << static_cast<int>(framing);
++        TG_TUNNEL_LOG_STREAM(ANDROID_LOG_INFO) << "Tunnel TCP socket opened for " << remoteAddress.ToSensitiveString() << " framing=" << static_cast<int>(framing);
+         return new TunnelTcpPacketSocket(_thread, handle, localAddress, remoteAddress, framing);
+     }
+ 
+@@ -965,17 +964,17 @@
+     rtc::AsyncPacketSocket *CreateWebRtcTcpSocket(const rtc::SocketAddress &localAddress, const rtc::SocketAddress &remoteAddress, const rtc::PacketSocketTcpOptions &tcpOptions, int tlsOptions) {
+         rtc::Socket *socket = new TunnelTcpAsyncSocket(_thread);
+         if (socket->Bind(localAddress) < 0) {
+-            RTC_LOG(LS_ERROR) << "Tunnel TCP bind failed with error " << socket->GetError();
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP bind failed with error " << socket->GetError();
+             delete socket;
+             return nullptr;
+         }
+         if (socket->SetOption(rtc::Socket::OPT_NODELAY, 1) != 0) {
+-            RTC_LOG(LS_WARNING) << "Tunnel TCP_NODELAY option ignored with error " << socket->GetError();
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_WARN) << "Tunnel TCP_NODELAY option ignored with error " << socket->GetError();
+         }
+         if ((tlsOptions & rtc::PacketSocketFactory::OPT_TLS) != 0 || (tlsOptions & rtc::PacketSocketFactory::OPT_TLS_INSECURE) != 0) {
+             rtc::SSLAdapter *sslAdapter = rtc::SSLAdapter::Create(socket);
+             if (sslAdapter == nullptr) {
+-                RTC_LOG(LS_ERROR) << "Tunnel TCP SSLAdapter creation failed";
++                TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP SSLAdapter creation failed";
+                 delete socket;
+                 return nullptr;
+             }
+@@ -987,7 +986,7 @@
+             sslAdapter->SetCertVerifier(tcpOptions.tls_cert_verifier);
+             socket = sslAdapter;
+             if (sslAdapter->StartSSL(remoteAddress.hostname().c_str()) != 0) {
+-                RTC_LOG(LS_ERROR) << "Tunnel TCP StartSSL failed for " << remoteAddress.ToSensitiveString();
++                TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP StartSSL failed for " << remoteAddress.ToSensitiveString();
+                 delete sslAdapter;
+                 return nullptr;
+             }
+@@ -995,15 +994,15 @@
+             socket = new rtc::AsyncSSLSocket(socket);
+         }
+         if (socket->Connect(remoteAddress) < 0) {
+-            RTC_LOG(LS_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString() << " error=" << socket->GetError();
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_ERROR) << "Tunnel TCP connect failed for " << remoteAddress.ToSensitiveString() << " error=" << socket->GetError();
+             delete socket;
+             return nullptr;
+         }
+         if ((tcpOptions.opts & rtc::PacketSocketFactory::OPT_STUN) != 0) {
+-            RTC_LOG(LS_INFO) << "Tunnel TCP STUN/TURN socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
++            TG_TUNNEL_LOG_STREAM(ANDROID_LOG_INFO) << "Tunnel TCP STUN/TURN socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
+             return new cricket::AsyncStunTCPSocket(socket);
+         }
+-        RTC_LOG(LS_INFO) << "Tunnel TCP packet socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
++        TG_TUNNEL_LOG_STREAM(ANDROID_LOG_INFO) << "Tunnel TCP packet socket opened for " << remoteAddress.ToSensitiveString() << " tls=" << tlsOptions;
+         return new rtc::AsyncTCPSocket(socket);
+     }
+ 

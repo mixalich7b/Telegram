@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
+option(TG_TUNNEL_LOGS_ENABLED "Enable independent tunnel diagnostics" ON)
+
 # Gradle and standalone IDE/CMake configurations use the same patched sources.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 get_filename_component(TG_REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -164,6 +166,7 @@ add_custom_command(
                 ANDROID_ABI=${ANDROID_ABI}
                 ANDROID_NDK=${ANDROID_NDK}
                 ANDROID_PLATFORM=${ANDROID_PLATFORM}
+                TG_TUNNEL_LOGS_ENABLED=$<IF:$<BOOL:${TG_TUNNEL_LOGS_ENABLED}>,true,false>
                 TG_TUNNEL_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}/tg_tunnel_go_build
                 CC=${CMAKE_C_COMPILER}
                 CXX=${CMAKE_CXX_COMPILER}
@@ -176,6 +179,7 @@ add_custom_command(
                 tg_tunnel/go/tg_tunnel.go
                 tg_tunnel/go/exports_android.go
                 tg_tunnel/go/exports.map
+                tg_tunnel/go/log_config.go
                 tg_tunnel/go/log_android.go
         COMMENT "Building libtg-tunnel-go.so for ${ANDROID_ABI}"
         VERBATIM)
@@ -273,6 +277,11 @@ target_include_directories(breakpad PUBLIC
 
 #voip
 include(${CMAKE_HOME_DIRECTORY}/voip/CMakeLists.txt)
+
+foreach(TG_LOG_TARGET IN ITEMS tgnet tg-wg tg-awg tgcalls)
+    target_compile_definitions(${TG_LOG_TARGET} PRIVATE TG_TUNNEL_LOGS_ENABLED=$<BOOL:${TG_TUNNEL_LOGS_ENABLED}>)
+    target_include_directories(${TG_LOG_TARGET} PRIVATE ${CMAKE_HOME_DIRECTORY})
+endforeach()
 
 # Check actual target inputs, not just the presence of tunnel source files.
 get_target_property(TG_TGCALLS_COMPILED_SOURCES tgcalls SOURCES)

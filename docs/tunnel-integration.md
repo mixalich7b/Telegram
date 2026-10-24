@@ -138,13 +138,17 @@ attempt join the same failed group. Every alternate attempt still uses the Go
 tunnel socket API; aggregation never permits a direct socket fallback.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
-Debug builds emit `tunnel_trace` events at runtime activation or successful
+Builds with `TG_TUNNEL_LOGS_ENABLED=true` (the default) emit `tunnel_trace` events at runtime activation or successful
 network refresh, native route application, each direct tunnel TCP attempt,
 aggregate attempt decisions, and the first current-datacenter MTProto packet
 per active route generation. Attempt and lifecycle identifiers correlate
 concurrent work; monotonic elapsed values separate tunnel TCP dial latency from
 tgnet/MTProto readiness latency without logging tunnel profile secrets or
-request payloads.
+request payloads. All dedicated Java, tgnet, JNI, Go and VoIP tunnel diagnostics
+use the same build flag and the `Telegram/Tunnel` logcat tag, independently of
+`LOGS_ENABLED`. Set `TG_TUNNEL_LOGS_ENABLED=false` in `gradle.properties` to
+silence them, including when general app logging is enabled. Tunnel logs bypass
+the application's file log sink.
 
 ## Profile Storage
 

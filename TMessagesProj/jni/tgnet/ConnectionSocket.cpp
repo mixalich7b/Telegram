@@ -30,6 +30,7 @@
 #include "ByteStream.h"
 #include "ConnectionSocket.h"
 #include "FileLog.h"
+#include "tg_tunnel/TunnelLog.h"
 #include "Defines.h"
 #include "ConnectionsManager.h"
 #include "EventObject.h"
@@ -70,7 +71,7 @@ public:
         }
         handle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
         if (handle == nullptr) {
-            if (LOGS_ENABLED) DEBUG_E("tgnet tunnel bridge dlopen failed");
+            TG_TUNNEL_LOG_E("tgnet tunnel bridge dlopen failed");
             return false;
         }
         isRunning = reinterpret_cast<TunnelIsRunningFunc>(dlsym(handle, "tgTunnelIsRunning"));
@@ -80,7 +81,7 @@ public:
         tcpClose = reinterpret_cast<TunnelTcpCloseFunc>(dlsym(handle, "tgTunnelTcpClose"));
         loaded = isRunning != nullptr && tcpConnect != nullptr && tcpRead != nullptr && tcpWrite != nullptr && tcpClose != nullptr;
         if (!loaded) {
-            if (LOGS_ENABLED) DEBUG_E("tgnet tunnel bridge symbols missing");
+            TG_TUNNEL_LOG_E("tgnet tunnel bridge symbols missing");
             dlclose(handle);
             handle = nullptr;
         }
@@ -264,7 +265,7 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
     bool useTunnelRoute = overrideProxyAddress.empty() && ConnectionsManager::getInstance(instanceNum).tunnelRouteEnabled;
     if (useTunnelRoute) {
         if (ConnectionsManager::getInstance(instanceNum).tunnelRouteBlocked) {
-            if (LOGS_ENABLED) DEBUG_E("connection(%p) tunnel route is blocked", this);
+            TG_TUNNEL_LOG_E("connection(%p) tunnel route is blocked", this);
             closeSocket(1, ENETDOWN);
             return;
         }
@@ -421,7 +422,7 @@ void ConnectionSocket::openConnectionInternal(bool ipv6) {
 void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) {
     int fds[2] = {-1, -1};
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
-        if (LOGS_ENABLED) DEBUG_E("connection(%p) can't create tunnel socketpair", this);
+        TG_TUNNEL_LOG_E("connection(%p) can't create tunnel socketpair", this);
         closeSocket(1, errno);
         return;
     }
@@ -433,8 +434,8 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
     state->traceAttemptId = nextTunnelTraceAttemptId.fetch_add(1);
     state->traceStartedAtMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
     tunnelSocketState = state;
-    if (LOGS_ENABLED) {
-        DEBUG_D("tunnel_trace event=tcp_dial_start attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " target=%s:%u",
+    if (TG_TUNNEL_LOGS_ENABLED) {
+        TG_TUNNEL_LOG_D("tunnel_trace event=tcp_dial_start attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " target=%s:%u",
                 state->traceAttemptId,
                 this,
                 instanceNum,
@@ -507,14 +508,14 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
     }
     socketFd = fd;
     if (fcntl(socketFd, F_SETFL, O_NONBLOCK) == -1) {
-        if (LOGS_ENABLED) DEBUG_E("connection(%p) set tunnel O_NONBLOCK failed", this);
+        TG_TUNNEL_LOG_E("connection(%p) set tunnel O_NONBLOCK failed", this);
         closeSocket(1, errno);
         return;
     }
     eventMask.events = EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR | EPOLLET;
     eventMask.data.ptr = eventObject;
     if (epoll_ctl(ConnectionsManager::getInstance(instanceNum).epolFd, EPOLL_CTL_ADD, socketFd, &eventMask) != 0) {
-        if (LOGS_ENABLED) DEBUG_E("connection(%p) epoll_ctl, adding tunnel socket failed", this);
+        TG_TUNNEL_LOG_E("connection(%p) epoll_ctl, adding tunnel socket failed", this);
         closeSocket(1, errno);
         return;
     }
@@ -524,10 +525,10 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
     adjustWriteOp();
     bool reportConnected = !state->connectAttemptCompleted.exchange(true);
     if (reportConnected) {
-        if (LOGS_ENABLED) {
+        if (TG_TUNNEL_LOGS_ENABLED) {
             int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
                     - state->traceStartedAtMs;
-            DEBUG_D("tunnel_trace event=tcp_dial_connected attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+            TG_TUNNEL_LOG_D("tunnel_trace event=tcp_dial_connected attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
                     state->traceAttemptId,
                     this,
                     instanceNum,
@@ -553,10 +554,10 @@ void ConnectionSocket::failTunnelConnection(const std::shared_ptr<TunnelSocketSt
     closeTunnelSocketState(state);
     tunnelSocketState = nullptr;
     if (reportFailure) {
-        if (LOGS_ENABLED) {
+        if (TG_TUNNEL_LOGS_ENABLED) {
             int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
                     - state->traceStartedAtMs;
-            DEBUG_E("tunnel_trace event=tcp_dial_failed attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+            TG_TUNNEL_LOG_E("tunnel_trace event=tcp_dial_failed attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
                     state->traceAttemptId,
                     this,
                     instanceNum,
@@ -584,10 +585,10 @@ void ConnectionSocket::cancelTunnelConnectAttempt(const std::shared_ptr<TunnelSo
     if (state == nullptr || state->connectAttemptCompleted.exchange(true)) {
         return;
     }
-    if (LOGS_ENABLED) {
+    if (TG_TUNNEL_LOGS_ENABLED) {
         int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
                 - state->traceStartedAtMs;
-        DEBUG_D("tunnel_trace event=tcp_dial_cancelled attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
+        TG_TUNNEL_LOG_D("tunnel_trace event=tcp_dial_cancelled attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
                 state->traceAttemptId,
                 this,
                 instanceNum,

@@ -16,7 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.FileLog;
+import org.telegram.messenger.TunnelLog;
 import org.telegram.messenger.NetworkRouteSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
@@ -339,7 +339,7 @@ public class WireGuardSettingsActivity extends BaseFragment {
         try {
             saved = TunnelManager.saveProfile(profile);
         } catch (Throwable e) {
-            FileLog.e(e);
+            TunnelLog.e(e);
             showWireGuardUnsupported();
             return;
         }

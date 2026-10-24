@@ -86,12 +86,28 @@ user home directory, never under `TMessagesProj/jni`.
 
 ## Tunnel Connection Trace
 
-The Java controller always emits `tunnel_trace` lifecycle diagnostics under
-`Telegram/Tunnel`, including when `BuildVars.LOGS_ENABLED` is off. Capture them
-without enabling Telegram file logging:
+All dedicated tunnel logs use the independent build property
+`TG_TUNNEL_LOGS_ENABLED` (default `true`), in both debug and release builds.
+Set it in the user or project `gradle.properties` before building:
+
+```properties
+TG_TUNNEL_LOGS_ENABLED=true
+```
+
+Use `false` to disable them. Only literal `true` and `false` are accepted.
+Gradle passes the same value to Java BuildConfig, CMake and the shared Go
+library; standalone CMake uses the same-named ON/OFF option. Rebuild and install
+the APK after changing it. This flag has no dependency on `LOGS_ENABLED`, the
+Telegram logging menu or the build type. It controls Java lifecycle/storage
+logs, tgnet tunnel TCP/MTProto events, JNI bridge errors, Go bridge/device errors,
+and dedicated VoIP tunnel socket logs. Turning general app logging on cannot
+re-enable these logs when the tunnel flag is false.
+
+Tunnel diagnostics go directly to logcat under `Telegram/Tunnel`; they are not
+duplicated into Telegram's general FileLog files. Capture all of them with:
 
 ```bash
-adb logcat -v threadtime 'Telegram/Tunnel:I' '*:S'
+adb logcat -v threadtime 'Telegram/Tunnel:D' '*:S'
 ```
 
 Start capture before reproducing the delay; add `-d` to dump the retained logcat
@@ -119,15 +135,9 @@ connection. A begin event without a result identifies work still in progress.
 Large queue wait means earlier lifecycle work is blocking; large native startup
 means config/library/DNS/runtime work; large TCP wait points to the peer/network
 or netstack. Native startup status `-10` identifies peer endpoint DNS failure.
-Exception types are always logged, without exception messages or profile data.
-Detailed stack traces still follow Telegram's existing file logging setting.
-
-With Telegram logging enabled, native tgnet adds per-attempt TCP timing and
-MTProto readiness. Capture the controller, tgnet, and Go bridge together with:
-
-```bash
-adb logcat -v threadtime tgnet:D tmessages:D 'Telegram/Tunnel:D' '*:S' | rg 'tunnel_trace|tunnel TCP connect failed'
-```
+Java exceptions expose their type without exception messages or stack traces
+that might contain profile data. Native tgnet's per-attempt TCP timing and
+MTProto readiness follow the same tunnel build flag and use the same tag.
 
 Read one lifecycle generation in this order:
 
@@ -153,6 +163,12 @@ netstack path. If it is fast but `mtproto_ready` is slow, investigate tgnet
 address selection, MTProto handshake, or request processing. If no attempt
 succeeds, use the aggregate `pending` and settlement events to distinguish a
 long-running attempt from reconnect backoff.
+
+Host checks exercise the native logger with the tunnel flag both on and off,
+and each app-wide log state; disabled logging must not evaluate log arguments.
+Go tests exercise enabled and disabled bridge diagnostics. Static guards prevent
+Java and dedicated VoIP diagnostics from returning to app-wide log sinks and
+prevent upstream Go device loggers from bypassing the flag via stdout.
 
 ## Static Guards
 

@@ -1,4 +1,4 @@
-#include <android/log.h>
+#include "tg_tunnel/TunnelLog.h"
 #include <dlfcn.h>
 #include <jni.h>
 
@@ -6,8 +6,6 @@
 #include <vector>
 
 namespace {
-
-constexpr const char *kTag = "Telegram/WireGuard";
 
 using StartFunc = int (*)(const char *, const char **, int, const char **, int, int);
 using VoidFunc = void (*)();
@@ -19,7 +17,7 @@ VoidFunc stopFunc = nullptr;
 NetworkChangedFunc networkChangedFunc = nullptr;
 
 void logError(const char *message) {
-    __android_log_write(ANDROID_LOG_ERROR, kTag, message);
+    TG_TUNNEL_LOG_E("%s", message);
 }
 
 bool loadGoBridge() {
@@ -29,7 +27,7 @@ bool loadGoBridge() {
     goHandle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
     if (goHandle == nullptr) {
         const char *error = dlerror();
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "dlopen libtg-tunnel-go.so failed: %s", error != nullptr ? error : "unknown");
+        TG_TUNNEL_LOG_E("dlopen libtg-tunnel-go.so failed: %s", error != nullptr ? error : "unknown");
         return false;
     }
     startFunc = reinterpret_cast<StartFunc>(dlsym(goHandle, "tgWgStart"));

@@ -180,6 +180,21 @@ AmneziaWG peer.
 - Tunnel TCP writes must write complete protocol frames or fail; do not treat
   partial TCP writes as successful VoIP sends.
 
+## Tunnel Logging
+
+- All dedicated tunnel diagnostics (Java, tgnet, JNI, shared Go runtime/device
+  errors and VoIP tunnel sockets) use `TG_TUNNEL_LOGS_ENABLED`, default `true`.
+  Set the Gradle property to literal `true` or `false`; Gradle must propagate the
+  same value to Java BuildConfig, CMake and the Go build.
+- Tunnel logging must remain independent of general `LOGS_ENABLED` and debug or
+  release build type. Disabled tunnel logs must stay off with app logging on;
+  enabled tunnel logs must work with app logging off.
+- Use the `Telegram/Tunnel` logcat tag and dedicated sinks, without routing back
+  through app-wide FileLog or WebRTC logging gates. Do not log profile secrets
+  or raw Java exception messages/stack traces that could contain profile data.
+- Canonical checks include native logger on/off coverage with each general-log
+  state, Go logger on/off coverage and guards against bypassing the flag.
+
 ## UI Invariants
 
 - Tunnel settings live in the combined proxy settings flow.

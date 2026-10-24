@@ -124,7 +124,7 @@ func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
 	}
 
-	logger := wgdevice.NewLogger(wgdevice.LogLevelError, "Telegram/WireGuard: ")
+	logger := &wgdevice.Logger{Verbosef: wgdevice.DiscardLogf, Errorf: logError}
 	dev := wgdevice.NewDevice(tunDev, wgconn.NewDefaultBind(), logger)
 	if err = dev.IpcSet(userspaceConfig); err != nil {
 		dev.Close()
@@ -143,7 +143,7 @@ func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 		return nil, nil, -4, fmt.Errorf("CreateNetTUN failed: %w", err)
 	}
 
-	logger := awgdevice.NewLogger(awgdevice.LogLevelError, "Telegram/AmneziaWG: ")
+	logger := &awgdevice.Logger{Verbosef: awgdevice.DiscardLogf, Errorf: logError}
 	dev := awgdevice.NewDevice(tunDev, awgconn.NewDefaultBind(), logger)
 	if err = dev.IpcSet(userspaceConfig); err != nil {
 		dev.Close()

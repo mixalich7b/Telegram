@@ -46,6 +46,7 @@ import org.telegram.messenger.StatsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.TunnelManager;
+import org.telegram.messenger.TunnelLog;
 import org.telegram.utils.proxy.WebProxyConnectionTester;
 import org.telegram.utils.proxy.WebProxyTransport;
 import org.telegram.utils.proxy.ProxySettings;
@@ -651,9 +652,7 @@ public class ConnectionsManager extends BaseController {
         final ProxySettings proxySettings = ProxySettings.fromSharedPreferences(preferences);
         if (TunnelManager.applyTunnelSettingsForAccount(currentAccount)) {
             WebProxyTransport.stop();
-            if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("Tunnel route settings applied for account " + currentAccount);
-            }
+            TunnelLog.d("Tunnel route settings applied for account " + currentAccount);
         } else if (preferences.getBoolean("proxy_enabled", false) && proxySettings.isValid()) {
             if (proxySettings.getType() == ProxySettings.Type.WEB) {
                 int localPort = WebProxyTransport.start(proxySettings.getAddress(), proxySettings.getSecret());
@@ -1009,9 +1008,7 @@ public class ConnectionsManager extends BaseController {
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
             if (TunnelManager.applyTunnelSettingsForAccount(a)) {
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d("Tunnel route settings retained for account " + a);
-                }
+                TunnelLog.d("Tunnel route settings retained for account " + a);
             } else if (enabled && settings != null && settings.isValid()) {
                 native_setProxySettings(a, address, port, username, password, secret);
             } else {

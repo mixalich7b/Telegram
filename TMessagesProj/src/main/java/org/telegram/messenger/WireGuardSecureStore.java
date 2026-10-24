@@ -46,7 +46,7 @@ final class WireGuardSecureStore {
     static ArrayList<WireGuardProfile> loadProfiles() {
         ArrayList<WireGuardProfile> result = new ArrayList<>();
         if (!isSupported()) {
-            FileLog.e("WireGuard secure storage requires Android 6.0 or newer");
+            TunnelLog.e("WireGuard secure storage requires Android 6.0 or newer");
             return result;
         }
         String encryptedProfiles = getPreferences().getString(PREF_ENCRYPTED_PROFILES, "");
@@ -56,7 +56,7 @@ final class WireGuardSecureStore {
         try {
             return deserializeProfiles(decryptProfiles(encryptedProfiles, getSecretKey()));
         } catch (Throwable e) {
-            FileLog.e(e);
+            TunnelLog.e(e);
             return result;
         }
     }
@@ -69,7 +69,7 @@ final class WireGuardSecureStore {
             String encryptedProfiles = encryptProfiles(serializeProfiles(profiles), getSecretKey());
             getPreferences().edit().putString(PREF_ENCRYPTED_PROFILES, encryptedProfiles).apply();
         } catch (Throwable e) {
-            FileLog.e(e);
+            TunnelLog.e(e);
             throw new RuntimeException("Unable to save WireGuard profiles securely", e);
         }
     }
@@ -115,7 +115,7 @@ final class WireGuardSecureStore {
                 result.add(profile);
             }
         } catch (Throwable e) {
-            FileLog.e(e);
+            TunnelLog.e(e);
             result.clear();
         } finally {
             if (data != null) {

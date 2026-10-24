@@ -22,6 +22,7 @@
 #include "ConnectionsManager.h"
 #include "DownloadRequestBudget.h"
 #include "FileLog.h"
+#include "tg_tunnel/TunnelLog.h"
 #include "EventObject.h"
 #include "MTProtoScheme.h"
 #include "ApiScheme.h"
@@ -872,11 +873,11 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
     if (connectionState != ConnectionStateConnected && connection->getConnectionType() == ConnectionTypeGeneric && datacenter->getDatacenterId() == currentDatacenterId) {
         if (tunnelRouteEnabled && !tunnelRouteBlocked && !tunnelRouteReadyLogged) {
             tunnelRouteReadyLogged = true;
-            if (LOGS_ENABLED) {
+            if (TG_TUNNEL_LOGS_ENABLED) {
                 int64_t routeElapsedMs = tunnelRouteActiveSince == 0
                         ? -1
                         : getCurrentTimeMonotonicMillis() - tunnelRouteActiveSince;
-                DEBUG_D("tunnel_trace event=mtproto_ready connection=%p account=%d generation=%" PRId64 " dc=%u route_elapsed_ms=%" PRId64,
+                TG_TUNNEL_LOG_D("tunnel_trace event=mtproto_ready connection=%p account=%d generation=%" PRId64 " dc=%u route_elapsed_ms=%" PRId64,
                         connection,
                         instanceNum,
                         tunnelRouteGeneration,
@@ -3823,8 +3824,8 @@ void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked, int64_t l
             tunnelRouteActiveSince = 0;
             tunnelRouteReadyLogged = false;
         }
-        if (LOGS_ENABLED) {
-            DEBUG_D("tunnel_trace event=route_state account=%d generation=%" PRId64 " enabled=%d blocked=%d",
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            TG_TUNNEL_LOG_D("tunnel_trace event=route_state account=%d generation=%" PRId64 " enabled=%d blocked=%d",
                     instanceNum,
                     tunnelRouteGeneration,
                     tunnelRouteEnabled,
