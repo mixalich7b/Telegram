@@ -1,5 +1,7 @@
 package org.telegram.messenger;
 
+import android.util.Log;
+
 import org.telegram.tgnet.ConnectionsManager;
 
 import java.util.ArrayList;
@@ -77,6 +79,8 @@ public final class TunnelManager {
             new TunnelController.Logger() {
                 @Override
                 public void debug(String message) {
+                    // Lifecycle diagnostics must be available through adb even with file logging off.
+                    Log.i("Telegram/Tunnel", message);
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.d(message);
                     }
@@ -84,6 +88,7 @@ public final class TunnelManager {
 
                 @Override
                 public void error(String message) {
+                    Log.e("Telegram/Tunnel", message);
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.e(message);
                     }
@@ -91,6 +96,9 @@ public final class TunnelManager {
 
                 @Override
                 public void error(Throwable throwable) {
+                    // Exception messages can contain profile data; only expose the type in logcat.
+                    Log.e("Telegram/Tunnel", "tunnel_trace event=controller_exception error_type="
+                            + throwable.getClass().getSimpleName());
                     FileLog.e(throwable);
                 }
             },

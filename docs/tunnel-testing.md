@@ -86,8 +86,44 @@ user home directory, never under `TMessagesProj/jni`.
 
 ## Tunnel Connection Trace
 
-Debug builds emit a compact `tunnel_trace` timeline for tunnel connection
-diagnostics. Capture the Java controller, tgnet, and Go bridge logs with:
+The Java controller always emits `tunnel_trace` lifecycle diagnostics under
+`Telegram/Tunnel`, including when `BuildVars.LOGS_ENABLED` is off. Capture them
+without enabling Telegram file logging:
+
+```bash
+adb logcat -v threadtime 'Telegram/Tunnel:I' '*:S'
+```
+
+Start capture before reproducing the delay; add `-d` to dump the retained logcat
+buffer, or redirect output to a file to preserve a long reproduction. These logs
+cover both WireGuard and AmneziaWG. They include:
+
+- `lifecycle_queued`, `lifecycle_begin`, `lifecycle_end`: operation, generation,
+  queue wait (`queue_wait_ms`), and execution duration (`elapsed_ms`);
+- `runtime_starting`, `native_start_begin`, `native_start_result`: startup,
+  native status code and duration (including config construction, library loading,
+  peer endpoint DNS resolution and runtime creation);
+- `runtime_failed`: reason, generation, retryability and blocked route;
+- `runtime_stop_begin`, `runtime_stopped`, `runtime_stop_failed`: shutdown timing;
+- `network_refresh_begin/result/failed`: bind refresh timing, status, and restart
+  decision after failure;
+- `reconnect_scheduled`, `reconnect_timer_fired`, `reconnect_started/cancelled`:
+  requested delay (`delay_ms`), actual wait (`actual_wait_ms`), and schedule ID;
+- existing `runtime_active/refreshed` and `tcp_attempt_*` events;
+- `tcp_connected_timing`: time since runtime activation or refresh
+  (`route_elapsed_ms`), not the duration of an individual TCP dial.
+
+Durations use a monotonic clock. `runtime_active` means local runtime startup,
+not a completed peer handshake; `tcp_attempt_connected` confirms a tunnel TCP
+connection. A begin event without a result identifies work still in progress.
+Large queue wait means earlier lifecycle work is blocking; large native startup
+means config/library/DNS/runtime work; large TCP wait points to the peer/network
+or netstack. Native startup status `-10` identifies peer endpoint DNS failure.
+Exception types are always logged, without exception messages or profile data.
+Detailed stack traces still follow Telegram's existing file logging setting.
+
+With Telegram logging enabled, native tgnet adds per-attempt TCP timing and
+MTProto readiness. Capture the controller, tgnet, and Go bridge together with:
 
 ```bash
 adb logcat -v threadtime tgnet:D tmessages:D 'Telegram/Tunnel:D' '*:S' | rg 'tunnel_trace|tunnel TCP connect failed'

@@ -102,6 +102,7 @@ final class TunnelController {
     private long lifecycleGeneration;
     private long reconnectScheduleGeneration;
     private int maxKnownAccountCount;
+    private long routeActivatedAtNanos;
     private long tcpAttemptLifecycleGeneration;
     private int pendingTcpConnectAttempts;
     private boolean tcpConnectFailureSeen;
@@ -282,7 +283,8 @@ final class TunnelController {
                 long generation = ++lifecycleGeneration;
                 int knownAccountCount = maxKnownAccountCount;
                 applyTunnelRouteForAccountsLocked(knownAccountCount);
-                lifecycleTask = () -> refreshNetworkBindings(generation, knownAccountCount);
+                lifecycleTask = tracedLifecycleTask("network_refresh", generation,
+                        () -> refreshNetworkBindings(generation, knownAccountCount));
             }
         }
         cancelScheduledTask(tcpFailureEvaluationToCancel);
@@ -319,7 +321,8 @@ final class TunnelController {
             long generation = ++lifecycleGeneration;
             int knownAccountCount = maxKnownAccountCount;
             applyTunnelRouteForAccountsLocked(knownAccountCount);
-            lifecycleTask = () -> startRuntime(generation, knownAccountCount, true);
+            lifecycleTask = tracedLifecycleTask("restart", generation,
+                    () -> startRuntime(generation, knownAccountCount, true));
         }
         cancelScheduledTask(reconnectToCancel);
         cancelScheduledTask(tcpFailureEvaluationToCancel);
@@ -341,7 +344,7 @@ final class TunnelController {
         }
         cancelScheduledTask(reconnectToCancel);
         cancelScheduledTask(tcpFailureEvaluationToCancel);
-        lifecycleTaskScheduler.execute(this::stopRuntimeSafely);
+        lifecycleTaskScheduler.execute(tracedLifecycleTask("disable", currentGeneration(), this::stopRuntimeSafely));
     }
 
     void onTunnelTcpConnectStarted(int sourceAccount, long callbackGeneration) {
@@ -414,6 +417,7 @@ final class TunnelController {
     void onTunnelTcpConnected(int sourceAccount, long callbackGeneration) {
         Runnable tcpFailureEvaluationToCancel;
         int pendingAttempts;
+        long routeElapsedMs;
         synchronized (stateLock) {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
@@ -429,8 +433,12 @@ final class TunnelController {
             failureReason = null;
             reconnecting = false;
             pendingAttempts = pendingTcpConnectAttempts;
+            routeElapsedMs = elapsedMillis(routeActivatedAtNanos);
         }
         cancelScheduledTask(tcpFailureEvaluationToCancel);
+        logger.debug("tunnel_trace event=tcp_connected_timing protocol=" + configProvider.protocolLabel()
+                + " account=" + sourceAccount + " generation=" + callbackGeneration
+                + " route_elapsed_ms=" + routeElapsedMs);
         notifyStatusChanged();
         logger.debug("tunnel_trace event=tcp_attempt_connected protocol=" + configProvider.protocolLabel()
                 + " account=" + sourceAccount
@@ -485,13 +493,16 @@ final class TunnelController {
         runtimeState = RuntimeState.STARTING;
         long generation = ++lifecycleGeneration;
         int accountCount = Math.max(1, maxKnownAccountCount);
-        return () -> startRuntime(generation, accountCount, false);
+        return tracedLifecycleTask("initial_start", generation,
+                () -> startRuntime(generation, accountCount, false));
     }
 
     private void startRuntime(long generation, int accountCount, boolean stopFirst) {
         if (!isCurrentLifecycleOperation(generation, RuntimeState.STARTING)) {
             return;
         }
+        logger.debug("tunnel_trace event=runtime_starting protocol=" + configProvider.protocolLabel()
+                + " generation=" + generation + " stop_first=" + stopFirst);
         if (stopFirst) {
             stopRuntimeSafely();
             if (!isCurrentLifecycleOperation(generation, RuntimeState.STARTING)) {
@@ -517,6 +528,9 @@ final class TunnelController {
             return;
         }
 
+        long nativeStartedAt = System.nanoTime();
+        logger.debug("tunnel_trace event=native_start_begin protocol=" + configProvider.protocolLabel()
+                + " generation=" + generation);
         try {
             int status = tunnelRuntime.start(
                     configProvider.buildUserspaceConfig(),
@@ -524,6 +538,9 @@ final class TunnelController {
                     configProvider.dnsServers(),
                     configProvider.mtu()
             );
+            logger.debug("tunnel_trace event=native_start_result protocol=" + configProvider.protocolLabel()
+                    + " generation=" + generation + " status=" + status
+                    + " elapsed_ms=" + elapsedMillis(nativeStartedAt));
             if (status < 0) {
                 stopRuntimeSafely();
                 completeStartFailure(
@@ -536,6 +553,9 @@ final class TunnelController {
                 return;
             }
         } catch (Throwable throwable) {
+            logger.error("tunnel_trace event=native_start_exception protocol=" + configProvider.protocolLabel()
+                    + " generation=" + generation + " error_type=" + throwable.getClass().getSimpleName()
+                    + " elapsed_ms=" + elapsedMillis(nativeStartedAt));
             stopRuntimeSafely();
             completeStartFailure(
                     generation,
@@ -556,12 +576,14 @@ final class TunnelController {
                     || !configProvider.isEnabled();
             if (!stale) {
                 runtimeState = RuntimeState.RUNNING;
+                routeActivatedAtNanos = System.nanoTime();
                 failureReason = null;
             }
             knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
             activeGeneration = lifecycleGeneration;
         }
         if (stale) {
+            logger.debug("tunnel_trace event=runtime_start_discarded generation=" + generation);
             stopRuntimeSafely();
             return;
         }
@@ -597,7 +619,8 @@ final class TunnelController {
         if (throwable != null) {
             logger.error(throwable);
         }
-        logger.error(configProvider.protocolLabel() + " runtime failed: " + reason);
+        logger.error("tunnel_trace event=runtime_failed protocol=" + configProvider.protocolLabel()
+                + " generation=" + generation + " retryable=" + retryable + " route=blocked reason=" + reason);
         notifyStatusChanged();
         applyTunnelRouteForAccounts(knownAccountCount, TunnelRouteState.BLOCKED, failedGeneration);
         scheduleReconnect(scheduledReconnect);
@@ -607,16 +630,25 @@ final class TunnelController {
         if (!isCurrentLifecycleOperation(generation, RuntimeState.STARTING)) {
             return;
         }
+        long startedAt = System.nanoTime();
+        logger.debug("tunnel_trace event=network_refresh_begin protocol=" + configProvider.protocolLabel()
+                + " generation=" + generation);
         try {
             int status = tunnelRuntime.onNetworkChanged();
+            logger.debug("tunnel_trace event=network_refresh_result protocol=" + configProvider.protocolLabel()
+                    + " generation=" + generation + " status=" + status
+                    + " elapsed_ms=" + elapsedMillis(startedAt));
             if (status >= 0) {
                 completeNetworkRefresh(generation, accountCount);
                 return;
             }
-            logger.error(configProvider.protocolLabel() + " network refresh failed with code " + status);
+            logger.error("tunnel_trace event=network_refresh_failed generation=" + generation
+                    + " status=" + status + " action=restart_runtime");
         } catch (Throwable throwable) {
             logger.error(throwable);
-            logger.error(configProvider.protocolLabel() + " network refresh failed");
+            logger.error("tunnel_trace event=network_refresh_failed generation=" + generation
+                    + " error_type=" + throwable.getClass().getSimpleName()
+                    + " elapsed_ms=" + elapsedMillis(startedAt) + " action=restart_runtime");
         }
         stopRuntimeSafely();
         startRuntime(generation, accountCount, false);
@@ -632,6 +664,7 @@ final class TunnelController {
                 return;
             }
             runtimeState = RuntimeState.RUNNING;
+            routeActivatedAtNanos = System.nanoTime();
             failureReason = null;
             reconnecting = false;
             knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
@@ -665,9 +698,16 @@ final class TunnelController {
         long delayMs = RECONNECT_BACKOFF_DELAYS_MS[nextReconnectDelayIndex];
         nextReconnectDelayIndex = (nextReconnectDelayIndex + 1) % RECONNECT_BACKOFF_DELAYS_MS.length;
         long scheduleGeneration = ++reconnectScheduleGeneration;
-        Runnable reconnect = () -> runReconnect(scheduleGeneration);
+        long scheduledAt = System.nanoTime();
+        Runnable reconnect = () -> {
+            logger.debug("tunnel_trace event=reconnect_timer_fired schedule=" + scheduleGeneration
+                    + " delay_ms=" + delayMs + " actual_wait_ms=" + elapsedMillis(scheduledAt));
+            runReconnect(scheduleGeneration);
+        };
         pendingReconnect = reconnect;
-        logger.error(configProvider.protocolLabel() + " reconnect scheduled in " + delayMs + " ms");
+        logger.error("tunnel_trace event=reconnect_scheduled protocol=" + configProvider.protocolLabel()
+                + " generation=" + lifecycleGeneration + " schedule=" + scheduleGeneration
+                + " delay_ms=" + delayMs + " reason=" + failureReason);
         return new ScheduledReconnect(reconnect, delayMs);
     }
 
@@ -720,7 +760,8 @@ final class TunnelController {
             int knownAccountCount = Math.max(accountCount, maxKnownAccountCount);
             resetTcpConnectAttemptsLocked();
             applyTunnelRouteForAccountsLocked(knownAccountCount);
-            lifecycleTask = () -> stopAndScheduleReconnect(generation, knownAccountCount);
+            lifecycleTask = tracedLifecycleTask("tcp_failure_recovery", generation,
+                    () -> stopAndScheduleReconnect(generation, knownAccountCount));
         }
         notifyStatusChanged();
         executeLifecycleTask(lifecycleTask);
@@ -744,6 +785,8 @@ final class TunnelController {
             generation = ++lifecycleGeneration;
             accountCount = Math.max(1, maxKnownAccountCount);
         }
+        logger.debug("tunnel_trace event=reconnect_started protocol=" + configProvider.protocolLabel()
+                + " generation=" + generation + " schedule=" + scheduleGeneration);
         notifyStatusChanged();
         applyTunnelRouteForAccounts(accountCount, TunnelRouteState.BLOCKED, generation);
         startRuntime(generation, accountCount, true);
@@ -752,6 +795,10 @@ final class TunnelController {
     private Runnable clearPendingReconnectLocked(boolean resetBackoff) {
         Runnable reconnectToCancel = pendingReconnect;
         pendingReconnect = null;
+        if (reconnectToCancel != null) {
+            logger.debug("tunnel_trace event=reconnect_cancelled generation=" + lifecycleGeneration
+                    + " schedule=" + reconnectScheduleGeneration);
+        }
         ++reconnectScheduleGeneration;
         if (resetBackoff) {
             nextReconnectDelayIndex = 0;
@@ -797,10 +844,42 @@ final class TunnelController {
         }
     }
 
+    private static long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000L;
+    }
+
+    private long currentGeneration() {
+        synchronized (stateLock) {
+            return lifecycleGeneration;
+        }
+    }
+
+    // Measure queue wait separately from native work, which may block on DNS or shutdown.
+    private Runnable tracedLifecycleTask(String operation, long generation, Runnable task) {
+        long queuedAt = System.nanoTime();
+        logger.debug("tunnel_trace event=lifecycle_queued operation=" + operation + " generation=" + generation);
+        return () -> {
+            long startedAt = System.nanoTime();
+            logger.debug("tunnel_trace event=lifecycle_begin operation=" + operation + " generation=" + generation
+                    + " queue_wait_ms=" + elapsedMillis(queuedAt));
+            try {
+                task.run();
+            } finally {
+                logger.debug("tunnel_trace event=lifecycle_end operation=" + operation + " generation=" + generation
+                        + " elapsed_ms=" + elapsedMillis(startedAt));
+            }
+        };
+    }
+
     private void stopRuntimeSafely() {
+        long startedAt = System.nanoTime();
+        logger.debug("tunnel_trace event=runtime_stop_begin");
         try {
             tunnelRuntime.stop();
+            logger.debug("tunnel_trace event=runtime_stopped elapsed_ms=" + elapsedMillis(startedAt));
         } catch (Throwable throwable) {
+            logger.error("tunnel_trace event=runtime_stop_failed elapsed_ms=" + elapsedMillis(startedAt)
+                    + " error_type=" + throwable.getClass().getSimpleName());
             logger.error(throwable);
         }
     }
