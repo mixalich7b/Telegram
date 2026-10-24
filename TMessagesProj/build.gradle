@@ -320,12 +320,12 @@ tasks.register("testTunnelGo", Exec) {
     description = "Runs host-side Go tests for the internal WireGuard/AmneziaWG bridge."
     group = "verification"
     workingDir file("jni/tg_tunnel/go")
-    def goTestBuildDir = new File(gradle.gradleUserHomeDir, "tunnel-go-test")
-    environment "GOCACHE", file("${goTestBuildDir}/gocache")
-    environment "GOMODCACHE", file("${goTestBuildDir}/gomod")
+    def goTestBuildDir = layout.buildDirectory.dir("tunnel-go-test").get().asFile
+    environment "GOCACHE", new File(goTestBuildDir, "gocache")
+    environment "GOMODCACHE", new File(goTestBuildDir, "gomod")
     doFirst {
-        file("${goTestBuildDir}/gocache").mkdirs()
-        file("${goTestBuildDir}/gomod").mkdirs()
+        new File(goTestBuildDir, "gocache").mkdirs()
+        new File(goTestBuildDir, "gomod").mkdirs()
     }
     commandLine "go", "test", "-count=1", "./..."
 }

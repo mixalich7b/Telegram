@@ -1,0 +1,41 @@
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
+
+// Treat clean as a disk-space cleanup, including AGP's native staging trees.
+// Delete supplies Gradle's retries and reports the specific paths it cannot remove.
+allprojects { moduleProject ->
+    moduleProject.pluginManager.apply('base')
+    moduleProject.tasks.named('clean', Delete).configure { cleanTask ->
+        delete moduleProject.layout.buildDirectory,
+                moduleProject.file('.cxx'), moduleProject.file('.externalNativeBuild')
+        followSymlinks = false
+        doFirst {
+            // Go extracts module directories as read-only. Unlinking their
+            // children requires writable parents even on POSIX systems.
+            cleanTask.targetFiles.each { output ->
+                if (Files.exists(output.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                    Files.walkFileTree(output.toPath(), new SimpleFileVisitor<Path>() {
+                        @Override
+                        FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                            if (!Files.isWritable(directory) && !directory.toFile().setWritable(true, true)) {
+                                throw new IOException("Cannot make build directory writable: ${directory}. Check its owner and permissions.")
+                            }
+                            return FileVisitResult.CONTINUE
+                        }
+                    })
+                }
+            }
+        }
+    }
+}
+
+// Both `clean` and `:clean` cover all modules, including projects without an
+// Android plugin. A qualified module clean only removes that module's outputs.
+tasks.named('clean').configure {
+    dependsOn subprojects.collect { it.tasks.named('clean') }
+    delete rootProject.file('buildSrc/build')
+}

@@ -41,8 +41,20 @@ tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.
 When investigating clean-build failures, reproduce the user's exact combined
 command; a successful incremental build does not exercise this ordering.
-Each module's `clean` task also removes its `.cxx` directory, which holds
-regenerable Android Gradle Plugin CMake state outside `build/`.
+`./gradlew clean` removes root/module `build/` directories, `buildSrc/build/`,
+and native staging trees (`.cxx/` and legacy `.externalNativeBuild/`). This includes
+APKs, object files, generated tgcalls sources, downloaded native Go toolchains
+and their module/build caches. Host Go test caches also live under the module's
+`build/` directory. The next native build downloads its Go toolchain and modules
+again. Gradle's project state and shared dependency caches, Android SDK/NDK and
+source submodules remain build inputs and are not deleted.
+
+Cleanup uses Gradle `Delete` tasks, makes read-only Go cache directories writable,
+and never follows symlinks. Permission failures identify the affected path.
+The canonical checks exercise root/module cleanup, read-only directories,
+symlink preservation and combined clean/build ordering in temporary Gradle
+projects. A qualified module clean only removes that module's build outputs;
+both `clean` and `:clean` at the repository root cover all modules.
 
 JVM unit tests under `TMessagesProj/src/test/java` cover:
 

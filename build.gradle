@@ -20,6 +20,7 @@ repositories {
 tasks.register("verifyTunnelCommandContract") {
     description = "Checks that the documented tunnel commands and Gradle entry points stay aligned."
     group = "verification"
+    dependsOn "testBuildCleanup"
     doLast {
         def agentsText = rootProject.file("AGENTS.md").text
         def testingDocsText = rootProject.file("docs/tunnel-testing.md").text
@@ -117,27 +118,13 @@ tasks.register("tunnelPackageDebug") {
     dependsOn ":TMessagesProj_App:assembleAfatDebug"
 }
 
-// Android Gradle Plugin keeps CMake state in <module>/.cxx, outside buildDir.
-// Remove it after the module's native clean dependencies have finished.
-allprojects { moduleProject ->
-    moduleProject.tasks.matching { it.name == "clean" }.configureEach { cleanTask ->
-        cleanTask.doLast {
-            def cxxDirectory = moduleProject.file(".cxx")
-            if (cxxDirectory.exists()) {
-                // Go module source trees can contain read-only directories. POSIX
-                // needs write permission on each parent to unlink its children.
-                cxxDirectory.eachFileRecurse { entry ->
-                    if (entry.isDirectory()) {
-                        entry.setWritable(true, true)
-                    }
-                }
-                cxxDirectory.setWritable(true, true)
-                if (!cxxDirectory.deleteDir()) {
-                    throw new GradleException("Could not remove ${cxxDirectory}")
-                }
-            }
-        }
-    }
+apply from: rootProject.file('gradle/clean.gradle')
+
+tasks.register("testBuildCleanup", Exec) {
+    description = "Checks Gradle cleanup on isolated projects without Android compilation."
+    group = "verification"
+    workingDir rootProject.projectDir
+    commandLine "python3", "-B", "-m", "unittest", "discover", "-s", "Tools/tests", "-p", "test_gradle_clean.py"
 }
 
 // Strip JLatexMath fonts we don't ship (transitive AAR assets from

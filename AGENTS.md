@@ -242,6 +242,11 @@ AmneziaWG peer.
 - Native clean tasks must not depend on tgcalls source preparation. Otherwise
   combined `clean` and assemble invocations can deadlock Gradle's producer/delete
   ordering for the generated sources under `build/`.
+- Root `clean` must reclaim project build outputs, including module `build/`,
+  native `.cxx/`/`.externalNativeBuild/`, `buildSrc/build/`, and project-owned Go
+  toolchains/caches. Use Gradle `Delete` without following symlinks; handle
+  read-only Go cache directories before deletion. Keep host Go test caches under
+  the module build directory. Do not delete SDK/NDK or shared Gradle caches.
 - Private VoIP has multiple native paths. When changing routing, audit:
   - legacy/private `NetworkManager.cpp`;
   - V2 custom `NativeNetworkingImpl.cpp`;
