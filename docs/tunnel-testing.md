@@ -31,6 +31,11 @@ outputs, revision mismatch, unapplicable patches, concurrent preparation, and
 preparation inside a parent repository. Static guards read the prepared sources
 that CMake compiles, not old copies under `jni/voip/tgcalls`.
 
+After upstream merges, synchronize submodules to their recorded gitlinks with
+`git submodule update --init --recursive` before running the canonical check.
+An older local submodule checkout can otherwise hide a patch-base mismatch that
+fails on a clean checkout or CI.
+
 Native configure/build tasks must prepare tgcalls, while `externalNativeBuildClean*`
 tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.
@@ -215,12 +220,7 @@ Cover these flows:
 - When an invariant intentionally changes, update tests, static guards, docs,
   and `AGENTS.md` together.
 
-## Upstream Proxy / Media Migration Smoke Checks
-
-Before building a fresh checkout, initialize the pinned submodules with
-`git submodule update --init --recursive`. The Media3 settings script and the
-BoringSSL/TD headers are submodule inputs; native archives live under
-`TMessagesProj/jni/prebuild/lib/<ABI>`.
+## Proxy And Tunnel Interaction Smoke Checks
 
 On a device, exercise both WG and AWG with a saved WEB proxy: cold start,
 WEB-to-tunnel switching, a blocked tunnel, and more than one Telegram account.
@@ -236,11 +236,10 @@ disable the tunnel. Verify ordinary proxy-for-calls appears only for SOCKS5,
 and tunnel-for-calls continues to control only newly created sessions. Include
 private P2P/relay, group and live sessions in the server-backed smoke test.
 
-After the Media3 migration, also check photo/video swipe dismissal, upward
-swipe to PiP and the proxy/tunnel entry before login. Static guards do not
-replace these UI/WebView lifecycle or real-server checks.
+Verify that the proxy/tunnel entry remains available before login. Static
+guards do not replace route-switching UI or real-server checks.
 
-### Native/WASM call versions after the 12.10.5 merge
+### Native/WASM Call Routing
 
 On arm64, exercise both 18.0.0 and 19.0.0 with WG and AWG. Cover P2P on/off,
 UDP relay, TCP-only TURN, hostname TURN with tunnel DNS, session reconfiguration,

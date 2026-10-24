@@ -17,9 +17,8 @@ profiles, and delete profiles.
 - AmneziaWG uses `github.com/amnezia-vpn/amneziawg-go v0.2.18` with
   `tun/netstack`; the pinned module requires Go `1.24.4`.
 
-AmneziaWG is built as a sibling runtime, not as a replacement for WireGuard.
-The separate native libraries reduce regression risk for existing WireGuard
-profiles and keep packaging checks explicit.
+WireGuard and AmneziaWG use separate JNI wrappers backed by one shared Go
+library, `libtg-tunnel-go.so`. The active profile selects the protocol runtime.
 
 Reviewed upstream references:
 
@@ -80,9 +79,8 @@ native direct-route reset. Delayed rotation cannot enable an ordinary proxy whil
 a tunnel is enabled. WEB connection probes use a separate diagnostic transport;
 they do not change the selected route or start the main carrier.
 
-The upstream TLS ClientHello generator lives in `tgnet/TLSHello.cpp/.h` and is
-shared by the existing secret transport paths. `ConnectionSocket.cpp` retains
-the tunnel bridge, socket-generation checks and complete-write relay behavior.
+`ConnectionSocket.cpp` implements the tgnet tunnel bridge, socket-generation
+checks and complete-write behavior.
 
 ## Patched VoIP Sources
 
@@ -390,8 +388,7 @@ implemented; tunnel VoIP UDP uses the direct tunnel socket bridge instead.
 - `wireguard-go` and `amneziawg-go` increase binary size and CPU overhead.
 - Real WireGuard and AmneziaWG server validation is required for release
   confidence.
-- License review is required for tunnel dependencies and this Telegram client
-  codebase.
+- License review is required for tunnel dependencies.
 
 See `docs/tunnel-ui-configuration.md` for UI behavior and
 `docs/tunnel-testing.md` for verification.

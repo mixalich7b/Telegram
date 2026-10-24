@@ -126,5 +126,3 @@ reason in a toast.
 - UDP ASSOCIATE support.
 - Multiple peers per profile.
 - Device-level VPN UI or Android VPN permission prompts.
-- Committing real WireGuard keys, AmneziaWG keys, endpoints, Telegram `APP_ID`,
-  or Telegram `APP_HASH`.
