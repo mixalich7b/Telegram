@@ -120,6 +120,11 @@ set_target_properties(tdutils PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTOR
 add_library(prisma STATIC IMPORTED)
 set_target_properties(prisma PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}/prebuild/lib/${ANDROID_ABI}/libprisma.a)
 
+# One shared native file sink; contains no Go runtime or tunnel lifecycle code.
+add_library(tg-tunnel-log SHARED tg_tunnel/TunnelLog.cpp)
+target_compile_definitions(tg-tunnel-log PRIVATE TG_TUNNEL_LOGS_ENABLED=$<BOOL:${TG_TUNNEL_LOGS_ENABLED}>)
+target_link_libraries(tg-tunnel-log log)
+
 #tgnet
 add_library(tgnet STATIC
         openssl/aes_ige.c
@@ -153,7 +158,7 @@ target_include_directories(tgnet PUBLIC
         third_party/boringssl/include
         openssl/include)
 target_link_libraries(tgnet
-        crypto)
+        crypto tg-tunnel-log)
 
 set(TG_TUNNEL_OUTPUT_DIR "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 if ("${TG_TUNNEL_OUTPUT_DIR}" STREQUAL "")
@@ -173,6 +178,8 @@ add_custom_command(
                 ${CMAKE_HOME_DIRECTORY}/tg_tunnel/go/build-android.sh ${TG_TUNNEL_GO_SO}
         WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tg_tunnel/go
         DEPENDS
+                tg-tunnel-log
+                tg_tunnel/TunnelLogApi.h
                 tg_tunnel/go/build-android.sh
                 tg_tunnel/go/go.mod
                 tg_tunnel/go/go.sum
@@ -193,7 +200,7 @@ add_library(tg-wg SHARED
         tg_wg/tg_wg_jni.cpp)
 add_dependencies(tg-wg tg-tunnel-go tg-tunnel-go-lib)
 target_link_libraries(tg-wg
-        tg-tunnel-go-lib
+        tg-tunnel-log tg-tunnel-go-lib
         log
         dl)
 
@@ -201,7 +208,7 @@ add_library(tg-awg SHARED
         tg_awg/tg_awg_jni.cpp)
 add_dependencies(tg-awg tg-tunnel-go tg-tunnel-go-lib)
 target_link_libraries(tg-awg
-        tg-tunnel-go-lib
+        tg-tunnel-log tg-tunnel-go-lib
         log
         dl)
 
@@ -277,6 +284,7 @@ target_include_directories(breakpad PUBLIC
 
 #voip
 include(${CMAKE_HOME_DIRECTORY}/voip/CMakeLists.txt)
+target_link_libraries(tgcalls PRIVATE tg-tunnel-log)
 
 foreach(TG_LOG_TARGET IN ITEMS tgnet tg-wg tg-awg tgcalls)
     target_compile_definitions(${TG_LOG_TARGET} PRIVATE TG_TUNNEL_LOGS_ENABLED=$<BOOL:${TG_TUNNEL_LOGS_ENABLED}>)

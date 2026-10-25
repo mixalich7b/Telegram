@@ -459,6 +459,23 @@ tasks.register("verifyWireGuardStaticGuards") {
         if (!tunnelLogText.contains("BuildConfig.TG_TUNNEL_LOGS_ENABLED")) {
             throw new GradleException("Java tunnel logs must use the independent build flag")
         }
+        if (!tunnelLogText.contains("nativeWriteFile") || !tunnelLogText.contains("nativeSnapshot")) {
+            throw new GradleException("Java tunnel logs must share the native file sink and export snapshot")
+        }
+        def profileLogExportText = file("src/main/java/org/telegram/ui/ProfileActivity.java").text
+        ["TunnelLog.createExportSnapshot()", "files.addAll(tunnelSnapshot.files())",
+         "BuildVars.LOGS_ENABLED || TunnelLog.isEnabled()"].each { token ->
+            if (!profileLogExportText.contains(token)) {
+                throw new GradleException("Tunnel logs must export independently of general logging: ${token}")
+            }
+        }
+        if (!file("src/main/java/org/telegram/ui/SettingsActivity.java").text.contains(
+                "BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION || TunnelLog.isEnabled()")) {
+            throw new GradleException("Settings log export must be available with only tunnel logging enabled")
+        }
+        if (!file("src/main/java/org/telegram/messenger/FileLog.java").text.contains("TunnelLog.clear()")) {
+            throw new GradleException("Clearing logs must coordinate with the tunnel file worker")
+        }
         def goRuntimeText = file("jni/tg_tunnel/go/tg_tunnel.go").text
         if (goRuntimeText.contains("NewLogger(")) {
             throw new GradleException("Tunnel device logs must use the gated Go logger instead of stdout")
@@ -784,7 +801,7 @@ tasks.register("testTunnelLogging") {
             exec {
                 commandLine System.getenv("CXX") ?: "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
                         "-DTG_TUNNEL_LOGS_ENABLED=${enabled}", "-I", file("src/test/cpp/tunnel_logging"),
-                        "-I", file("jni"), file("src/test/cpp/TunnelLoggingTest.cpp"), "-o", binary
+                        "-I", file("jni"), file("src/test/cpp/TunnelLoggingTest.cpp"), file("jni/tg_tunnel/TunnelLog.cpp"), "-pthread", "-o", binary
             }
             exec { commandLine binary }
         }

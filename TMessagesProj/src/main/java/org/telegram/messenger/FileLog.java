@@ -617,6 +617,7 @@ public class FileLog {
     }
 
     public static void cleanupLogs() {
+        TunnelLog.clear();
         ensureInitied();
         File dir = AndroidUtilities.getLogsDir();
         if (dir == null) {
@@ -626,6 +627,10 @@ public class FileLog {
         if (files != null) {
             for (int a = 0; a < files.length; a++) {
                 File file = files[a];
+                // The tunnel worker must close its current file before deleting it.
+                if (TunnelLog.isLogFile(file)) {
+                    continue;
+                }
                 if (getInstance().currentFile != null && file.getAbsolutePath().equals(getInstance().currentFile.getAbsolutePath())) {
                     continue;
                 }

@@ -103,12 +103,32 @@ logs, tgnet tunnel TCP/MTProto events, JNI bridge errors, Go bridge/device error
 and dedicated VoIP tunnel socket logs. Turning general app logging on cannot
 re-enable these logs when the tunnel flag is false.
 
-Tunnel diagnostics go directly to logcat under `Telegram/Tunnel`; they are not
-duplicated into Telegram's general FileLog files. Capture all of them with:
+Tunnel diagnostics go to logcat under `Telegram/Tunnel` and to the dedicated
+`tunnel.log` in the app's normal logs directory. Java, tgnet, JNI, Go and VoIP
+share one asynchronous native file worker (`libtg-tunnel-log.so`, with no Go
+runtime), independent of Telegram's FileLog. It starts before tunnel startup;
+filesystem writes do not run on lifecycle, tgnet or UI threads. Capture logcat
+with:
 
 ```bash
 adb logcat -v threadtime 'Telegram/Tunnel:D' '*:S'
 ```
+
+The file uses UTC timestamps and severity, appends across restarts, and rotates
+at 4 MiB into `tunnel.1.log` (at most 8 MiB of retained logs). A bounded queue
+holds up to 1024 pending messages; overload is reported by a
+`file_log_overflow dropped=...` record. Abrupt process termination can lose queued
+file records; logcat is emitted immediately. File I/O failures are reported in
+logcat without disrupting tunnel routing.
+
+Settings → Debug → Send Logs / Send Last Logs includes both tunnel files with
+ordinary logs, even when general app logging is off. Export drains preceding
+queued records and copies both files on the file worker before building the
+ZIP; new traffic and rotation cannot change that snapshot. The usual 24-hour
+filter still applies to Send Last Logs. Temporary snapshots are deleted after
+export. Clear Logs clears the tunnel files on their worker and allows later
+records to create a new file. When the build flag is false, no new tunnel files
+are created; previously saved files can still be exported or cleared.
 
 Start capture before reproducing the delay; add `-d` to dump the retained logcat
 buffer, or redirect output to a file to preserve a long reproduction. These logs
@@ -165,8 +185,11 @@ succeeds, use the aggregate `pending` and settlement events to distinguish a
 long-running attempt from reconnect backoff.
 
 Host checks exercise the native logger with the tunnel flag both on and off,
-and each app-wide log state; disabled logging must not evaluate log arguments.
-Go tests exercise enabled and disabled bridge diagnostics. Static guards prevent
+and each app-wide log state; disabled logging must not evaluate log arguments
+or create files. They also cover records before initialization, Java/Go C ABI
+inputs, queue drain, concurrent producers, stable export snapshots, rotation,
+clear/reopen, preservation of prior-process records and recovery after export
+or file-open failure. Go tests exercise enabled and disabled bridge diagnostics. Static guards prevent
 Java and dedicated VoIP diagnostics from returning to app-wide log sinks and
 prevent upstream Go device loggers from bypassing the flag via stdout.
 

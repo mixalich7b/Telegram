@@ -47,6 +47,8 @@ unset GOROOT
 
 mkdir -p "$(dirname "$output_so")" "$build_dir/gomod" "$build_dir/gocache"
 version_script="$script_dir/exports.map"
+# The CMake dependency builds this shared sink before the Go bridge is linked.
+export CGO_LDFLAGS="${CGO_LDFLAGS:-} \"-L$(dirname "$output_so")\""
 
 export GOOS=android
 export GOARCH="$goarch"

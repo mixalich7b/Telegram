@@ -148,7 +148,12 @@ request payloads. All dedicated Java, tgnet, JNI, Go and VoIP tunnel diagnostics
 use the same build flag and the `Telegram/Tunnel` logcat tag, independently of
 `LOGS_ENABLED`. Set `TG_TUNNEL_LOGS_ENABLED=false` in `gradle.properties` to
 silence them, including when general app logging is enabled. Tunnel logs bypass
-the application's file log sink.
+the application's file log sink and use a dedicated shared asynchronous sink
+in `libtg-tunnel-log.so`. It records all sources into `tunnel.log`, rotates at
+4 MiB with one backup, and supplies consistent snapshots to the existing log
+export. Export remains available when only tunnel logging is enabled. This
+small native library contains no Go runtime; `libtg-tunnel-go.so` remains the
+only Go runtime in the process.
 
 ## Profile Storage
 

@@ -192,8 +192,17 @@ AmneziaWG peer.
 - Use the `Telegram/Tunnel` logcat tag and dedicated sinks, without routing back
   through app-wide FileLog or WebRTC logging gates. Do not log profile secrets
   or raw Java exception messages/stack traces that could contain profile data.
+- Enabled tunnel logs go to both logcat and the shared asynchronous file sink
+  (`libtg-tunnel-log.so`), which contains no Go runtime. Initialize it before
+  tunnel startup. Keep `tunnel.log` and one rotated `tunnel.1.log` bounded to
+  4 MiB each, with a bounded queue and explicit overflow markers.
+- Export must drain queued records and copy a consistent snapshot on the file
+  worker, then add both files to the normal log archive. Export controls must
+  remain available with tunnel logging on and general app logging off. Clearing
+  logs must use the file worker so an unlinked open file cannot swallow new logs.
 - Canonical checks include native logger on/off coverage with each general-log
-  state, Go logger on/off coverage and guards against bypassing the flag.
+  state, queue drain/snapshot, concurrent writers, rotation and clear/reopen,
+  Go logger on/off coverage and guards against bypassing the flag.
 
 ## UI Invariants
 

@@ -193,6 +193,7 @@ public class ApplicationLoader extends Application {
             return;
         }
         applicationInited = true;
+        TunnelLog.init();
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
         TunnelManager.startIfEnabled();
 
@@ -325,6 +326,7 @@ public class ApplicationLoader extends Application {
             applicationContext = getApplicationContext();
         }
 
+        TunnelLog.init();
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
 
         try {

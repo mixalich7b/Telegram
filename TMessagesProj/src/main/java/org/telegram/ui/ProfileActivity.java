@@ -130,6 +130,7 @@ import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.messenger.TunnelLog;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -10677,11 +10678,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 questionRow = rowCount++;
                 faqRow = rowCount++;
                 policyRow = rowCount++;
-                if (BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION) {
+                if (BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION || TunnelLog.isEnabled()) {
                     helpSectionCell = rowCount++;
                     debugHeaderRow = rowCount++;
                 }
-                if (BuildVars.LOGS_ENABLED) {
+                if (BuildVars.LOGS_ENABLED || TunnelLog.isEnabled()) {
                     sendLogsRow = rowCount++;
                     sendLastLogsRow = rowCount++;
                     clearLogsRow = rowCount++;
@@ -12979,7 +12980,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         progressDialog.setCanCancel(false);
         progressDialog.show();
         Utilities.globalQueue.postRunnable(() -> {
-            try {
+            try (TunnelLog.ExportSnapshot tunnelSnapshot = TunnelLog.createExportSnapshot()) {
                 File dir = AndroidUtilities.getLogsDir();
                 if (dir == null) {
                     AndroidUtilities.runOnUIThread(progressDialog::dismiss);
@@ -12994,9 +12995,14 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 ArrayList<File> files = new ArrayList<>();
 
                 File[] logFiles = dir.listFiles();
-                for (File f : logFiles) {
-                    files.add(f);
+                if (logFiles != null) {
+                    for (File f : logFiles) {
+                        if (!tunnelSnapshot.replacesLiveFiles() || !TunnelLog.isLogFile(f)) {
+                            files.add(f);
+                        }
+                    }
                 }
+                files.addAll(tunnelSnapshot.files());
 
                 File filesDir = ApplicationLoader.getFilesDirFixed();
                 filesDir = new File(filesDir, "malformed_database/");
@@ -13085,7 +13091,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 });
             } catch (Exception e) {
-                e.printStackTrace();
+                TunnelLog.e(e);
+                AndroidUtilities.runOnUIThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(activity, LocaleController.getString(R.string.ErrorOccurred), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }

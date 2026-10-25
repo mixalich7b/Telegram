@@ -221,7 +221,7 @@ tasks.register("verifyWireGuardAfatDebugPackaging") {
 
         def abis = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
         abis.each { abi ->
-            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-tunnel-go.so", "lib/${abi}/libtg-awg.so"].each { lib ->
+            ["lib/${abi}/libtg-wg.so", "lib/${abi}/libtg-tunnel-go.so", "lib/${abi}/libtg-awg.so", "lib/${abi}/libtg-tunnel-log.so"].each { lib ->
                 def libName = lib.toString()
                 if (!entries.contains(libName)) {
                     throw new GradleException("APK is missing required tunnel library ${libName}")

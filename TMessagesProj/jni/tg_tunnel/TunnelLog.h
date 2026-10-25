@@ -2,6 +2,8 @@
 
 #include <android/log.h>
 #include <cstdarg>
+#include <cstdio>
+#include "TunnelLogApi.h"
 #include <sstream>
 
 #ifndef TG_TUNNEL_LOGS_ENABLED
@@ -16,7 +18,9 @@ inline void tgTunnelLog(int priority, const char *format, ...) {
     }
     va_list args;
     va_start(args, format);
-    __android_log_vprint(priority, "Telegram/Tunnel", format, args);
+    char message[8193];
+    vsnprintf(message, sizeof(message), format, args);
+    tgTunnelLogWrite(priority, message);
     va_end(args);
 }
 

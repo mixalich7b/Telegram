@@ -2,17 +2,16 @@
 
 package main
 
-// #cgo LDFLAGS: -llog
+// #cgo LDFLAGS: -ltg-tunnel-log
 // #include <stdlib.h>
 // #include <android/log.h>
+// #include "../TunnelLogApi.h"
 import "C"
 
 import (
 	"fmt"
 	"unsafe"
 )
-
-const logTag = "Telegram/Tunnel"
 
 func logDebug(format string, args ...any) {
 	logAndroid(C.ANDROID_LOG_DEBUG, format, args...)
@@ -26,9 +25,7 @@ func logAndroid(level C.int, format string, args ...any) {
 	if tunnelLogsEnabled != "true" {
 		return
 	}
-	tag := C.CString(logTag)
 	message := C.CString(fmt.Sprintf(format, args...))
-	C.__android_log_write(level, tag, message)
-	C.free(unsafe.Pointer(tag))
+	C.tgTunnelLogWrite(level, message)
 	C.free(unsafe.Pointer(message))
 }
