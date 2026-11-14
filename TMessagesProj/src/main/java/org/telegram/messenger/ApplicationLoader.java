@@ -195,6 +195,7 @@ public class ApplicationLoader extends Application {
         applicationInited = true;
         TunnelLog.init();
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
+        NetworkAddressSettings.initialize();
         TunnelManager.startIfEnabled();
 
         try {
@@ -339,6 +340,7 @@ public class ApplicationLoader extends Application {
 
         TunnelLog.init();
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
+        NetworkAddressSettings.initialize();
 
         try {
             ConnectionsManager.native_setJava(false);

@@ -11,6 +11,17 @@ add profiles manually, import config files, scan config QR codes, persist
 settings across restarts, enable a tunnel before authorization, switch saved
 profiles, and delete profiles.
 
+The global `Use IPv6` preference is enforced in tgnet strategy selection and
+socket boundaries, WebRTC device sockets/DNS/network enumeration, and the shared
+Go runtime. IPv4-only tunnel startup filters local/DNS addresses and endpoints;
+TCP dials use `tcp4`, UDP destinations and DNS answers are filtered, and a
+dedicated IPv4 outer bind prevents IPv6 endpoint roaming. Policy changes
+atomically retire the previous Go runtime policy and its socket handles before
+the asynchronous restart, including when the toggle is quickly reversed. IPv6-only paths fail
+closed without changing saved profiles or selecting a direct route. WEB proxy
+is exempt. `NetworkAddressSettings` tracks all native VoIP instance lifetimes
+and defers policy application/reconnect until the last active instance stops.
+
 ## Protocols
 
 - WireGuard uses `wireguard-go` with `tun/netstack`.

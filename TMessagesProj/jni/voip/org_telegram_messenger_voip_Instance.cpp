@@ -1,3 +1,4 @@
+#include "tgnet/NetworkAddressPolicy.h"
 #include "org_telegram_messenger_voip_Instance.h"
 
 #include <jni.h>
@@ -848,7 +849,7 @@ JNIEXPORT void JNICALL Java_org_telegram_messenger_voip_NativeInstance_setVideoE
 // does. Both entries keep the same id: it travels on the wire as
 // reflector-<id>-<tag>.reflector and the peer matches on it.
 static void pushRtcServerWithIpv6(std::vector<RtcServer> &rtcServers, RtcServer &&rtcServer, std::string const &ipv6) {
-    if (ipv6.empty()) {
+    if (ipv6.empty() || !tgnet::ipv6Enabled()) {
         rtcServers.push_back(std::move(rtcServer));
         return;
     }

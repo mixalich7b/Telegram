@@ -1,3 +1,4 @@
+#include "tgnet/NetworkAddressPolicy.h"
 /*
  *  Copyright 2004 The WebRTC Project Authors. All rights reserved.
  *
@@ -352,13 +353,17 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
     ipv6_any_address_network_->set_mdns_responder_provider(this);
     ipv6_any_address_network_->AddIP(ipv6_any_address);
   }
-  networks.push_back(ipv6_any_address_network_.get());
+  if (tgnet::ipv6Enabled()) networks.push_back(ipv6_any_address_network_.get());
   return networks;
 }
 
 std::vector<const Network*> NetworkManagerBase::GetNetworks() const {
   std::vector<const Network*> result;
-  result.insert(result.begin(), networks_.begin(), networks_.end());
+  for (const auto *network : networks_) {
+    if (tgnet::ipv6Enabled() || network->prefix().family() != AF_INET6) {
+      result.push_back(network);
+    }
+  }
   return result;
 }
 

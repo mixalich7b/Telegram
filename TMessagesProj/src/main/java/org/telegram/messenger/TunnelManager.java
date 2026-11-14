@@ -200,6 +200,12 @@ public final class TunnelManager {
         return TunnelVoipRouting.selectProxySettings(isVoipRoutingEnabled(), getProxySettings());
     }
 
+    public static void onIpVersionPolicyChanged() {
+        if (WireGuardSettings.isEnabled()) {
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+        }
+    }
+
     public static void onNetworkChanged() {
         controller.onNetworkChanged(UserConfig.MAX_ACCOUNT_COUNT);
     }
@@ -238,10 +244,10 @@ public final class TunnelManager {
             activeProtocol = protocol;
             if (protocol == TunnelProtocol.AMNEZIA_WG) {
                 System.loadLibrary(AMNEZIA_NATIVE_LIBRARY_NAME);
-                return nativeAmneziaWGStart(userspaceConfig, localAddresses, dnsServers, mtu);
+                return nativeAmneziaWGStart(userspaceConfig, localAddresses, dnsServers, mtu, NetworkAddressSettings.isIpv6Enabled());
             }
             System.loadLibrary(WIREGUARD_NATIVE_LIBRARY_NAME);
-            return nativeWireGuardStart(userspaceConfig, localAddresses, dnsServers, mtu);
+            return nativeWireGuardStart(userspaceConfig, localAddresses, dnsServers, mtu, NetworkAddressSettings.isIpv6Enabled());
         }
 
         @Override
@@ -263,10 +269,10 @@ public final class TunnelManager {
         }
     }
 
-    private static native int nativeWireGuardStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu);
+    private static native int nativeWireGuardStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, boolean ipv6Enabled);
     private static native int nativeWireGuardOnNetworkChanged();
     private static native void nativeWireGuardStop();
-    private static native int nativeAmneziaWGStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu);
+    private static native int nativeAmneziaWGStart(String userspaceConfig, String[] localAddresses, String[] dnsServers, int mtu, boolean ipv6Enabled);
     private static native int nativeAmneziaWGOnNetworkChanged();
     private static native void nativeAmneziaWGStop();
 }

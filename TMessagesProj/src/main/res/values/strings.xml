@@ -11739,4 +11739,6 @@
     <string name="FpnvConsentSimSlot">SIM Slot</string>
     <string name="FpnvConsentSimSlotValue">SIM %1$d</string>
     <string name="FpnvConsentPhoneNumber">Phone Number</string>
+    <string name="UseIPv6">Use IPv6</string>
+    <string name="UseIPv6Info">When disabled, Telegram, SOCKS5/MTProto proxies, calls and tunnels use IPv4 only. This setting does not apply to WEB proxy. Changes take effect after active calls end.</string>
 </resources>

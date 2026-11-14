@@ -38,6 +38,9 @@ func TestOnNetworkChangedReportsBindUpdateFailure(t *testing.T) {
 }
 
 func withRuntimeState(t *testing.T, next *runtimeState) {
+	if next != nil {
+		next.policy = currentIPPolicy.Load()
+	}
 	t.Helper()
 
 	stateMu.Lock()

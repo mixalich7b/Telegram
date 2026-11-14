@@ -29,6 +29,7 @@ import org.json.JSONObject;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.NetworkAddressSettings;
 import org.telegram.messenger.BaseController;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.CaptchaController;
@@ -190,7 +191,11 @@ public class ConnectionsManager extends BaseController {
         }
 
         public String getAddress() {
-            return addresses.get(Utilities.random.nextInt(addresses.size()));
+            ArrayList<String> suitable = new ArrayList<>();
+            for (String address : addresses) {
+                if (NetworkAddressSettings.isIpv6Enabled() || !address.contains(":")) suitable.add(address);
+            }
+            return suitable.isEmpty() ? "" : suitable.get(Utilities.random.nextInt(suitable.size()));
         }
     }
 
@@ -658,6 +663,15 @@ public class ConnectionsManager extends BaseController {
         native_setUserId(currentAccount, id);
     }
 
+    public static void onIpVersionPolicyChanged() {
+        dnsCache.clear();
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) {
+            ConnectionsManager instance = Instance[account];
+            if (instance != null) instance.checkConnection();
+            native_onIpPolicyChanged(account);
+        }
+    }
+
     public void checkConnection() {
         byte selectedStrategy = getIpStrategy();
         if (BuildVars.LOGS_ENABLED) {
@@ -1048,6 +1062,8 @@ public class ConnectionsManager extends BaseController {
     public static native void native_switchBackend(int currentAccount, boolean restart);
     public static native int native_isTestBackend(int currentAccount);
     public static native void native_pauseNetwork(int currentAccount);
+    public static native void native_setIpv6Enabled(boolean value);
+    private static native void native_onIpPolicyChanged(int account);
     public static native void native_setIpStrategy(int currentAccount, byte value);
     public static native void native_updateDcSettings(int currentAccount);
     public static native void native_moveDatacenter(int currentAccount, int datacenterId);
@@ -1113,6 +1129,7 @@ public class ConnectionsManager extends BaseController {
 
     @SuppressLint("NewApi")
     protected byte getIpStrategy() {
+        if (!NetworkAddressSettings.isIpv6Enabled()) return USE_IPV4_ONLY;
         if (Build.VERSION.SDK_INT < 19) {
             return USE_IPV4_ONLY;
         }
@@ -1213,6 +1230,7 @@ public class ConnectionsManager extends BaseController {
         }
 
         protected ResolvedDomain doInBackground(Void... voids) {
+            if (!NetworkAddressSettings.isIpv6Enabled()) return resolveSystemHost();
             ByteArrayOutputStream outbuf = null;
             InputStream httpConnectionStream = null;
             boolean done = false;
@@ -1271,17 +1289,23 @@ public class ConnectionsManager extends BaseController {
 
                 }
             }
-            if (!done) {
-                try {
-                    InetAddress address = InetAddress.getByName(currentHostName);
-                    ArrayList<String> addresses = new ArrayList<>(1);
-                    addresses.add(address.getHostAddress());
-                    return new ResolvedDomain(addresses, SystemClock.elapsedRealtime());
-                } catch (Exception e) {
-                    FileLog.e(e, false);
+            return !done ? resolveSystemHost() : null;
+        }
+
+        private ResolvedDomain resolveSystemHost() {
+            try {
+                InetAddress[] resolved = InetAddress.getAllByName(currentHostName);
+                ArrayList<String> addresses = new ArrayList<>();
+                for (InetAddress address : resolved) {
+                    if (NetworkAddressSettings.isIpv6Enabled() || address instanceof Inet4Address) {
+                        addresses.add(address.getHostAddress());
+                    }
                 }
+                return addresses.isEmpty() ? null : new ResolvedDomain(addresses, SystemClock.elapsedRealtime());
+            } catch (Exception e) {
+                FileLog.e(e, false);
+                return null;
             }
-            return null;
         }
 
         @Override

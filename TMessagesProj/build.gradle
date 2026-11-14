@@ -755,7 +755,7 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def tunnelExportsText = file("jni/tg_tunnel/go/exports.map").text
-        ["tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom"].each { token ->
+        ["tgTunnelSetIpv6Enabled", "tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom"].each { token ->
             if (!tunnelExportsText.contains(token)) {
                 throw new GradleException("Go bridge export map must include tunnel socket symbol '${token}'")
             }
@@ -804,6 +804,12 @@ tasks.register("testVoipSocks5") {
                     "-I", file("jni/voip/webrtc"), file("src/test/cpp/Socks5HandshakeTest.cpp"), "-o", binary
         }
         exec { commandLine binary }
+        def policyBinary = new File(outputDir, "network-address-policy-test")
+        exec {
+            commandLine System.getenv("CXX") ?: "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                    "-I", file("jni"), file("src/test/cpp/NetworkAddressPolicyTest.cpp"), "-o", policyBinary
+        }
+        exec { commandLine policyBinary }
     }
 }
 

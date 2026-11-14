@@ -13,7 +13,8 @@ import (
 )
 
 //export tgWgStart
-func tgWgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int) C.int {
+func tgWgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int, allowIPv6 C.int) C.int {
+	setIPv6Enabled(allowIPv6 != 0)
 	return C.int(startWireGuardRuntime(
 		C.GoString(userspaceConfig),
 		cStringArray(localAddresses, localAddressCount),
@@ -32,7 +33,8 @@ func tgWgOnNetworkChanged() C.int {
 }
 
 //export tgAwgStart
-func tgAwgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int) C.int {
+func tgAwgStart(userspaceConfig *C.char, localAddresses **C.char, localAddressCount C.int, dnsServers **C.char, dnsServerCount C.int, mtu C.int, allowIPv6 C.int) C.int {
+	setIPv6Enabled(allowIPv6 != 0)
 	return C.int(startAmneziaWGRuntime(
 		C.GoString(userspaceConfig),
 		cStringArray(localAddresses, localAddressCount),
@@ -49,6 +51,9 @@ func tgAwgStop() {
 func tgAwgOnNetworkChanged() C.int {
 	return C.int(onNetworkChangedRuntime())
 }
+
+//export tgTunnelSetIpv6Enabled
+func tgTunnelSetIpv6Enabled(enabled C.int) { setIPv6Enabled(enabled != 0) }
 
 //export tgTunnelIsRunning
 func tgTunnelIsRunning() C.int {

@@ -1,3 +1,4 @@
+#include "NetworkAddressPolicy.h"
 /*
  * This is the source code of tgnet library v. 1.1
  * It is licensed under GNU GPL v. 2 or later.
@@ -1845,7 +1846,7 @@ void ConnectionsManager::sendPing(Datacenter *datacenter, bool usePushConnection
 }
 
 uint8_t ConnectionsManager::getIpStratagy() {
-    return ipStrategy;
+    return tgnet::effectiveIpStrategy(ipStrategy);
 }
 
 void ConnectionsManager::initDatacenters() {
@@ -4004,6 +4005,22 @@ void ConnectionsManager::setNetworkAvailable(bool value, int32_t type, bool slow
         if (delegate != nullptr) {
             delegate->onConnectionStateChanged(connectionState, instanceNum);
         }
+    });
+}
+
+void ConnectionsManager::onIpPolicyChanged() {
+    scheduleTask([this] {
+        lastProtocolIsIpv6 = false;
+        lastProtocolUsefullData = false;
+        for (auto &dc : datacenters) {
+            dc.second->suspendConnections(true);
+            for (uint8_t i = 0; i < PROXY_CONNECTIONS_COUNT; i++) {
+                if (auto *connection = dc.second->getProxyConnection(i, false, false)) {
+                    connection->suspendConnection();
+                }
+            }
+        }
+        processRequestQueue(0, 0);
     });
 }
 

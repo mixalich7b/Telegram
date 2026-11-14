@@ -7,7 +7,7 @@
 
 namespace {
 
-using StartFunc = int (*)(const char *, const char **, int, const char **, int, int);
+using StartFunc = int (*)(const char *, const char **, int, const char **, int, int, int);
 using VoidFunc = void (*)();
 using NetworkChangedFunc = int (*)();
 
@@ -100,7 +100,7 @@ std::vector<const char *> toCStringVector(const std::vector<std::string> &values
 } // namespace
 
 extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu) {
+Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGStart(JNIEnv *env, jclass, jstring userspaceConfig, jobjectArray localAddresses, jobjectArray dnsServers, jint mtu, jboolean ipv6Enabled) {
     if (!loadGoBridge()) {
         return -100;
     }
@@ -118,7 +118,8 @@ Java_org_telegram_messenger_TunnelManager_nativeAmneziaWGStart(JNIEnv *env, jcla
             static_cast<int>(localAddressPointers.size()),
             dnsServerPointers.data(),
             static_cast<int>(dnsServerPointers.size()),
-            static_cast<int>(mtu)));
+            static_cast<int>(mtu),
+            ipv6Enabled ? 1 : 0));
 }
 
 extern "C" JNIEXPORT jint JNICALL

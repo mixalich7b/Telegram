@@ -186,7 +186,11 @@ add_custom_command(
                 tg_tunnel/go/go.mod
                 tg_tunnel/go/go.sum
                 tg_tunnel/go/tg_tunnel.go
+                tg_tunnel/go/ip_policy.go
+                tg_tunnel/go/ipv4_bind.go
+                tg_tunnel/go/tunnel_sockets.go
                 tg_tunnel/go/exports_android.go
+                tg_tunnel/go/exports.map
                 tg_tunnel/go/exports.map
                 tg_tunnel/go/log_config.go
                 tg_tunnel/go/log_android.go

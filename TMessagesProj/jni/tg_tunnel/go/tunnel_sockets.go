@@ -102,7 +102,7 @@ var sockets = tunnelSocketRegistry{
 func activeTunnelNetwork() (tunnelNetwork, uint64, error) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	if state == nil || state.network == nil {
+	if state == nil || state.network == nil || state.policy != currentIPPolicy.Load() {
 		return nil, 0, errTunnelRuntimeUnavailable
 	}
 	return state.network, state.generation, nil
@@ -111,22 +111,22 @@ func activeTunnelNetwork() (tunnelNetwork, uint64, error) {
 func tunnelIsRunning() bool {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	return state != nil && state.network != nil
+	return state != nil && state.network != nil && state.policy == currentIPPolicy.Load()
 }
 
 func tunnelLocalAddresses() []netip.Addr {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	if state == nil || state.network == nil {
+	if state == nil || state.network == nil || state.policy != currentIPPolicy.Load() {
 		return nil
 	}
-	return state.network.LocalAddresses()
+	return policyAddresses(state.network.LocalAddresses())
 }
 
 func tunnelGeneration() uint64 {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	if state == nil || state.network == nil {
+	if state == nil || state.network == nil || state.policy != currentIPPolicy.Load() {
 		return 0
 	}
 	return state.generation
@@ -143,7 +143,7 @@ func tunnelLookupHost(host string) ([]netip.Addr, error) {
 	}
 	result := make([]netip.Addr, 0, len(values))
 	for _, value := range values {
-		if addr, err := netip.ParseAddr(value); err == nil {
+		if addr, err := netip.ParseAddr(value); err == nil && addressAllowed(addr) {
 			result = append(result, addr)
 		}
 	}
@@ -160,7 +160,14 @@ func openTunnelTCP(host string, port int) (int64, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), tunnelSocketConnectTimeout)
 	defer cancel()
-	conn, err := network.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	dialNetwork := "tcp"
+	if !ipv6Enabled() {
+		if addr, err := netip.ParseAddr(host); err == nil && !addressAllowed(addr) {
+			return 0, errIPv6Disabled
+		}
+		dialNetwork = "tcp4"
+	}
+	conn, err := network.DialContext(ctx, dialNetwork, net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return 0, err
 	}
@@ -358,8 +365,8 @@ func (r *tunnelSocketRegistry) closeAll() {
 }
 
 func resolveListenUDPAddr(network string, address string) (*net.UDPAddr, error) {
-	if network == "" {
-		network = "udp"
+	if !ipv6Enabled() && network == "udp6" {
+		return nil, errIPv6Disabled
 	}
 	host, portString, err := net.SplitHostPort(address)
 	if err != nil {
@@ -376,6 +383,9 @@ func resolveListenUDPAddr(network string, address string) (*net.UDPAddr, error) 
 	if err != nil {
 		return nil, err
 	}
+	if !addressAllowed(addr) {
+		return nil, errIPv6Disabled
+	}
 	return &net.UDPAddr{IP: net.IP(addr.AsSlice()), Port: port}, nil
 }
 
@@ -384,6 +394,9 @@ func resolveRemoteUDPAddr(host string, port int) (*net.UDPAddr, error) {
 		return nil, errTunnelNumericPort
 	}
 	if addr, err := netip.ParseAddr(host); err == nil {
+		if !addressAllowed(addr) {
+			return nil, errIPv6Disabled
+		}
 		return &net.UDPAddr{IP: net.IP(addr.AsSlice()), Port: port}, nil
 	}
 	network, _, err := activeTunnelNetwork()
@@ -395,7 +408,7 @@ func resolveRemoteUDPAddr(host string, port int) (*net.UDPAddr, error) {
 		return nil, err
 	}
 	for _, value := range addrs {
-		if addr, err := netip.ParseAddr(value); err == nil {
+		if addr, err := netip.ParseAddr(value); err == nil && addressAllowed(addr) {
 			return &net.UDPAddr{IP: net.IP(addr.AsSlice()), Port: port}, nil
 		}
 	}

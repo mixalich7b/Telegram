@@ -1,3 +1,4 @@
+#include "tgnet/NetworkAddressPolicy.h"
 /*
  *  Copyright 2004 The WebRTC Project Authors. All rights reserved.
  *
@@ -479,6 +480,27 @@ AsyncSocksProxySocket::~AsyncSocksProxySocket() { *alive_ = false; }
 
 int AsyncSocksProxySocket::Connect(const SocketAddress& address) {
   destination_ = address;
+  if (!tgnet::ipv6Enabled()) {
+    if (address.family() == AF_INET6) { SetError(EAFNOSUPPORT); return -1; }
+    if (address.IsUnresolvedIP()) {
+      // Sending a domain to SOCKS would let the server choose IPv6. Resolve
+      // locally to IPv4 first, while retaining proxy CONNECT for the socket.
+      resolving_ipv4_ = true;
+      ipv4_resolver_ = std::make_unique<webrtc::AsyncDnsResolver>();
+      auto alive = alive_;
+      ipv4_resolver_->Start(address, AF_INET, [this, alive] {
+        if (!*alive) return;
+        SocketAddress resolved;
+        resolving_ipv4_ = false;
+        if (!ipv4_resolver_->result().GetResolvedAddress(AF_INET, &resolved)) {
+          Fail();
+          return;
+        }
+        if (Connect(resolved) < 0) Fail();
+      });
+      return 0;
+    }
+  }
   std::vector<uint8_t> encoded;
   if (address.IsUnresolvedIP()) {
     const auto& host = address.hostname();
@@ -511,11 +533,14 @@ int AsyncSocksProxySocket::Connect(const SocketAddress& address) {
 SocketAddress AsyncSocksProxySocket::GetRemoteAddress() const { return destination_; }
 
 Socket::ConnState AsyncSocksProxySocket::GetState() const {
+  if (resolving_ipv4_) return CS_CONNECTING;
   if (!handshake_ || handshake_->failed()) return CS_CLOSED;
   return handshake_->connected() ? CS_CONNECTED : CS_CONNECTING;
 }
 
 int AsyncSocksProxySocket::Close() {
+  ipv4_resolver_.reset();
+  resolving_ipv4_ = false;
   handshake_.reset();
   BufferInput(true);
   return BufferedReadAdapter::Close();

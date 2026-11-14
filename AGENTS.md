@@ -207,6 +207,14 @@ AmneziaWG peer.
 ## UI Invariants
 
 - Tunnel settings live in the combined proxy settings flow.
+- The global IPv6 switch defaults to enabled and persists across restarts.
+  When disabled, tgnet (including retries), SOCKS5/MTProto, native VoIP and
+  WireGuard/AmneziaWG inner and outer connections must use IPv4 only. WEB
+  proxy's WebView networking is explicitly exempt. Preserve saved profiles.
+- Defer effective IPv6 policy changes and tunnel restarts while any native
+  private/group/conference/live VoIP instance is alive; apply the latest
+  requested setting after the last instance stops. Never interrupt calls for
+  this switch. Load the saved policy before networking on process startup.
 - The login/start screen must expose the proxy/tunnel settings entry before
   authorization.
 - Enabling WireGuard or AmneziaWG disables ordinary proxy, proxy-for-calls, and

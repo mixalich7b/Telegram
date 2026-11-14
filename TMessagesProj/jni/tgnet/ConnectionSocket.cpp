@@ -1,3 +1,4 @@
+#include "NetworkAddressPolicy.h"
 /*
  * This is the source code of tgnet library v. 1.1
  * It is licensed under GNU GPL v. 2 or later.
@@ -262,6 +263,10 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
     memset(&socketAddress, 0, sizeof(sockaddr_in));
     memset(&socketAddress6, 0, sizeof(sockaddr_in6));
 
+    if (!tgnet::addressAllowed(address) || (ipv6 && !tgnet::ipv6Enabled())) {
+        closeSocket(1, EAFNOSUPPORT);
+        return;
+    }
     bool useTunnelRoute = overrideProxyAddress.empty() && ConnectionsManager::getInstance(instanceNum).tunnelRouteEnabled;
     if (useTunnelRoute) {
         if (ConnectionsManager::getInstance(instanceNum).tunnelRouteBlocked) {
@@ -284,6 +289,10 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
     }
 
     if (!proxyAddress->empty()) {
+        if (!tgnet::addressAllowed(*proxyAddress)) {
+            closeSocket(1, EAFNOSUPPORT);
+            return;
+        }
         if (LOGS_ENABLED) DEBUG_D("connection(%p) connecting via proxy %s:%d secret[%d]", this, proxyAddress->c_str(), proxyPort, (int) proxySecret->size());
         if ((socketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             if (LOGS_ENABLED) DEBUG_E("connection(%p) can't create proxy socket", this);
@@ -383,6 +392,10 @@ void ConnectionSocket::configureSecretTransport(const std::string &secret, bool 
 }
 
 void ConnectionSocket::openConnectionInternal(bool ipv6) {
+    if (ipv6 && !tgnet::ipv6Enabled()) {
+        closeSocket(1, EAFNOSUPPORT);
+        return;
+    }
     int epolFd = ConnectionsManager::getInstance(instanceNum).epolFd;
     int yes = 1;
     if (setsockopt(socketFd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(int))) {

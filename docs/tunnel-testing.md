@@ -41,6 +41,15 @@ all four supported ABIs.
 
 ## Automated Coverage
 
+IPv6 policy regression tests cover global native strategy clamping and literal
+rejection, Go endpoint/DNS/TCP/UDP selection, local/DNS profile filtering, retirement
+of old runtime handles during policy changes, bidirectional IPv4 outer-bind
+send/receive and close/reopen for both protocols, and Java deferred
+application across overlapping VoIP instances and reversed UI toggles. They run
+through the canonical checks. Device smoke checks should additionally cover
+mixed-family and IPv6-only proxy/peer endpoints, P2P/relay/group/live calls,
+switching during calls, restarting the app, and the explicit WEB proxy exception.
+
 APK verifier fixture tests under `Tools/tests/test_verify_tunnel_apk.py` run
 through `tunnelCheck`. They cover ARM64-only and multi-ABI archives, each missing
 library, missing required ABI, incomplete additional ABIs, forbidden Go outputs

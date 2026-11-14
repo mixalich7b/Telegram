@@ -5,6 +5,7 @@ import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.NetworkAddressSettings;
 import org.webrtc.ContextUtils;
 import org.webrtc.VideoSink;
 
@@ -29,6 +30,19 @@ public class NativeInstance {
     private float[] temp = new float[1];
 
     private boolean isGroup;
+    private boolean ipPolicySession;
+
+    private void beginIpPolicySession() {
+        NetworkAddressSettings.beginVoipSession();
+        ipPolicySession = true;
+    }
+
+    private synchronized void endIpPolicySession() {
+        if (ipPolicySession) {
+            ipPolicySession = false;
+            NetworkAddressSettings.endVoipSession();
+        }
+    }
 
     public static class SsrcGroup {
         public String semantics;
@@ -63,7 +77,14 @@ public class NativeInstance {
         instance.persistentStateFilePath = path;
         instance.audioLevelsCallback = audioLevelsCallback;
         float aspectRatio = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) / (float) Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
-        instance.nativePtr = makeNativeInstance(version, instance, config, path, endpoints, proxy, networkType, encryptionKey, remoteSink, videoCapturer, aspectRatio);
+        instance.beginIpPolicySession();
+        try {
+            instance.nativePtr = makeNativeInstance(version, instance, config, path, endpoints, proxy, networkType, encryptionKey, remoteSink, videoCapturer, aspectRatio);
+            if (instance.nativePtr == 0) instance.endIpPolicySession();
+        } catch (RuntimeException | Error e) {
+            instance.endIpPolicySession();
+            throw e;
+        }
         return instance;
     }
 
@@ -77,7 +98,14 @@ public class NativeInstance {
         instance.cancelRequestBroadcastPartCallback = cancelRequestBroadcastPartCallback;
         instance.requestCurrentTimeCallback = requestCurrentTimeCallback;
         instance.isGroup = true;
-        instance.nativePtr = makeGroupNativeInstance(instance, logPath, SharedConfig.disableVoiceAudioEffects, videoCapturer, screencast, noiseSupression, proxy, isConference);
+        instance.beginIpPolicySession();
+        try {
+            instance.nativePtr = makeGroupNativeInstance(instance, logPath, SharedConfig.disableVoiceAudioEffects, videoCapturer, screencast, noiseSupression, proxy, isConference);
+            if (instance.nativePtr == 0) instance.endIpPolicySession();
+        } catch (RuntimeException | Error e) {
+            instance.endIpPolicySession();
+            throw e;
+        }
         return instance;
     }
 
@@ -178,6 +206,7 @@ public class NativeInstance {
     private CountDownLatch stopBarrier;
     private void onStop(Instance.FinalState state) {
         finalState = state;
+        endIpPolicySession();
         if (stopBarrier != null) {
             stopBarrier.countDown();
         }
@@ -196,6 +225,7 @@ public class NativeInstance {
 
     public void stopGroup() {
         stopGroupNative();
+        endIpPolicySession();
     }
 
     private static native long makeGroupNativeInstance(NativeInstance instance, String persistentStateFilePath, boolean highQuality, long videoCapturer, boolean screencast, boolean noiseSupression, Instance.Proxy proxy, boolean conference);

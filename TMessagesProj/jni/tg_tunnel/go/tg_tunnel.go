@@ -11,10 +11,8 @@ import (
 	"sync"
 	"time"
 
-	awgconn "github.com/amnezia-vpn/amneziawg-go/conn"
 	awgdevice "github.com/amnezia-vpn/amneziawg-go/device"
 	awgnetstack "github.com/amnezia-vpn/amneziawg-go/tun/netstack"
-	wgconn "golang.zx2c4.com/wireguard/conn"
 	wgdevice "golang.zx2c4.com/wireguard/device"
 	wgnetstack "golang.zx2c4.com/wireguard/tun/netstack"
 )
@@ -42,6 +40,7 @@ const endpointResolveTimeout = 10 * time.Second
 type endpointResolver func(ctx context.Context, host string) ([]net.IPAddr, error)
 
 type runtimeState struct {
+	policy     *ipPolicy
 	device     wireGuardDevice
 	network    tunnelNetwork
 	cancel     context.CancelFunc
@@ -68,6 +67,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 	defer stateMu.Unlock()
 
 	stopLocked()
+	policy := currentIPPolicy.Load()
 
 	local, err := parseAddrs(localAddresses)
 	if err != nil {
@@ -79,6 +79,8 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 		logError("dns address parse failed: %v", err)
 		return -2
 	}
+	local = policyAddresses(local)
+	dns = policyAddresses(dns)
 	if len(local) == 0 {
 		logError("at least one local %s address is required", protocolName)
 		return -3
@@ -99,6 +101,10 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 		return status
 	}
 
+	if currentIPPolicy.Load() != policy {
+		device.Close()
+		return -11
+	}
 	_, cancel := context.WithCancel(context.Background())
 	nextGeneration++
 	generation := nextGeneration
@@ -107,6 +113,7 @@ func startRuntime(protocolName string, userspaceConfig string, localAddresses []
 		generation = nextGeneration
 	}
 	next := &runtimeState{
+		policy:     policy,
 		device:     device,
 		network:    network,
 		cancel:     cancel,
@@ -125,7 +132,7 @@ func newWireGuardRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 	}
 
 	logger := &wgdevice.Logger{Verbosef: wgdevice.DiscardLogf, Errorf: logError}
-	dev := wgdevice.NewDevice(tunDev, wgconn.NewDefaultBind(), logger)
+	dev := wgdevice.NewDevice(tunDev, newWireGuardBind(), logger)
 	if err = dev.IpcSet(userspaceConfig); err != nil {
 		dev.Close()
 		return nil, nil, -5, fmt.Errorf("IpcSet failed: %w", err)
@@ -144,7 +151,7 @@ func newAmneziaWGRuntime(local []netip.Addr, dns []netip.Addr, mtu int, userspac
 	}
 
 	logger := &awgdevice.Logger{Verbosef: awgdevice.DiscardLogf, Errorf: logError}
-	dev := awgdevice.NewDevice(tunDev, awgconn.NewDefaultBind(), logger)
+	dev := awgdevice.NewDevice(tunDev, newAmneziaBind(), logger)
 	if err = dev.IpcSet(userspaceConfig); err != nil {
 		dev.Close()
 		return nil, nil, -5, fmt.Errorf("IpcSet failed: %w", err)
@@ -218,7 +225,10 @@ func resolveUserspaceEndpoint(endpoint string, lookup endpointResolver) (string,
 	if endpoint == "" {
 		return "", errors.New("empty endpoint")
 	}
-	if _, err := netip.ParseAddrPort(endpoint); err == nil {
+	if addr, err := netip.ParseAddrPort(endpoint); err == nil {
+		if !addressAllowed(addr.Addr()) {
+			return "", errIPv6Disabled
+		}
 		return endpoint, nil
 	}
 
@@ -232,6 +242,9 @@ func resolveUserspaceEndpoint(endpoint string, lookup endpointResolver) (string,
 	}
 
 	if addr, err := netip.ParseAddr(host); err == nil {
+		if !addressAllowed(addr) {
+			return "", errIPv6Disabled
+		}
 		return netip.AddrPortFrom(addr, uint16(port)).String(), nil
 	}
 	if lookup == nil {
@@ -247,7 +260,7 @@ func resolveUserspaceEndpoint(endpoint string, lookup endpointResolver) (string,
 	}
 	for _, ipAddr := range addrs {
 		addr, ok := netip.AddrFromSlice(ipAddr.IP)
-		if !ok {
+		if !ok || !addressAllowed(addr.Unmap()) {
 			continue
 		}
 		return netip.AddrPortFrom(addr.Unmap(), uint16(port)).String(), nil

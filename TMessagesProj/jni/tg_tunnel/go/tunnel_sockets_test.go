@@ -81,6 +81,9 @@ func (n fakeTunnelNetwork) LocalAddresses() []netip.Addr {
 }
 
 func setTestRuntimeState(next *runtimeState) func() {
+	if next != nil {
+		next.policy = currentIPPolicy.Load()
+	}
 	stateMu.Lock()
 	previous := state
 	state = next

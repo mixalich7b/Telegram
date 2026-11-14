@@ -1,3 +1,4 @@
+#include "tgnet/NetworkAddressPolicy.h"
 /*
  *  Copyright 2023 The WebRTC Project Authors. All rights reserved.
  *
@@ -42,6 +43,10 @@ int ResolveHostname(absl::string_view hostname,
   addresses.clear();
   struct addrinfo* result = nullptr;
   struct addrinfo hints = {0};
+  if (!tgnet::ipv6Enabled()) {
+    if (family == AF_INET6) return EAI_FAMILY;
+    family = AF_INET;
+  }
   hints.ai_family = family;
   // `family` here will almost always be AF_UNSPEC, because `family` comes from
   // AsyncResolver::addr_.family(), which comes from a SocketAddress constructed

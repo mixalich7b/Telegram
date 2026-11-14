@@ -1,3 +1,4 @@
+#include "tgnet/NetworkAddressPolicy.h"
 /*
  *  Copyright 2004 The WebRTC Project Authors. All rights reserved.
  *
@@ -154,6 +155,10 @@ PhysicalSocket::~PhysicalSocket() {
 
 bool PhysicalSocket::Create(int family, int type) {
   Close();
+  if (family == AF_INET6 && !tgnet::ipv6Enabled()) {
+    SetError(EAFNOSUPPORT);
+    return false;
+  }
   s_ = ::socket(family, type, 0);
   udp_ = (SOCK_DGRAM == type);
   family_ = family;
@@ -260,6 +265,10 @@ int PhysicalSocket::Connect(const SocketAddress& addr) {
 }
 
 int PhysicalSocket::DoConnect(const SocketAddress& connect_addr) {
+  if (connect_addr.family() == AF_INET6 && !tgnet::ipv6Enabled()) {
+    SetError(EAFNOSUPPORT);
+    return SOCKET_ERROR;
+  }
   if ((s_ == INVALID_SOCKET) && !Create(connect_addr.family(), SOCK_STREAM)) {
     return SOCKET_ERROR;
   }
@@ -378,6 +387,10 @@ int PhysicalSocket::Send(const void* pv, size_t cb) {
 int PhysicalSocket::SendTo(const void* buffer,
                            size_t length,
                            const SocketAddress& addr) {
+  if (addr.family() == AF_INET6 && !tgnet::ipv6Enabled()) {
+    SetError(EAFNOSUPPORT);
+    return SOCKET_ERROR;
+  }
   sockaddr_storage saddr;
   size_t len = addr.ToSockAddrStorage(&saddr);
   int sent =

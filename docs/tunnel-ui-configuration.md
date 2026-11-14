@@ -11,6 +11,7 @@ preserving the same fail-closed and mutual-exclusion rules as the runtime.
 `ProxyListActivity` is the combined route settings screen. It shows ordinary
 proxy controls and tunnel controls:
 
+- `Use IPv6`, shared across all accounts and routes;
 - `Use Proxy`;
 - `Use WireGuard / AmneziaWG`;
 - `Use tunnel for calls` while a tunnel is active;
@@ -37,6 +38,21 @@ group/conference calls, and live/group streaming for newly created sessions.
 Telegram-authorized private P2P availability still follows Telegram's server
 policy, but its UDP sockets use the tunnel while this setting is enabled.
 Existing active sessions are not rerouted when the setting changes.
+
+`Use IPv6` defaults to enabled. Disabling it restricts Telegram connections,
+SOCKS5/MTProto proxy connections, native calls and both tunnel protocols to IPv4,
+including DNS-selected destinations, tunnel interface/DNS addresses and the outer
+peer UDP transport. IPv6-only destinations or profiles fail closed. Saved profile
+contents are not modified. WEB proxy networking is explicitly exempt because its
+carrier runs in Android WebView.
+
+The preference is saved immediately. If any native private/group/conference/live
+VoIP instance is active, the entire effective change is deferred until the last
+instance stops, including new connections made during that interval. The latest
+requested value then applies, reconnecting Telegram and restarting the active
+tunnel without disabling the selected route. This also preserves calls during
+outer peer address changes. The saved preference applies before networking on
+the next process startup. The explanation below the switch states this delay.
 
 Each saved tunnel profile row shows the display name, protocol label, endpoint
 or status, active/connecting/failed state when relevant, and edit/delete actions.

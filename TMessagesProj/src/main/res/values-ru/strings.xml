@@ -263,4 +263,6 @@
     <string name="RemindTodayAt">\'Отправить сегодня в\' HH:mm</string>
     <string name="RemindDayAt">\'Отправить\' d MMM \'в\' HH:mm</string>
     <string name="RemindDayYearAt">\'Напомнить\' d MMM yyyy \'в\' HH:mm</string>
+    <string name="UseIPv6">Использовать IPv6</string>
+    <string name="UseIPv6Info">Если выключено, Telegram, SOCKS5/MTProto-прокси, звонки и туннели используют только IPv4. Настройка не распространяется на WEB-прокси. Изменения применяются после завершения текущих звонков.</string>
 </resources>

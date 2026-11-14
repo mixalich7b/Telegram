@@ -1,4 +1,6 @@
+#include "tgnet/NetworkAddressPolicy.h"
 #include <jni.h>
+#include <dlfcn.h>
 #include "tgnet/ApiScheme.h"
 #include "tgnet/BuffersStorage.h"
 #include "tgnet/NativeByteBuffer.h"
@@ -280,6 +282,21 @@ void updateDcSettings(JNIEnv *env, jclass c, jint instanceNum) {
 
 void moveDatacenter(JNIEnv *env, jclass c, jint instanceNum, jint datacenterId) {
     ConnectionsManager::getInstance(instanceNum).moveToDatacenter(datacenterId);
+}
+
+void setIpv6Enabled(JNIEnv *, jclass, jboolean enabled) {
+    tgnet::setIpv6Enabled(enabled);
+    // Do not load Go just to change a preference. A later start receives the
+    // policy through JNI; an already-loaded runtime must retire immediately.
+    if (void *handle = dlopen("libtg-tunnel-go.so", RTLD_NOW | RTLD_NOLOAD)) {
+        auto setPolicy = reinterpret_cast<void (*)(int)>(dlsym(handle, "tgTunnelSetIpv6Enabled"));
+        if (setPolicy != nullptr) setPolicy(enabled ? 1 : 0);
+        dlclose(handle);
+    }
+}
+
+void onIpPolicyChanged(JNIEnv *, jclass, jint account) {
+    ConnectionsManager::getInstance(account).onIpPolicyChanged();
 }
 
 void setIpStrategy(JNIEnv *env, jclass c, jint instanceNum, jbyte value) {
@@ -590,6 +607,8 @@ static JNINativeMethod ConnectionsManagerMethods[] = {
         {"native_resumeNetwork", "(IZ)V", (void *) resumeNetwork},
         {"native_updateDcSettings", "(I)V", (void *) updateDcSettings},
         {"native_moveDatacenter", "(II)V", (void *) moveDatacenter},
+        {"native_setIpv6Enabled", "(Z)V", (void *) setIpv6Enabled},
+        {"native_onIpPolicyChanged", "(I)V", (void *) onIpPolicyChanged},
         {"native_setIpStrategy", "(IB)V", (void *) setIpStrategy},
         {"native_setNetworkAvailable", "(IZIZ)V", (void *) setNetworkAvailable},
         {"native_setPushConnectionEnabled", "(IZ)V", (void *) setPushConnectionEnabled},

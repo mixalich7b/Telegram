@@ -17,6 +17,7 @@
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "rtc_base/async_socket.h"
+#include "rtc_base/async_dns_resolver.h"
 #include "rtc_base/crypt_string.h"
 #include "rtc_base/socks5_handshake.h"
 
@@ -163,6 +164,8 @@ class AsyncSocksProxySocket : public BufferedReadAdapter {
   std::string user_;
   CryptString password_;
   std::unique_ptr<Socks5Handshake> handshake_;
+  std::unique_ptr<webrtc::AsyncDnsResolver> ipv4_resolver_;
+  bool resolving_ipv4_ = false;
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 

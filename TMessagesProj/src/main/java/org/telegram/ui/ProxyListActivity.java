@@ -53,6 +53,7 @@ import org.telegram.messenger.TunnelLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NetworkRouteSettings;
+import org.telegram.messenger.NetworkAddressSettings;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.ProxyRotationController;
 import org.telegram.messenger.R;
@@ -116,6 +117,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private int rowCount;
     @Keep
     private int useProxyRow;
+    private int ipv6Row;
+    private int ipv6InfoRow;
     private int useWireGuardRow;
     private int tunnelCallsRow;
     private int useProxyShadowRow;
@@ -575,7 +578,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         listView.setAdapter(listAdapter);
         listView.setOnItemClickListener((view, position) -> {
-            if (position == useProxyRow) {
+            if (position == ipv6Row) {
+                NetworkAddressSettings.setIpv6Enabled(!NetworkAddressSettings.isIpv6Requested());
+                ((TextCheckCell) view).setChecked(NetworkAddressSettings.isIpv6Requested());
+            } else if (position == useProxyRow) {
                 if (SharedConfig.currentProxy == null) {
                     if (!proxyList.isEmpty()) {
                         SharedConfig.currentProxy = proxyList.get(0);
@@ -1073,6 +1079,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             useProxyForCalls = false;
         }
         rowCount = 0;
+        ipv6Row = rowCount++;
+        ipv6InfoRow = rowCount++;
         useProxyRow = rowCount++;
         useWireGuardRow = rowCount++;
         if (useWireGuardSettings) {
@@ -1413,7 +1421,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 case VIEW_TYPE_TEXT_CHECK: {
                     TextCheckCell checkCell = (TextCheckCell) holder.itemView;
-                    if (position == useProxyRow) {
+                    if (position == ipv6Row) {
+                        checkCell.setTextAndCheck(getString(R.string.UseIPv6), NetworkAddressSettings.isIpv6Requested(), false);
+                    } else if (position == useProxyRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxySettings), useProxySettings, rotationRow != -1);
                     } else if (position == useWireGuardRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseTunnelSettings), useWireGuardSettings, tunnelCallsRow != -1 || useProxyShadowRow != -1);
@@ -1428,7 +1438,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 case VIEW_TYPE_INFO: {
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
-                    if (position == callsDetailRow) {
+                    if (position == ipv6InfoRow) {
+                        cell.setText(getString(R.string.UseIPv6Info));
+                    } else if (position == callsDetailRow) {
                         cell.setText(getString(R.string.UseProxyForCallsInfo));
                     } else if (position == rotationTimeoutInfoRow) {
                         cell.setText(getString(R.string.ProxyRotationTimeoutInfo));
@@ -1484,7 +1496,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
             } else if (holder.getItemViewType() == VIEW_TYPE_TEXT_CHECK && payloads.contains(PAYLOAD_CHECKED_CHANGED)) {
                 TextCheckCell checkCell = (TextCheckCell) holder.itemView;
-                if (position == useProxyRow) {
+                if (position == ipv6Row) {
+                    checkCell.setChecked(NetworkAddressSettings.isIpv6Requested());
+                } else if (position == useProxyRow) {
                     checkCell.setChecked(useProxySettings);
                 } else if (position == useWireGuardRow) {
                     checkCell.setChecked(useWireGuardSettings);
@@ -1506,7 +1520,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             if (viewType == VIEW_TYPE_TEXT_CHECK) {
                 TextCheckCell checkCell = (TextCheckCell) holder.itemView;
                 int position = holder.getAdapterPosition();
-                if (position == useProxyRow) {
+                if (position == ipv6Row) {
+                    checkCell.setChecked(NetworkAddressSettings.isIpv6Requested());
+                } else if (position == useProxyRow) {
                     checkCell.setChecked(useProxySettings);
                 } else if (position == useWireGuardRow) {
                     checkCell.setChecked(useWireGuardSettings);
@@ -1523,7 +1539,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
+            return position == ipv6Row || position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow || position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow || position >= proxyStartRow && position < proxyEndRow || wireGuardStartRow != -1 && position >= wireGuardStartRow && position < wireGuardEndRow;
         }
 
         @Override
@@ -1575,6 +1591,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -2;
             } else if (position == proxyAddRow) {
                 return -3;
+            } else if (position == ipv6Row) {
+                return -19;
+            } else if (position == ipv6InfoRow) {
+                return -20;
             } else if (position == useProxyRow) {
                 return -4;
             } else if (position == useWireGuardRow) {
@@ -1618,7 +1638,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return VIEW_TYPE_SHADOW;
             } else if (position == proxyAddRow || position == deleteAllRow || position == wireGuardAddRow || position == wireGuardImportRow || position == wireGuardScanQrRow) {
                 return VIEW_TYPE_TEXT_SETTING;
-            } else if (position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow) {
+            } else if (position == ipv6Row || position == useProxyRow || position == useWireGuardRow || position == tunnelCallsRow || position == rotationRow || position == callsRow) {
                 return VIEW_TYPE_TEXT_CHECK;
             } else if (position == connectionsHeaderRow || position == wireGuardHeaderRow) {
                 return VIEW_TYPE_HEADER;
