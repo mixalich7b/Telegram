@@ -16,6 +16,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOTOOLCHAIN=local
 
 RUN apt-get update && apt-get install -y \
+    build-essential \
     ca-certificates \
     curl \
     git \
@@ -51,6 +52,7 @@ RUN yes | sdkmanager --licenses >/dev/null && \
     sdkmanager \
       "platform-tools" \
       "platforms;android-${ANDROID_PLATFORM}" \
+      "build-tools;35.0.0" \
       "build-tools;${ANDROID_BUILD_TOOLS}" \
       "ndk;${ANDROID_NDK}" \
       "cmake;${CMAKE}"
