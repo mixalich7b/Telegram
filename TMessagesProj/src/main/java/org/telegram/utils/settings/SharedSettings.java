@@ -2,6 +2,7 @@ package org.telegram.utils.settings;
 
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.MessagesController;
+import org.telegram.ui.ActionBar.SimpleActionBarDoneButton;
 import org.telegram.utils.recorder.round.RoundVideoSession;
 import org.telegram.utils.recorder.audio.AudioRecordingSession;
 
@@ -42,6 +43,12 @@ public final class SharedSettings {
 
     public static final EnumSetting<RoundVideoSession.CameraFacing> roundVideoLastCamera =
         EnumSetting.of("round_video_last_camera", RoundVideoSession.CameraFacing.FRONT);
+
+    public static final EnumSetting<SimpleActionBarDoneButton.Style> headerDoneButtonStyle =
+        EnumSetting.of("header_done_button_style", SimpleActionBarDoneButton.Style.GLASS);
+
+    public static final EnumSetting<SimpleActionBarDoneButton.Shape> headerDoneButtonShape =
+        EnumSetting.of("header_done_button_shape", SimpleActionBarDoneButton.Shape.TEXT);
 
     private SharedSettings() {
     }

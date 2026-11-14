@@ -97,6 +97,13 @@ sources. CMake checks that the routed implementations are actual target inputs.
 All private, group/live and native/WASM pump implementations retain the routing
 policy described below. See `patches/tgcalls/README.md` for upstream updates.
 
+The Telegram 13.2.2 merge pins tgcalls at `545f5ae599f8282e1ae3f38aaff166d179d75703`.
+V2 reference and pump paths use upstream's `MtProtoDtlsTransport` and external
+transport security option; these sit above the routed socket factories. Relay
+IPv6 alternatives use the same tunnel route as IPv4, without device-socket
+fallback for unsupported address families. Remote-candidate IP resolution keeps
+upstream's default-on behavior while DNS remains inside the tunnel.
+
 ## Java Architecture
 
 The public Java entry point is protocol-neutral:

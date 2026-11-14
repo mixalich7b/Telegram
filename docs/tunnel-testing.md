@@ -36,6 +36,13 @@ After upstream merges, synchronize submodules to their recorded gitlinks with
 An older local submodule checkout can otherwise hide a patch-base mismatch that
 fails on a clean checkout or CI.
 
+After the Telegram 13.2.2 merge, device smoke tests should include IPv4-only
+tunnel profiles with dual-stack relay endpoints and private 18/19 video calls
+(reference/native pump), including camera enable/disable and P2P enabled/disabled.
+Check both call directions and group/live playback with WireGuard and AmneziaWG.
+Native compilation and static guards validate the integration shape; they do not
+prove connectivity to a real server or successful call negotiation.
+
 Native configure/build tasks must prepare tgcalls, while `externalNativeBuildClean*`
 tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.

@@ -5,9 +5,12 @@ commit is recorded in `upstream-revision`; `series` lists patches in application
 order. The patches preserve private legacy, V2 custom/reference, native/WASM pump,
 and group/live routing, including SOCKS5 CONNECT and tunnel DNS/TCP/UDP sockets.
 
-The current patch base is `03d7b8662512af7528f476c02094862c1a37177d` (Telegram
-13.0.3 merge). It retains upstream's V2 reference negotiation and DTLS-role fixes
-alongside the tunnel socket, DNS, P2P and ordinary-proxy routing changes.
+The current patch base is `545f5ae599f8282e1ae3f38aaff166d179d75703` (Telegram
+13.2.2 merge). It retains upstream's MTProto DTLS transport, SCTP options,
+video negotiation fixes and default remote-candidate IP resolution alongside
+the tunnel socket, DNS, P2P and ordinary-proxy routing changes. Reflector
+factories still receive no device socket factory in tunnel mode; the pump host
+applies descriptor route policy on both creation and reconfiguration.
 
 `Tools/prepare-tgcalls.py` exports committed upstream objects and applies the
 series into `TMessagesProj/build/generated/tunnel-tgcalls`. It never modifies the

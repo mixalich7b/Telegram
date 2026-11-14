@@ -182,8 +182,7 @@ add_library(tgcalls STATIC
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2CompatImpl.cpp
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2Impl.cpp
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/InstanceV2ReferenceImpl.cpp
-        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/MtProtoIceTransport.cpp
-        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/MtProtoIceTransportTest.cpp
+        ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/MtProtoDtlsTransport.cpp
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/NativeNetworkingImpl.cpp
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/RawTcpSocket.cpp
         ${TG_TGCALLS_SOURCE_DIR}/tgcalls/v2/ReflectorPort.cpp

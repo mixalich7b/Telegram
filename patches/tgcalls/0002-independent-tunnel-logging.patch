@@ -1,4 +1,5 @@
 diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketFactory.cpp
+index 53df753eb96d5a5d40499d12cec9d247f2cb8a2c..acb6cc9d64ebbb251a421bf88a2f41a0360f8055 100644
 --- a/tgcalls/TunnelPacketSocketFactory.cpp
 +++ b/tgcalls/TunnelPacketSocketFactory.cpp
 @@ -12,7 +12,7 @@
@@ -18,7 +19,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
  constexpr size_t kMaxPacketSize = 64 * 1024;
  constexpr size_t kTcpPacketLengthSize = 2;
  constexpr size_t kStunHeaderSize = 20;
-@@ -68,7 +67,7 @@
+@@ -68,7 +67,7 @@ public:
          _handle = dlopen("libtg-tunnel-go.so", RTLD_NOW);
          if (_handle == nullptr) {
              const char *error = dlerror();
@@ -27,7 +28,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
              return false;
          }
          isRunning = reinterpret_cast<IsRunningFunc>(dlsym(_handle, "tgTunnelIsRunning"));
-@@ -85,7 +84,7 @@
+@@ -85,7 +84,7 @@ public:
          udpClose = reinterpret_cast<UdpCloseFunc>(dlsym(_handle, "tgTunnelUdpClose"));
          _loaded = isRunning && getLocalAddress && lookupHost && tcpConnect && tcpRead && tcpWrite && tcpClose && udpOpen && udpSendTo && udpRecvFrom && udpLocalAddress && udpClose;
          if (!_loaded) {
@@ -36,7 +37,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
              dlclose(_handle);
              _handle = nullptr;
          }
-@@ -907,23 +906,23 @@
+@@ -907,23 +906,23 @@ public:
  
      rtc::AsyncPacketSocket *CreateUdpSocket(const rtc::SocketAddress &address, uint16_t, uint16_t) override {
          if (!TunnelBridge::Shared().running()) {
@@ -64,7 +65,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
          return new TunnelUdpPacketSocket(_thread, handle, SocketAddressFromHostPort(localHost, localPort));
      }
  
-@@ -933,7 +932,7 @@
+@@ -933,7 +932,7 @@ public:
  
      rtc::AsyncPacketSocket *CreateClientTcpSocket(const rtc::SocketAddress &localAddress, const rtc::SocketAddress &remoteAddress, const rtc::ProxyInfo &, const std::string &, const rtc::PacketSocketTcpOptions &tcpOptions) override {
          if (!TunnelBridge::Shared().running()) {
@@ -73,7 +74,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
              return nullptr;
          }
          const int tlsOptions = tcpOptions.opts & (rtc::PacketSocketFactory::OPT_TLS | rtc::PacketSocketFactory::OPT_TLS_FAKE | rtc::PacketSocketFactory::OPT_TLS_INSECURE);
-@@ -943,17 +942,17 @@
+@@ -943,17 +942,17 @@ public:
              return CreateWebRtcTcpSocket(localAddress, remoteAddress, tcpOptions, tlsOptions);
          }
          if (tlsOptions != 0) {
@@ -94,7 +95,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
          return new TunnelTcpPacketSocket(_thread, handle, localAddress, remoteAddress, framing);
      }
  
-@@ -965,17 +964,17 @@
+@@ -965,17 +964,17 @@ private:
      rtc::AsyncPacketSocket *CreateWebRtcTcpSocket(const rtc::SocketAddress &localAddress, const rtc::SocketAddress &remoteAddress, const rtc::PacketSocketTcpOptions &tcpOptions, int tlsOptions) {
          rtc::Socket *socket = new TunnelTcpAsyncSocket(_thread);
          if (socket->Bind(localAddress) < 0) {
@@ -115,7 +116,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
                  delete socket;
                  return nullptr;
              }
-@@ -987,7 +986,7 @@
+@@ -987,7 +986,7 @@ private:
              sslAdapter->SetCertVerifier(tcpOptions.tls_cert_verifier);
              socket = sslAdapter;
              if (sslAdapter->StartSSL(remoteAddress.hostname().c_str()) != 0) {
@@ -124,7 +125,7 @@ diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketF
                  delete sslAdapter;
                  return nullptr;
              }
-@@ -995,15 +994,15 @@
+@@ -995,15 +994,15 @@ private:
              socket = new rtc::AsyncSSLSocket(socket);
          }
          if (socket->Connect(remoteAddress) < 0) {

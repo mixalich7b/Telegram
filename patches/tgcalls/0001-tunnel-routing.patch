@@ -1,7 +1,8 @@
 diff --git a/tgcalls/Instance.h b/tgcalls/Instance.h
+index 54a8e149e2319b275a5685efd46363525fbfd064..cef010812cd065bfe4e0e259b0ae37ee14ad61e8 100644
 --- a/tgcalls/Instance.h
 +++ b/tgcalls/Instance.h
-@@ -38,10 +38,17 @@
+@@ -38,10 +38,17 @@ struct FilePath {
  };
  
  struct Proxy {
@@ -20,6 +21,7 @@ diff --git a/tgcalls/Instance.h b/tgcalls/Instance.h
  
  struct RtcServer {
 diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
+index b1dd5898569e4b355e70ebe2d01bd84c3bf951a7..912b0bd28eae83a176bf27c5e2b615686b651718 100644
 --- a/tgcalls/NetworkManager.cpp
 +++ b/tgcalls/NetworkManager.cpp
 @@ -4,6 +4,7 @@
@@ -30,7 +32,7 @@ diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
  #include "p2p/client/basic_port_allocator.h"
  #include "p2p/base/p2p_transport_channel.h"
  #include "p2p/base/basic_async_resolver_factory.h"
-@@ -108,15 +109,20 @@
+@@ -108,15 +109,20 @@ NetworkManager::~NetworkManager() {
  }
  
  void NetworkManager::start() {
@@ -55,7 +57,7 @@ diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
      
      _portAllocator.reset(new cricket::BasicPortAllocator(_networkManager.get(), _socketFactory.get(), _turnCustomizer.get(), _relayPortFactory.get()));
  
-@@ -127,22 +133,26 @@
+@@ -127,22 +133,26 @@ void NetworkManager::start() {
          cricket::PORTALLOCATOR_ENABLE_IPV6 |
          cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
      
@@ -87,7 +89,7 @@ diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
          proxyInfo.address = rtc::SocketAddress(_proxy->host, _proxy->port);
          proxyInfo.username = _proxy->login;
          proxyInfo.password = rtc::CryptString(TgCallsCryptStringImpl(_proxy->password));
-@@ -156,16 +166,19 @@
+@@ -156,16 +166,19 @@ void NetworkManager::start() {
      std::vector<cricket::RelayServerConfig> turnServers;
  
      for (auto &server : _rtcServers) {
@@ -109,7 +111,7 @@ diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
              ));
          } else {
              rtc::SocketAddress stunAddress = rtc::SocketAddress(server.host, server.port);
-@@ -175,7 +188,11 @@
+@@ -175,7 +188,11 @@ void NetworkManager::start() {
  
      _portAllocator->SetConfiguration(stunServers, turnServers, 2, webrtc::NO_PRUNE, _turnCustomizer.get());
  
@@ -123,6 +125,7 @@ diff --git a/tgcalls/NetworkManager.cpp b/tgcalls/NetworkManager.cpp
      webrtc::IceTransportInit iceTransportInit;
      iceTransportInit.set_port_allocator(_portAllocator.get());
 diff --git a/tgcalls/NetworkManager.h b/tgcalls/NetworkManager.h
+index 51f4c071102781d2c506786faefc99ebc4229ea9..61c70935c738f2dfd864da77179c9ebde990ae1d 100644
 --- a/tgcalls/NetworkManager.h
 +++ b/tgcalls/NetworkManager.h
 @@ -18,8 +18,8 @@
@@ -136,7 +139,7 @@ diff --git a/tgcalls/NetworkManager.h b/tgcalls/NetworkManager.h
  class PacketTransportInternal;
  struct NetworkRoute;
  } // namespace rtc
-@@ -98,8 +98,8 @@
+@@ -98,8 +98,8 @@ private:
  	std::function<void(Message &&)> _sendSignalingMessage;
  
      std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
@@ -149,6 +152,7 @@ diff --git a/tgcalls/NetworkManager.h b/tgcalls/NetworkManager.h
  	std::unique_ptr<cricket::BasicPortAllocator> _portAllocator;
 diff --git a/tgcalls/TunnelPacketSocketFactory.cpp b/tgcalls/TunnelPacketSocketFactory.cpp
 new file mode 100644
+index 0000000000000000000000000000000000000000..53df753eb96d5a5d40499d12cec9d247f2cb8a2c
 --- /dev/null
 +++ b/tgcalls/TunnelPacketSocketFactory.cpp
 @@ -0,0 +1,1115 @@
@@ -1269,6 +1273,7 @@ new file mode 100644
 +} // namespace tgcalls
 diff --git a/tgcalls/TunnelPacketSocketFactory.h b/tgcalls/TunnelPacketSocketFactory.h
 new file mode 100644
+index 0000000000000000000000000000000000000000..fd0f485d34ba0e126d02f71ec3b08d7d2053af9a
 --- /dev/null
 +++ b/tgcalls/TunnelPacketSocketFactory.h
 @@ -0,0 +1,27 @@
@@ -1300,9 +1305,10 @@ new file mode 100644
 +
 +#endif
 diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInstanceCustomImpl.cpp
+index ae534d19a5de93b5aeb822f7d7a463b8439c2921..a641a8eb993a7d0c9dd6c8144a683c152ddca657 100644
 --- a/tgcalls/group/GroupInstanceCustomImpl.cpp
 +++ b/tgcalls/group/GroupInstanceCustomImpl.cpp
-@@ -1350,6 +1350,7 @@
+@@ -1337,6 +1337,7 @@ public:
      _requestCurrentTime(descriptor.requestCurrentTime),
      _requestAudioBroadcastPart(descriptor.requestAudioBroadcastPart),
      _requestVideoBroadcastPart(descriptor.requestVideoBroadcastPart),
@@ -1310,7 +1316,7 @@ diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInst
      _videoCapture(descriptor.videoCapture),
      _videoCaptureSink(new VideoSinkImpl("VideoCapture")),
      _getVideoSource(descriptor.getVideoSource),
-@@ -1442,7 +1443,11 @@
+@@ -1429,7 +1430,11 @@ public:
  
          bool takeAudioLevelFromNetwork = _e2eEncryptDecrypt == nullptr;
  
@@ -1323,7 +1329,7 @@ diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInst
              return std::make_shared<GroupNetworkManager>(
                  fieldTrialsBasedConfig,
                  [=](const GroupNetworkManager::State &state) {
-@@ -1492,7 +1497,7 @@
+@@ -1479,7 +1484,7 @@ public:
                              strong->updateSsrcActivity(ssrc);
                          }
                      });
@@ -1332,7 +1338,7 @@ diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInst
          }));
  
      #if USE_RNNOISE
-@@ -2843,7 +2848,7 @@
+@@ -2843,7 +2848,7 @@ public:
              _connectionMode = connectionMode;
              _isUnifiedBroadcast = isUnifiedBroadcast;
              onConnectionModeUpdated(previousMode, keepBroadcastIfWasEnabled);
@@ -1341,7 +1347,7 @@ diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInst
              GroupNetworkState effectiveNetworkState = _effectiveNetworkState;
              effectiveNetworkState.connectionMode = _connectionMode;
  
-@@ -3668,6 +3673,7 @@
+@@ -3670,6 +3675,7 @@ private:
      std::function<std::shared_ptr<BroadcastPartTask>(std::function<void(int64_t)>)> _requestCurrentTime;
      std::function<std::shared_ptr<BroadcastPartTask>(int64_t, int64_t, std::function<void(BroadcastPart &&)>)> _requestAudioBroadcastPart;
      std::function<std::shared_ptr<BroadcastPartTask>(int64_t, int64_t, int32_t, VideoChannelDescription::Quality, std::function<void(BroadcastPart &&)>)> _requestVideoBroadcastPart;
@@ -1350,9 +1356,10 @@ diff --git a/tgcalls/group/GroupInstanceCustomImpl.cpp b/tgcalls/group/GroupInst
      std::shared_ptr<VideoSinkImpl> _videoCaptureSink;
      std::function<webrtc::scoped_refptr<webrtc::VideoTrackSourceInterface>()> _getVideoSource;
 diff --git a/tgcalls/group/GroupInstanceImpl.h b/tgcalls/group/GroupInstanceImpl.h
+index 962f192bfbba37e333f572f9ca5fdd1260399940..0e4f12bc02858f0485c84ca9cfc22f686f80ad68 100644
 --- a/tgcalls/group/GroupInstanceImpl.h
 +++ b/tgcalls/group/GroupInstanceImpl.h
-@@ -170,6 +170,7 @@
+@@ -170,6 +170,7 @@ struct GroupInstanceDescriptor {
      bool disableIncomingChannels{false};
      std::function<webrtc::scoped_refptr<webrtc::AudioDeviceModule>(webrtc::TaskQueueFactory*)> createAudioDeviceModule;
      std::function<webrtc::scoped_refptr<WrappedAudioDeviceModule>(webrtc::TaskQueueFactory*)> createWrappedAudioDeviceModule;
@@ -1361,6 +1368,7 @@ diff --git a/tgcalls/group/GroupInstanceImpl.h b/tgcalls/group/GroupInstanceImpl
      std::function<webrtc::scoped_refptr<webrtc::VideoTrackSourceInterface>()> getVideoSource;
      std::function<std::shared_ptr<BroadcastPartTask>(std::function<void(int64_t)>)> requestCurrentTime;
 diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkManager.cpp
+index e8376b76905900249efd004ff39784927cb4c96c..9f0c3e4b8f641b2ccceaa8959821921fe306bf9c 100644
 --- a/tgcalls/group/GroupNetworkManager.cpp
 +++ b/tgcalls/group/GroupNetworkManager.cpp
 @@ -1,4 +1,5 @@
@@ -1413,7 +1421,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkM
  enum {
      kRtcpExpectedVersion = 2,
      kRtcpMinHeaderLength = 4,
-@@ -335,6 +373,7 @@
+@@ -335,6 +373,7 @@ GroupNetworkManager::GroupNetworkManager(
      std::function<void(uint32_t, uint8_t, bool)> audioActivityUpdated,
      bool zeroAudioLevel,
      std::function<void(uint32_t)> anyActivityUpdated,
@@ -1421,7 +1429,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkM
      std::shared_ptr<Threads> threads) :
  _threads(std::move(threads)),
  _stateUpdated(std::move(stateUpdated)),
-@@ -343,7 +382,8 @@
+@@ -343,7 +382,8 @@ _dataChannelStateUpdated(dataChannelStateUpdated),
  _dataChannelMessageReceived(dataChannelMessageReceived),
  _audioActivityUpdated(audioActivityUpdated),
  _zeroAudioLevel(zeroAudioLevel),
@@ -1431,7 +1439,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkM
      assert(_threads->getNetworkThread()->IsCurrent());
  
      _localIceParameters = PeerIceParameters(rtc::CreateRandomString(cricket::ICE_UFRAG_LENGTH), rtc::CreateRandomString(cricket::ICE_PWD_LENGTH), false);
-@@ -352,9 +392,19 @@
+@@ -352,9 +392,19 @@ _anyActivityUpdated(anyActivityUpdated) {
  
      _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
  
@@ -1454,7 +1462,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkM
  
      _dtlsSrtpTransport = std::make_unique<WrappedDtlsSrtpTransport>(true, fieldTrials, [this](webrtc::RtpPacketReceived const &packet, bool isUnresolved) {
          this->RtpPacketReceived_n(packet, isUnresolved);
-@@ -391,6 +441,27 @@
+@@ -391,6 +441,27 @@ void GroupNetworkManager::resetDtlsSrtpTransport() {
      flags |=
          cricket::PORTALLOCATOR_ENABLE_IPV6 |
          cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
@@ -1483,6 +1491,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.cpp b/tgcalls/group/GroupNetworkM
      portAllocator->set_flags(flags);
      portAllocator->Initialize();
 diff --git a/tgcalls/group/GroupNetworkManager.h b/tgcalls/group/GroupNetworkManager.h
+index cc77c06b198f26735d8e73b48c0b40c74f84a52c..7023709199346a53d5bd7c30edcec4d7b04119cc 100644
 --- a/tgcalls/group/GroupNetworkManager.h
 +++ b/tgcalls/group/GroupNetworkManager.h
 @@ -20,10 +20,11 @@
@@ -1499,7 +1508,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.h b/tgcalls/group/GroupNetworkMan
  class PacketTransportInternal;
  struct NetworkRoute;
  } // namespace rtc
-@@ -66,6 +67,7 @@
+@@ -66,6 +67,7 @@ public:
          std::function<void(uint32_t, uint8_t, bool)> audioActivityUpdated,
          bool zeroAudioLevel,
          std::function<void(uint32_t)> anyActivityUpdated,
@@ -1507,7 +1516,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.h b/tgcalls/group/GroupNetworkMan
          std::shared_ptr<Threads> threads);
      ~GroupNetworkManager();
  
-@@ -110,8 +112,9 @@
+@@ -110,8 +112,9 @@ private:
      std::function<void(uint32_t)> _anyActivityUpdated;
  
      std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
@@ -1520,6 +1529,7 @@ diff --git a/tgcalls/group/GroupNetworkManager.h b/tgcalls/group/GroupNetworkMan
      std::unique_ptr<cricket::BasicPortAllocator> _portAllocator;
      std::unique_ptr<webrtc::AsyncDnsResolverFactoryInterface> _asyncResolverFactory;
 diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2ReferenceImpl.cpp
+index 4356d6cb3364fc31215cc24cdd84a0f61c606b8b..7728ca9f88941668a0855b840cf2e318698783cc 100644
 --- a/tgcalls/v2/InstanceV2ReferenceImpl.cpp
 +++ b/tgcalls/v2/InstanceV2ReferenceImpl.cpp
 @@ -47,6 +47,7 @@
@@ -1530,12 +1540,10 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
  #include "VideoCaptureInterfaceImpl.h"
  #include "platform/PlatformInterface.h"
  #include "LogSinkImpl.h"
-@@ -108,6 +109,52 @@
-     return videoCapture
-         ? static_cast<VideoCaptureInterfaceImpl*>(videoCapture)->object()->getSyncAssumingSameThread()
+@@ -110,6 +111,52 @@ static VideoCaptureInterfaceObject *GetVideoCaptureAssumingSameThread(VideoCaptu
          : nullptr;
-+}
-+
+ }
+ 
 +class CryptStringImpl : public rtc::CryptStringImpl {
 +public:
 +    explicit CryptStringImpl(std::string const &value) :
@@ -1580,10 +1588,12 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
 +    proxyInfo.username = proxy.login;
 +    proxyInfo.password = rtc::CryptString(CryptStringImpl(proxy.password));
 +    return proxyInfo;
- }
- 
++}
++
  class CreateSessionDescriptionObserverImpl : public webrtc::CreateSessionDescriptionObserver {
-@@ -690,13 +737,45 @@
+ public:
+     CreateSessionDescriptionObserverImpl(std::function<void(std::unique_ptr<webrtc::SessionDescriptionInterface>)> onSuccess, std::function<void(webrtc::RTCError)> onFailure) :
+@@ -691,13 +738,45 @@ public:
          _peerConnectionObserver = std::make_unique<PeerConnectionDelegateAdapter>(std::move(delegateParameters));
  
          peerConnectionDependencies.observer = _peerConnectionObserver.get();
@@ -1592,18 +1602,18 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
          _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
 -        _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
 -        _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
--        _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBool(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
+-        _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBoolDefaultTrue(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
 -        
 +        const bool tunnelProxy = IsTunnelProxy(_proxy.get());
 +        if (tunnelProxy) {
 +            _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
 +            _networkManager = CreateTunnelNetworkManager();
-+            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, nullptr, getCustomParameterBool(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
++            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, nullptr, getCustomParameterBoolDefaultTrue(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
 +            peerConnectionDependencies.async_dns_resolver_factory = CreateTunnelAsyncDnsResolverFactory(_threads->getNetworkThread());
 +        } else {
 +            _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
 +            _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
-+            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBool(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
++            _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBoolDefaultTrue(_customParameters, "network_reflector_resolve_remote_candidate_ip"));
 +        }
 +
          auto portAllocator = std::make_unique<cricket::BasicPortAllocator>(_networkManager.get(), _socketFactory.get(), nullptr, _relayPortFactory.get());
@@ -1634,7 +1644,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
  
          if (getCustomParameterBool(_customParameters, "network_disable_stun_when_unconfigured")) {
              bool hasStunServer = false;
-@@ -728,12 +807,12 @@
+@@ -729,12 +808,12 @@ public:
          peerConnectionDependencies.allocator = std::move(portAllocator);
  
          webrtc::PeerConnectionInterface::RTCConfiguration peerConnectionConfiguration;
@@ -1649,7 +1659,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
          peerConnectionConfiguration.enable_ice_renomination = true;
          peerConnectionConfiguration.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
          peerConnectionConfiguration.bundle_policy = webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
-@@ -746,7 +825,10 @@
+@@ -747,7 +826,10 @@ public:
          const bool allowHostnameIceServers = getCustomParameterBoolDefaultTrue(_customParameters, "network_reference_allow_hostname_ice_servers");
  
          for (auto &server : _rtcServers) {
@@ -1661,7 +1671,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
                  continue;
              }
  
-@@ -786,8 +868,11 @@
+@@ -787,8 +869,11 @@ public:
  
                  webrtc::PeerConnectionInterface::IceServer mappedServer;
  
@@ -1675,7 +1685,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
                  mappedServer.username = server.login;
                  mappedServer.password = server.password;
  
-@@ -1251,7 +1336,7 @@
+@@ -1268,7 +1353,7 @@ public:
  
      void beginSignaling() {
          _didBeginNegotiation = true;
@@ -1684,7 +1694,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
          if (_encryptionKey.isOutgoing) {
              sendLocalDescription();
          }
-@@ -1431,7 +1516,7 @@
+@@ -1448,7 +1533,7 @@ public:
              }
          }
      }
@@ -1693,7 +1703,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
      void handleRemoteSdp(std::string const &type, std::string const &sdp) {
          webrtc::SdpParseError sdpParseError;
          std::unique_ptr<webrtc::SessionDescriptionInterface> remoteDescription(webrtc::CreateSessionDescription(type, sdp, &sdpParseError));
-@@ -1993,12 +2078,12 @@
+@@ -2015,12 +2100,12 @@ private:
  
      std::unique_ptr<webrtc::RtcEventLogNull> _eventLog;
      std::unique_ptr<webrtc::TaskQueueFactory> _taskQueueFactory;
@@ -1711,6 +1721,7 @@ diff --git a/tgcalls/v2/InstanceV2ReferenceImpl.cpp b/tgcalls/v2/InstanceV2Refer
      std::unique_ptr<PeerConnectionDelegateAdapter> _peerConnectionObserver;
      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> _peerConnection;
 diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingImpl.cpp
+index da8a8907bcfcfc2e3921c0774663734590d16cc4..40738a4852de730d5dc3fa9b72d133710ccc8cee 100644
 --- a/tgcalls/v2/NativeNetworkingImpl.cpp
 +++ b/tgcalls/v2/NativeNetworkingImpl.cpp
 @@ -20,6 +20,7 @@
@@ -1721,11 +1732,10 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
  #include "p2p/base/turn_port.h"
  
  #include "ReflectorPort.h"
-@@ -65,6 +66,15 @@
- private:
+@@ -66,6 +67,15 @@ private:
      std::string _value;
  };
-+
+ 
 +rtc::ProxyInfo proxyInfoFromDescriptor(const Proxy &proxy) {
 +    rtc::ProxyInfo proxyInfo;
 +    proxyInfo.type = proxy.protocol == Proxy::Protocol::HttpConnect ? rtc::ProxyType::PROXY_HTTPS : rtc::ProxyType::PROXY_SOCKS5;
@@ -1734,10 +1744,11 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
 +    proxyInfo.password = rtc::CryptString(CryptStringImpl(proxy.password));
 +    return proxyInfo;
 +}
- 
++
  class WrappedAsyncPacketSocket : public rtc::AsyncPacketSocket {
  public:
-@@ -511,7 +521,12 @@
+     WrappedAsyncPacketSocket(std::unique_ptr<rtc::AsyncPacketSocket> &&wrappedSocket) :
+@@ -511,7 +521,12 @@ _dataChannelMessageReceived(configuration.dataChannelMessageReceived) {
      _underlyingSocketFactory = _threads->getNetworkThread()->socketserver();
      
      _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
@@ -1751,7 +1762,7 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
          _socketFactory = std::make_unique<WrappedBasicPacketSocketFactory>(std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver()), true);
          _networkManager = std::make_unique<WrappedNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
      } else {
-@@ -519,7 +534,11 @@
+@@ -519,7 +534,11 @@ _dataChannelMessageReceived(configuration.dataChannelMessageReceived) {
          _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
      }
      
@@ -1764,7 +1775,7 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
      
      if (getCustomParameterBool(_customParameters, "network_use_mtproto")) {
          
-@@ -589,16 +608,24 @@
+@@ -589,17 +608,25 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
          cricket::PORTALLOCATOR_ENABLE_IPV6 |
          cricket::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
  
@@ -1785,14 +1796,15 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
 +        // TCP can still gather active host candidates without a listening socket.
 +        candidateFilter &= ~(cricket::CF_HOST | cricket::CF_REFLEXIVE);
          _portAllocator->SetCandidateFilter(candidateFilter);
-+    }
+     }
 +    if (nativeProxy) {
 +        flags |= cricket::PORTALLOCATOR_DISABLE_UDP_RELAY;
 +        _portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
-     }
++    }
      
      _portAllocator->set_step_delay(cricket::kMinimumStepDelay);
-@@ -611,6 +638,9 @@
+ 
+@@ -611,6 +638,9 @@ void NativeNetworkingImpl::resetDtlsSrtpTransport() {
  
      for (auto &server : _rtcServers) {
          if (server.isTurn) {
@@ -1803,6 +1815,7 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.cpp b/tgcalls/v2/NativeNetworkingIm
                  rtc::SocketAddress(server.host, server.port),
                  server.login,
 diff --git a/tgcalls/v2/NativeNetworkingImpl.h b/tgcalls/v2/NativeNetworkingImpl.h
+index 6810b0e3b6ded87470b5cc08ff3f56958b9d0343..03bbbad6dcd9ed8f03c5b42f7bf9a55756c36b04 100644
 --- a/tgcalls/v2/NativeNetworkingImpl.h
 +++ b/tgcalls/v2/NativeNetworkingImpl.h
 @@ -27,6 +27,8 @@
@@ -1815,6 +1828,7 @@ diff --git a/tgcalls/v2/NativeNetworkingImpl.h b/tgcalls/v2/NativeNetworkingImpl
  struct NetworkRoute;
  } // namespace rtc
 diff --git a/tgcalls/v2/ReflectorPort.cpp b/tgcalls/v2/ReflectorPort.cpp
+index 90c921a93d65e25c6f301ed28c9e3bf09fa0d2e8..92c97661494da4ee25f4d2f5c26451c6b2af86a4 100644
 --- a/tgcalls/v2/ReflectorPort.cpp
 +++ b/tgcalls/v2/ReflectorPort.cpp
 @@ -19,11 +19,13 @@
@@ -1831,7 +1845,7 @@ diff --git a/tgcalls/v2/ReflectorPort.cpp b/tgcalls/v2/ReflectorPort.cpp
  
  namespace tgcalls {
  
-@@ -95,6 +97,18 @@
+@@ -95,6 +97,18 @@ rtc::AsyncPacketSocket *CreateClientRawTcpSocket(
          << socket->GetError();
      }
      
@@ -1850,7 +1864,7 @@ diff --git a/tgcalls/v2/ReflectorPort.cpp b/tgcalls/v2/ReflectorPort.cpp
      if (socket->Connect(remote_address) < 0) {
          RTC_LOG(LS_ERROR) << "TCP connect failed with error " << socket->GetError();
          delete socket;
-@@ -386,10 +400,17 @@
+@@ -386,10 +400,17 @@ bool ReflectorPort::CreateReflectorClientSocket() {
  
          rtc::PacketSocketTcpOptions tcp_options;
          tcp_options.opts = opts;
@@ -1873,6 +1887,7 @@ diff --git a/tgcalls/v2/ReflectorPort.cpp b/tgcalls/v2/ReflectorPort.cpp
  
      if (!socket_) {
 diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
+index 517d7072dfc22fdbe0b930e8c93ca98c37fd6d47..1433cab6840a2128002a4702cfe4f24f92f43154 100644
 --- a/tgcalls/v2wasm/CallCoreHost.cpp
 +++ b/tgcalls/v2wasm/CallCoreHost.cpp
 @@ -20,6 +20,7 @@
@@ -1883,11 +1898,10 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
  #include "VideoCaptureInterfaceImpl.h"
  #include "platform/PlatformInterface.h"
  #include "v2/InstanceNetworking.h"
-@@ -302,6 +303,52 @@
- } // namespace v2wasm_detail
+@@ -303,6 +304,52 @@ private:
  
  namespace {
-+
+ 
 +class CryptStringImpl : public rtc::CryptStringImpl {
 +public:
 +    explicit CryptStringImpl(std::string const &value) :
@@ -1933,10 +1947,11 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
 +    proxyInfo.password = rtc::CryptString(CryptStringImpl(proxy.password));
 +    return proxyInfo;
 +}
- 
++
  constexpr size_t kMaxDcMessageBytes = 256 * 1024;
  
-@@ -485,6 +532,7 @@
+ VideoCaptureInterfaceObject *GetVideoCaptureAssumingSameThread(VideoCaptureInterface *videoCapture) {
+@@ -485,6 +532,7 @@ CallCoreHost::CallCoreHost(Descriptor &&descriptor, std::shared_ptr<Threads> thr
  _threads(threads),
  _version(descriptor.version),
  _rtcServers(descriptor.rtcServers),
@@ -1944,19 +1959,19 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
  _enableP2P(descriptor.config.enableP2P),
  _encryptionKey(std::move(descriptor.encryptionKey)),
  _customParameters(descriptor.config.customParameters),
-@@ -881,15 +929,34 @@
+@@ -896,16 +944,35 @@ void CallCoreHost::executePcCreate(json11::Json const &command) {
      }
  
      _networkMonitorFactory = PlatformInterface::SharedInstance()->createNetworkMonitorFactory();
 -    _socketFactory = std::make_unique<rtc::BasicPacketSocketFactory>(_threads->getNetworkThread()->socketserver());
 -    _networkManager = std::make_unique<rtc::BasicNetworkManager>(_networkMonitorFactory.get(), _threads->getNetworkThread()->socketserver());
--    _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBool(_parsedCustomParameters, "network_reflector_resolve_remote_candidate_ip"));
+-    _relayPortFactory = std::make_unique<ReflectorRelayPortFactory>(_rtcServers, false, 0, _threads->getNetworkThread()->socketserver(), getCustomParameterBoolDefaultTrue(_parsedCustomParameters, "network_reflector_resolve_remote_candidate_ip"));
 -
      webrtc::PeerConnectionDependencies peerConnectionDependencies(nullptr);
 +    const bool tunnelProxy = IsTunnelProxy(_proxy.get());
 +    const bool nativeProxy = _proxy && !tunnelProxy;
 +    const bool httpConnectProxy = _proxy && _proxy->protocol == Proxy::Protocol::HttpConnect;
-+    const bool resolveRemoteCandidateIp = getCustomParameterBool(_parsedCustomParameters, "network_reflector_resolve_remote_candidate_ip");
++    const bool resolveRemoteCandidateIp = getCustomParameterBoolDefaultTrue(_parsedCustomParameters, "network_reflector_resolve_remote_candidate_ip");
 +    if (tunnelProxy) {
 +        _socketFactory = CreateTunnelPacketSocketFactory(_threads->getNetworkThread());
 +        _networkManager = CreateTunnelNetworkManager();
@@ -1971,7 +1986,7 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
      peerConnectionDependencies.observer = _peerConnectionObserver.get();
  
      auto portAllocator = std::make_unique<cricket::BasicPortAllocator>(_networkManager.get(), _socketFactory.get(), nullptr, _relayPortFactory.get());
-+
+ 
 +    if (nativeProxy) {
 +        portAllocator->set_flags(portAllocator->flags() | cricket::PORTALLOCATOR_DISABLE_UDP_RELAY);
 +        portAllocator->set_proxy("t/1.0", proxyInfoFromDescriptor(*_proxy));
@@ -1980,10 +1995,11 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
 +        portAllocator->set_flags(portAllocator->flags() | cricket::PORTALLOCATOR_DISABLE_UDP | cricket::PORTALLOCATOR_DISABLE_STUN);
 +        portAllocator->SetCandidateFilter(portAllocator->candidate_filter() & ~(cricket::CF_HOST | cricket::CF_REFLEXIVE));
 +    }
- 
++
      if (getCustomParameterBool(_parsedCustomParameters, "network_disable_stun_when_unconfigured")) {
          bool hasStunServer = false;
-@@ -948,6 +1015,8 @@
+         for (const auto &server : _rtcServers) {
+@@ -963,6 +1030,8 @@ void CallCoreHost::executePcCreate(json11::Json const &command) {
          peerConnectionConfiguration.servers.push_back(mappedServer);
      }
  
@@ -1992,7 +2008,7 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
      if (getCustomParameterBool(_parsedCustomParameters, "network_use_mtproto")) {
          // Host-side by necessity, not preference: EncryptionKey is a secret and
          // must not cross into the wasm module, so the core cannot own this.
-@@ -997,6 +1066,87 @@
+@@ -1013,6 +1082,87 @@ void CallCoreHost::applyAudioProcessingConfig(json11::Json const &config, std::s
      _audioProcessing->ApplyConfig(apmConfig);
  }
  
@@ -2080,7 +2096,7 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
  void CallCoreHost::executeSetConfiguration(json11::Json const &command) {
      if (!_peerConnection) {
          emitErrorEvent("no peer connection", "pc_set_configuration");
-@@ -1025,6 +1175,7 @@
+@@ -1041,6 +1191,7 @@ void CallCoreHost::executeSetConfiguration(json11::Json const &command) {
              configuration.servers.push_back(mappedServer);
          }
      }
@@ -2089,9 +2105,10 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.cpp b/tgcalls/v2wasm/CallCoreHost.cpp
      if (!result.ok()) {
          emitErrorEvent(std::string("SetConfiguration failed: ") + result.message(), "pc_set_configuration");
 diff --git a/tgcalls/v2wasm/CallCoreHost.h b/tgcalls/v2wasm/CallCoreHost.h
+index 8cd1344138874c408c0629ef6191e91120c38758..3da58bb352f78df4f649fb6ef470d15412e736dc 100644
 --- a/tgcalls/v2wasm/CallCoreHost.h
 +++ b/tgcalls/v2wasm/CallCoreHost.h
-@@ -60,6 +60,7 @@
+@@ -60,6 +60,7 @@ private:
      void disableCoreWithFailure(std::string const &reason);
  
      void executePcCreate(json11::Json const &command);
@@ -2099,7 +2116,7 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.h b/tgcalls/v2wasm/CallCoreHost.h
      void applyAudioProcessingConfig(json11::Json const &config, std::string const &commandName);
      void executeSetConfiguration(json11::Json const &command);
      void executeCreateDescription(bool isOffer);
-@@ -91,6 +92,7 @@
+@@ -91,6 +92,7 @@ private:
      // descriptor
      std::string _version;
      std::vector<RtcServer> _rtcServers;
@@ -2107,7 +2124,7 @@ diff --git a/tgcalls/v2wasm/CallCoreHost.h b/tgcalls/v2wasm/CallCoreHost.h
      bool _enableP2P = false;
      EncryptionKey _encryptionKey;
      std::string _customParameters;
-@@ -124,8 +126,8 @@
+@@ -124,8 +126,8 @@ private:
      // webrtc
      std::unique_ptr<webrtc::TaskQueueFactory> _taskQueueFactory;
      std::unique_ptr<rtc::NetworkMonitorFactory> _networkMonitorFactory;
