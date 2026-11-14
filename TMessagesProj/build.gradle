@@ -340,6 +340,7 @@ tasks.register("testTunnelGo", Exec) {
     group = "verification"
     workingDir file("jni/tg_tunnel/go")
     def goTestBuildDir = layout.buildDirectory.dir("tunnel-go-test").get().asFile
+    environment "GOTOOLCHAIN", "local"
     environment "GOCACHE", new File(goTestBuildDir, "gocache")
     environment "GOMODCACHE", new File(goTestBuildDir, "gomod")
     doFirst {
@@ -397,13 +398,15 @@ tasks.register("verifyWireGuardStaticGuards") {
             throw new GradleException("TMessagesProj/jni/tg_tunnel/go/build must not exist; Go caches under jni are packaged as native libs")
         }
         def tunnelBuildScriptText = file("jni/tg_tunnel/go/build-android.sh").text
-        ["--version-script", "libtg-tunnel-go.so", "TG_TUNNEL_GO_VERSION:-1.24.4", "unset GOROOT", "GOTOOLCHAIN=local"].each { token ->
+        ["--version-script", "libtg-tunnel-go.so", "command -v go", "GOTOOLCHAIN=local"].each { token ->
             if (!tunnelBuildScriptText.contains(token)) {
-                throw new GradleException("jni/tg_tunnel/go/build-android.sh must pin and hide the shared Go tunnel bridge token '${token}'")
+                throw new GradleException("jni/tg_tunnel/go/build-android.sh must use environment Go and hide the shared Go tunnel bridge token '${token}'")
             }
         }
-        if (tunnelBuildScriptText.contains("command -v go")) {
-            throw new GradleException("Android tunnel bridge builds must use the pinned managed Go toolchain, not an arbitrary system Go")
+        ["TG_TUNNEL_GO_VERSION", "dl.google.com/go/", "curl ", "wget "].each { forbidden ->
+            if (tunnelBuildScriptText.contains(forbidden)) {
+                throw new GradleException("Android tunnel bridge builds must use Go from PATH without downloading a toolchain: '${forbidden}'")
+            }
         }
         def exportMapText = file("jni/tg_tunnel/go/exports.map").text
         ["tgWgStart", "tgWgStop", "tgWgOnNetworkChanged", "tgAwgStart", "tgAwgStop", "tgAwgOnNetworkChanged", "tgTunnelIsRunning", "tgTunnelGetLocalAddress", "tgTunnelLookupHost", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "tgTunnelUdpOpen", "tgTunnelUdpSendTo", "tgTunnelUdpRecvFrom", "tgTunnelUdpLocalAddress", "tgTunnelUdpClose"].each { symbol ->

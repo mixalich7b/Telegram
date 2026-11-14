@@ -9,7 +9,6 @@ fi
 output_so="$1"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 build_dir="${TG_TUNNEL_BUILD_DIR:-"$script_dir/build"}"
-go_version="${TG_TUNNEL_GO_VERSION:-1.24.4}"
 tunnel_logs_enabled="${TG_TUNNEL_LOGS_ENABLED:-true}"
 case "$tunnel_logs_enabled" in
   true|false) ;;
@@ -25,25 +24,10 @@ case "$android_abi" in
   *) echo "unsupported Android ABI: $android_abi" >&2; exit 3 ;;
 esac
 
-host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-host_machine="$(uname -m)"
-case "$host_machine" in
-  arm64|aarch64) host_arch="arm64" ;;
-  x86_64|amd64) host_arch="amd64" ;;
-  *) echo "unsupported host arch: $host_machine" >&2; exit 4 ;;
-esac
-go_root="$build_dir/go-$go_version"
-go_bin="$go_root/bin/go"
-if [ ! -x "$go_bin" ]; then
-  tarball="go${go_version}.${host_os}-${host_arch}.tar.gz"
-  mkdir -p "$build_dir/downloads" "$go_root"
-  curl -L -o "$build_dir/downloads/$tarball" "https://dl.google.com/go/$tarball"
-  rm -rf "$go_root"
-  mkdir -p "$go_root"
-  tar -C "$go_root" --strip-components=1 -xzf "$build_dir/downloads/$tarball"
+if ! go_bin="$(command -v go)"; then
+  echo "Go is required on PATH; install a version compatible with tg_tunnel/go/go.mod" >&2
+  exit 4
 fi
-
-unset GOROOT
 
 mkdir -p "$(dirname "$output_so")" "$build_dir/gomod" "$build_dir/gocache"
 version_script="$script_dir/exports.map"

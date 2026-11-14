@@ -306,8 +306,11 @@ users switch between protocol profiles, so `libtg-wg-go.so` and
 with a linker version script that exports only `tgWg*`, `tgAwg*`, and
 `tgTunnel*` C API symbols; Go runtime and cgo helper symbols remain local.
 
-Android bridge builds use the managed Go 1.24.4 toolchain from the native build
-directory instead of whatever `go` binary is first on `PATH`.
+Android bridge builds and host Go tests use `go` from `PATH`. Install Go compatible
+with the module’s `go.mod` (currently at least 1.24.4) before running Gradle. Both
+paths set `GOTOOLCHAIN=local`, so an incompatible toolchain fails rather than
+downloading another Go version. Android builds retain module/build caches in the
+native build directory; they do not download or manage a Go toolchain.
 Android Gradle native target filters explicitly build `tmessages.49`, `tg-wg`,
 and `tg-awg`; the shared `tg-tunnel-go` target is built transitively by the two
 JNI wrappers.

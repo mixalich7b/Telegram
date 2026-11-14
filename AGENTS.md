@@ -167,6 +167,9 @@ AmneziaWG peer.
   preferences.
 - AmneziaWG `Jc/Jmin/Jmax`, `S1..S4`, `H1..H4`, and `I1..I5` fields are profile
   contents and must stay inside the encrypted profile blob.
+- Android bridge builds and host Go tests use `go` from `PATH` with
+  `GOTOOLCHAIN=local`. Install Go compatible with `go.mod` in the environment;
+  do not download or manage a separate Go toolchain during builds.
 - Go module/cache output must stay outside `TMessagesProj/jni`; Android Gradle
   scans JNI folders recursively and may otherwise package dependency `.so`
   files.
@@ -276,7 +279,7 @@ AmneziaWG peer.
   ordering for the generated sources under `build/`.
 - Root `clean` must reclaim project build outputs, including module `build/`,
   native `.cxx/`/`.externalNativeBuild/`, `buildSrc/build/`, and project-owned Go
-  toolchains/caches. Use Gradle `Delete` without following symlinks; handle
+  caches. Use Gradle `Delete` without following symlinks; handle
   read-only Go cache directories before deletion. Keep host Go test caches under
   the module build directory. Do not delete SDK/NDK or shared Gradle caches.
 - Private VoIP has multiple native paths. When changing routing, audit:

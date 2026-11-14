@@ -29,7 +29,16 @@ WireGuard/AmneziaWG wrappers, the shared Go runtime, the tunnel log sink or
 `libtwidget.so` stop publication. Every additional packaged ABI must also have
 all five libraries; Go cache/build entries and separate legacy Go runtimes
 are rejected. Python 3, a host C++17 compiler and Go compatible with the module's
-`go.mod` must be available on the self-hosted runner for `tunnelCheck`.
+`go.mod` (currently at least 1.24.4) must be available on `PATH` on the self-hosted
+runner for both `tunnelCheck` and Android builds. Both use `GOTOOLCHAIN=local`;
+install Go in the runner environment before invoking Gradle. Builds do not
+download a Go toolchain.
+
+The CI image in `.github/runner/Dockerfile` installs Go 1.24.4 under
+`/usr/local/go` and adds its `bin` directory to `PATH`. Override `GO_VERSION`
+with a Docker build argument to update it. Rebuild and recreate the runner
+container after changing the image; `entrypoint.sh` prints the installed Go
+version at startup.
 
 Only the CI release command loads `Tools/ci-target-abi.init.gradle` through
 `--init-script`. It requires `android.buildOnlyTargetAbi=true` and a supported
@@ -79,10 +88,10 @@ tasks must not. Making cleanup generate files under `build/` blocks Gradle's
 producer/delete ordering when `clean` and assemble run in one invocation.
 `./gradlew clean` removes root/module `build/` directories, `buildSrc/build/`,
 and native staging trees (`.cxx/` and legacy `.externalNativeBuild/`). This includes
-APKs, object files, generated tgcalls sources, downloaded native Go toolchains
-and their module/build caches. Host Go test caches also live under the module's
-`build/` directory. The next native build downloads its Go toolchain and modules
-again. Gradle's project state and shared dependency caches, Android SDK/NDK and
+APKs, object files, generated tgcalls sources and Go module/build caches.
+Host Go test caches also live under the module's `build/` directory. The next
+build downloads Go modules again; the Go installation from the environment
+remains intact. Gradle's project state and shared dependency caches, Android SDK/NDK and
 source submodules remain build inputs and are not deleted.
 
 Cleanup uses Gradle `Delete` tasks, makes read-only Go cache directories writable,
@@ -265,7 +274,7 @@ accidentally:
   `TMessagesProj/jni`;
 - WireGuard and AmneziaWG use one shared Go bridge with a linker version script
   that hides non-API Go runtime symbols;
-- Android Go bridge builds use the pinned managed Go 1.24.4 toolchain;
+- Android Go bridge builds use Go from `PATH` without downloading a toolchain;
 - AmneziaWG imports stay limited to the intended Go bridge dependency.
 
 ## Packaging Expectations
