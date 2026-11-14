@@ -1,0 +1,26 @@
+// CI-only packaging filter. Injected ABI properties alone limit compilation,
+// but dependency AARs may still contribute other ABIs to the APK.
+gradle.beforeProject { project ->
+    if (project.path != ":TMessagesProj_App") {
+        return
+    }
+    project.plugins.withId("com.android.application") {
+        def supportedAbis = ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"]
+        def requestedAbis = project.providers.gradleProperty("android.injected.build.abi")
+                .orElse("").get().split(",").collect { it.trim() }
+                .findAll { !it.isEmpty() }.unique()
+        if (project.providers.gradleProperty("android.buildOnlyTargetAbi").orNull != "true"
+                || requestedAbis.isEmpty() || !supportedAbis.containsAll(requestedAbis)) {
+            throw new GradleException("CI ABI filter requires buildOnlyTargetAbi=true and a supported android.injected.build.abi")
+        }
+        // Run after the app's own DSL has declared its default multi-ABI flavors.
+        project.extensions.getByName("androidComponents").finalizeDsl { android ->
+            android.defaultConfig.ndk.abiFilters.clear()
+            android.defaultConfig.ndk.abiFilters.addAll(requestedAbis)
+            android.productFlavors.each { flavor ->
+                flavor.ndk.abiFilters.clear()
+                flavor.ndk.abiFilters.addAll(requestedAbis)
+            }
+        }
+    }
+}

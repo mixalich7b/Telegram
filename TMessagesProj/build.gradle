@@ -775,6 +775,14 @@ tasks.register("verifyTunnelStaticGuards") {
     dependsOn "verifyWireGuardStaticGuards"
     dependsOn "testTunnelTgcallsPreparation"
     dependsOn "testTunnelLogging"
+    dependsOn "testTunnelApkPackaging"
+}
+
+tasks.register("testTunnelApkPackaging", Exec) {
+    group = "verification"
+    description = "Checks CI APK verification against complete and broken archives."
+    workingDir rootProject.projectDir
+    commandLine "python3", "-B", "-m", "unittest", "discover", "-s", "Tools/tests", "-p", "test_verify_tunnel_apk.py"
 }
 
 tasks.register("testTunnelTgcallsPreparation", Exec) {

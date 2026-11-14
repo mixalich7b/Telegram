@@ -174,9 +174,11 @@ jobs:
 
           cd /ci/repo
 
-          ./gradlew clean --no-daemon --stacktrace :TMessagesProj_App:assembleAfatRelease -Pandroid.injected.build.abi=arm64-v8a -Pandroid.buildOnlyTargetAbi=true -Pandroid.injected.testOnly=false
+          ./gradlew --no-daemon --stacktrace clean
+          ./gradlew --no-daemon tunnelCheck
+          ./gradlew --no-daemon --stacktrace --init-script Tools/ci-target-abi.init.gradle :TMessagesProj_App:assembleAfatRelease -Pandroid.injected.build.abi=arm64-v8a -Pandroid.buildOnlyTargetAbi=true -Pandroid.injected.testOnly=false
 
-      - name: Publish APK
+      - name: Verify and publish APK
         shell: bash
         run: |
           set -euxo pipefail
@@ -188,6 +190,7 @@ jobs:
           APK="$(find TMessagesProj_App/build/intermediates/apk/afat/release/ -type f -name '*.apk' | head -1)"
 
           test -n "${APK}"
+          python3 -B Tools/verify-tunnel-apk.py --abi arm64-v8a "${APK}"
 
           cp -f "${APK}" "/ci/output/history/tgwg-${TIMESTAMP}-${SHORT_COMMIT}.apk"
           cp -f "${APK}" /ci/output/latest/tgwg.tmp

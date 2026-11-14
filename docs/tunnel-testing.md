@@ -22,7 +22,29 @@ For JNI/CMake/native changes or a complete debug APK check:
 verification, and the APK build. The lower-level Gradle tasks are implementation
 details, not alternative canonical commands.
 
+The release workflow runs `clean`, then the canonical `tunnelCheck`, then
+`assembleAfatRelease`. Before copying the APK to history/latest it runs
+`Tools/verify-tunnel-apk.py --abi arm64-v8a` against that same APK. Missing
+WireGuard/AmneziaWG wrappers, the shared Go runtime, the tunnel log sink or
+`libtwidget.so` stop publication. Every additional packaged ABI must also have
+all five libraries; Go cache/build entries and separate legacy Go runtimes
+are rejected. Python 3, a host C++17 compiler and Go compatible with the module's
+`go.mod` must be available on the self-hosted runner for `tunnelCheck`.
+
+Only the CI release command loads `Tools/ci-target-abi.init.gradle` through
+`--init-script`. It requires `android.buildOnlyTargetAbi=true` and a supported
+comma-separated `android.injected.build.abi` list, and sets the app's
+`ndk.abiFilters` during DSL finalization. CI passes `arm64-v8a`, so dependency
+AARs cannot add partial ARMv7/x86/x86_64 payloads. Missing or unsupported target
+ABIs fail configuration. Ordinary builds do not load the script and retain
+all four supported ABIs.
+
 ## Automated Coverage
+
+APK verifier fixture tests under `Tools/tests/test_verify_tunnel_apk.py` run
+through `tunnelCheck`. They cover ARM64-only and multi-ABI archives, each missing
+library, missing required ABI, incomplete additional ABIs, forbidden Go outputs
+and invalid ZIP archives.
 
 Preparation tests under `Tools/tests/test_prepare_tgcalls.py` run through the
 canonical command. They exercise a real temporary Git repository: clean and

@@ -319,6 +319,11 @@ Important details:
   AmneziaWG Go tests, static guards, and APK packaging verification.
 - Static guards are part of the safety net. If an invariant intentionally
   changes, update tests, guards, docs, and this file together.
+- Release CI runs `tunnelCheck` before release assembly and verifies the exact
+  APK before publication with `Tools/verify-tunnel-apk.py`. Require ARM64 and
+  complete tunnel JNI/shared Go/logger plus twidget libraries for every packaged
+  ABI; reject Go build/cache entries and separate legacy Go runtimes. Verifier
+  fixture tests run through the canonical checks.
 - Long Gradle builds can take many minutes. Do not kill a running Gradle build
   unless explicitly asked.
 - Canonical checks include host C++17 SOCKS5 handshake tests; `CXX` may select
