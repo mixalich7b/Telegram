@@ -12,6 +12,7 @@
 #include <openssl/sha.h>
 #include <algorithm>
 #include "Connection.h"
+#include "NetworkAddressPolicy.h"
 #include "ConnectionsManager.h"
 #include "BuffersStorage.h"
 #include "FileLog.h"
@@ -29,7 +30,14 @@ Connection::Connection(Datacenter *datacenter, ConnectionType type, int8_t num) 
     genereateNewSessionId();
     connectionState = TcpConnectionStageIdle;
     reconnectTimer = new Timer(datacenter->instanceNum, [&] {
-        reconnectTimer->stop();
+        if (traceRetryScheduledAt >= 0 && tunnelTrace.active()) {
+            TG_TUNNEL_LOG_D("tunnel_trace event=tgnet_retry_fired attempt=%" PRIu64 " account=%d generation=%" PRId64
+                    " delay_ms=%" PRId64 " actual_wait_ms=%" PRId64,
+                    tunnelTrace.attempt(), ConnectionSocket::instanceNum, tunnelTrace.generation(), traceRetryDelay,
+                    ConnectionsManager::getInstance(ConnectionSocket::instanceNum).getCurrentTimeMonotonicMillis() - traceRetryScheduledAt);
+        }
+        traceRetryScheduledAt = -1;
+        stopReconnectTimer();
         waitForReconnectTimer = false;
         connect();
     });
@@ -37,7 +45,7 @@ Connection::Connection(Datacenter *datacenter, ConnectionType type, int8_t num) 
 
 Connection::~Connection() {
     if (reconnectTimer != nullptr) {
-        reconnectTimer->stop();
+        stopReconnectTimer();
         delete reconnectTimer;
         reconnectTimer = nullptr;
     }
@@ -48,7 +56,10 @@ void Connection::suspendConnection() {
 }
 
 void Connection::suspendConnection(bool idle) {
-    reconnectTimer->stop();
+    if (connectionState != TcpConnectionStageIdle && connectionState != TcpConnectionStageSuspended) {
+        traceTunnelDecision(idle ? "connection_suspend_idle" : "connection_suspend");
+    }
+    stopReconnectTimer();
     waitForReconnectTimer = false;
     if (connectionState == TcpConnectionStageIdle || connectionState == TcpConnectionStageSuspended) {
         return;
@@ -215,7 +226,7 @@ void Connection::onReceivedData(NativeByteBuffer *buffer) {
 
         if (currentProtocolType != ProtocolTypeDD && currentProtocolType != ProtocolTypeTLS && currentPacketLength % 4 != 0 || currentPacketLength > 2 * 1024 * 1024) {
             if (LOGS_ENABLED) DEBUG_D("connection(%p, account%u, dc%u, type %d) received invalid packet length", this, currentDatacenter->instanceNum, currentDatacenter->getDatacenterId(), connectionType);
-            reconnect();
+            reconnect("reconnect_invalid_packet_length");
             break;
         }
 
@@ -352,7 +363,7 @@ void Connection::connect() {
         hostPort = (uint16_t) currentDatacenter->getCurrentPort(currentAddressFlags);
     }
 
-    reconnectTimer->stop();
+    stopReconnectTimer();
 
     if (LOGS_ENABLED) DEBUG_D("connection(%p, account%u, dc%u, type %d) connecting (%s:%hu)", this, currentDatacenter->instanceNum, currentDatacenter->getDatacenterId(), connectionType, hostAddress.c_str(), hostPort);
     generation++;
@@ -364,7 +375,15 @@ void Connection::connect() {
     lastPacketLength = 0;
     wasConnected = false;
     hasSomeDataSinceLastConnect = false;
+    tunnelTrace.setContext(currentDatacenter->getDatacenterId(), connectionType);
     openConnection(hostAddress, hostPort, secret, ipv6 != 0, ConnectionsManager::getInstance(currentDatacenter->instanceNum).currentNetworkType);
+    if (tunnelTrace.active()) {
+        TG_TUNNEL_LOG_D("tunnel_trace event=address_selected attempt=%" PRIu64 " account=%d generation=%" PRId64
+                " dc=%u type=%d ipv6=%d ipv6_enabled=%d strategy=%u address_flags=%u network_type=%d",
+                tunnelTrace.attempt(), ConnectionSocket::instanceNum, tunnelTrace.generation(), currentDatacenter->getDatacenterId(),
+                connectionType, ipv6 != 0, tgnet::ipv6Enabled(), strategy, currentAddressFlags,
+                ConnectionsManager::getInstance(ConnectionSocket::instanceNum).currentNetworkType);
+    }
     if (connectionType == ConnectionTypeProxy) {
         setTimeout(5);
     } else if (connectionType == ConnectionTypePush) {
@@ -389,7 +408,8 @@ void Connection::connect() {
     connectionInProcess = false;
 }
 
-void Connection::reconnect() {
+void Connection::reconnect(const char *traceReason) {
+    traceTunnelDecision(traceReason);
     if (connectionType == ConnectionTypeProxy) {
         suspendConnection(false);
     } else {
@@ -655,7 +675,8 @@ inline void Connection::encryptKeyWithSecret(uint8_t *bytes, uint8_t secretType)
 }
 
 void Connection::onDisconnectedInternal(int32_t reason, int32_t error) {
-    reconnectTimer->stop();
+    traceTunnelDecision("tgnet_disconnected");
+    stopReconnectTimer();
     if (LOGS_ENABLED) DEBUG_D("connection(%p, account%u, dc%u, type %d) disconnected with reason %d", this, currentDatacenter->instanceNum, currentDatacenter->getDatacenterId(), connectionType, reason);
     bool switchToNextPort = reason == 2 && wasConnected && (!hasSomeDataSinceLastConnect || currentDatacenter->isCustomPort(currentAddressFlags)) || forceNextPort;
     if (connectionType == ConnectionTypeGeneric || connectionType == ConnectionTypeTemp || connectionType == ConnectionTypeGenericMedia) {
@@ -692,6 +713,7 @@ void Connection::onDisconnectedInternal(int32_t reason, int32_t error) {
         if (ConnectionsManager::getInstance(currentDatacenter->instanceNum).isNetworkAvailable() && connectionType != ConnectionTypeProxy) {
             isTryingNextPort = true;
             if (failedConnectionCount > willRetryConnectCount || switchToNextPort) {
+                traceTunnelDecision("address_retry_advance");
                 currentDatacenter->nextAddressOrPort(currentAddressFlags);
                 if (currentDatacenter->isRepeatCheckingAddresses() && (ConnectionsManager::getInstance(currentDatacenter->instanceNum).getIpStratagy() == USE_IPV4_ONLY || ConnectionsManager::getInstance(currentDatacenter->instanceNum).getIpStratagy() == USE_IPV6_ONLY)) {
                     if (LOGS_ENABLED) DEBUG_D("started retrying connection, set ipv4 ipv6 random strategy");
@@ -703,6 +725,7 @@ void Connection::onDisconnectedInternal(int32_t reason, int32_t error) {
         if (error == 0x68 || error == 0x71) {
             if (connectionType != ConnectionTypeProxy) {
                 waitForReconnectTimer = true;
+                traceReconnectScheduled(lastReconnectTimeout);
                 reconnectTimer->setTimeout(lastReconnectTimeout, false);
                 lastReconnectTimeout *= 2;
                 if (lastReconnectTimeout > 400) {
@@ -714,6 +737,7 @@ void Connection::onDisconnectedInternal(int32_t reason, int32_t error) {
             waitForReconnectTimer = false;
             if (connectionType == ConnectionTypeGenericMedia && currentDatacenter->isHandshaking(true) || connectionType == ConnectionTypeGeneric && (currentDatacenter->isHandshaking(false) || datacenterId == ConnectionsManager::getInstance(currentDatacenter->instanceNum).currentDatacenterId || datacenterId == ConnectionsManager::getInstance(currentDatacenter->instanceNum).movingToDatacenterId)) {
                 if (LOGS_ENABLED) DEBUG_D("connection(%p, account%u, dc%u, type %d) reconnect %s:%hu", this, currentDatacenter->instanceNum, currentDatacenter->getDatacenterId(), connectionType, hostAddress.c_str(), hostPort);
+                traceReconnectScheduled(1000);
                 reconnectTimer->setTimeout(1000, false);
                 reconnectTimer->start();
             }
@@ -733,6 +757,7 @@ void Connection::onDisconnected(int32_t reason, int32_t error) {
 }
 
 void Connection::onConnected() {
+    traceTunnelDecision("tgnet_connected");
     connectionState = TcpConnectionStageConnected;
     connectionToken = lastConnectionToken++;
     wasConnected = true;
@@ -742,6 +767,36 @@ void Connection::onConnected() {
 
 bool Connection::hasPendingRequests() {
     return ConnectionsManager::getInstance(currentDatacenter->instanceNum).hasPendingRequestsForConnection(this);
+}
+
+void Connection::traceTunnelDecision(const char *event) {
+    if (!tunnelTrace.active()) return;
+    auto &manager = ConnectionsManager::getInstance(ConnectionSocket::instanceNum);
+    tunnelTrace.event(event, manager.getCurrentTimeMonotonicMillis());
+    TG_TUNNEL_LOG_D("tunnel_trace event=tgnet_state attempt=%" PRIu64 " account=%d generation=%" PRId64
+            " trigger=%s state=%d connection_generation=%u network_available=%d handshaking=%d"
+            " failed_count=%u retry_count=%u address_flags=%u has_data=%d pending_requests=%d",
+            tunnelTrace.attempt(), ConnectionSocket::instanceNum, tunnelTrace.generation(), event, connectionState, generation,
+            manager.isNetworkAvailable(), currentDatacenter->isHandshaking(isMediaConnection),
+            static_cast<unsigned int>(failedConnectionCount), willRetryConnectCount, currentAddressFlags,
+            hasSomeDataSinceLastConnect, hasPendingRequests());
+}
+
+void Connection::traceReconnectScheduled(int64_t delay) {
+    if (!tunnelTrace.active()) return;
+    traceRetryScheduledAt = ConnectionsManager::getInstance(ConnectionSocket::instanceNum).getCurrentTimeMonotonicMillis();
+    traceRetryDelay = delay;
+    traceTunnelDecision("tgnet_retry_scheduled");
+    TG_TUNNEL_LOG_D("tunnel_trace event=tgnet_retry_delay attempt=%" PRIu64 " account=%d generation=%" PRId64 " delay_ms=%" PRId64,
+            tunnelTrace.attempt(), ConnectionSocket::instanceNum, tunnelTrace.generation(), delay);
+}
+
+void Connection::stopReconnectTimer() {
+    if (traceRetryScheduledAt >= 0 && tunnelTrace.active()) {
+        tunnelTrace.event("tgnet_retry_cancelled", ConnectionsManager::getInstance(ConnectionSocket::instanceNum).getCurrentTimeMonotonicMillis());
+    }
+    traceRetryScheduledAt = -1;
+    reconnectTimer->stop();
 }
 
 Datacenter *Connection::getDatacenter() {

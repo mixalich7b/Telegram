@@ -17,6 +17,7 @@
 #include <atomic>
 #include <unordered_set>
 #include "Defines.h"
+#include "TunnelConnectionDiagnostics.h"
 
 #ifdef ANDROID
 #include <jni.h>
@@ -199,6 +200,7 @@ private:
     int64_t tunnelRouteGeneration = 0;
     int64_t tunnelRouteActiveSince = 0;
     bool tunnelRouteReadyLogged = false;
+    tgnet::TunnelBlockedTrace tunnelBlockedTrace;
     int32_t lastPingProxyId = 2000000;
     std::vector<std::unique_ptr<ProxyCheckInfo>> proxyCheckQueue;
     std::vector<std::unique_ptr<ProxyCheckInfo>> proxyActiveChecks;

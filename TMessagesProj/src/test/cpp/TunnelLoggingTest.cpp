@@ -1,4 +1,5 @@
 #include "tg_tunnel/TunnelLog.h"
+#include "tgnet/TunnelConnectionDiagnostics.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -68,6 +69,69 @@ int main() {
             assert(evaluations == 0);
             assert(messages.empty());
             assert(fs::is_empty(live));
+        }
+        messages.clear();
+        tgnet::TunnelConnectionTrace trace;
+        trace.setContext(2, 16);
+        trace.begin(0, 7, 11, 1000);
+        trace.connected(1020);
+        trace.io(false, 0, 1030);
+        trace.io(false, -1, 1030);
+        assert(trace.needsIo(false) == static_cast<bool>(TG_TUNNEL_LOGS_ENABLED));
+        trace.io(false, 64, 1040);
+        assert(!trace.needsIo(false));
+        trace.io(false, 64, 1050);
+        trace.io(true, 32, 1080);
+        trace.io(true, 32, 1090);
+        trace.ready(1100);
+        trace.ready(1110);
+        trace.close(1120, 2, 0);
+        trace.close(1130, 2, 0);
+        trace.io(true, 32, 1140);
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            assert(messages.size() == 6);
+            const auto &ready = messages[4];
+            assert(ready.find("attempt=11 account=0 generation=7 dc=2 type=16") != std::string::npos);
+            assert(ready.find("elapsed_ms=100 tcp_elapsed_ms=80 write_elapsed_ms=60 read_elapsed_ms=20") != std::string::npos);
+            assert(messages[5].find("reason=2 error=0") != std::string::npos);
+        } else {
+            assert(messages.empty());
+        }
+        messages.clear();
+        trace.begin(0, 8, 12, 2000);
+        trace.event("test_retry", 2010);
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            assert(messages.back().find("attempt=12 account=0 generation=8") != std::string::npos);
+            assert(messages.back().find("tcp_elapsed_ms=-1 write_elapsed_ms=-1 read_elapsed_ms=-1") != std::string::npos);
+        }
+        messages.clear();
+        tgnet::TunnelBlockedTrace blocked;
+        blocked.record(0, 7, 1000);
+        for (int i = 1; i <= 1000; ++i) blocked.record(0, 7, 1000 + i / 10);
+        blocked.record(0, 7, 2000);
+        blocked.record(0, 7, 2001);
+        blocked.flush(0, 7, 2010);
+        blocked.flush(0, 7, 2011);
+        blocked.record(0, 8, 2020);
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            assert(messages.size() == 5);
+            assert(messages[1].find("suppressed=1000") != std::string::npos);
+            assert(messages[3].find("generation=7 suppressed=1") != std::string::npos);
+            assert(messages[4].find("generation=8") != std::string::npos);
+        } else {
+            assert(messages.empty());
+        }
+        messages.clear();
+        trace.clear();
+        trace.ready(3000);
+        trace.io(true, 64, 3010);
+        trace.event("direct_connection", 3020);
+        assert(messages.empty());
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            assert(tgTunnelLogSnapshot(snapshot.c_str()));
+            const auto diagnostics = read(snapshot / "tunnel.log");
+            assert(diagnostics.find("event=connection_mtproto_ready attempt=11 account=0 generation=7") != std::string::npos);
+            assert(diagnostics.find("event=route_blocked_summary account=0 generation=7 suppressed=1000") != std::string::npos);
         }
     }
     if (TG_TUNNEL_LOGS_ENABLED) {

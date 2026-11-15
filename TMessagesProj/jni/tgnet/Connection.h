@@ -49,7 +49,7 @@ protected:
     void onDisconnected(int32_t reason, int32_t error) override;
     void onConnected() override;
     bool hasPendingRequests() override;
-    void reconnect();
+    void reconnect(const char *traceReason = "connection_explicit_reconnect");
 
 private:
 
@@ -71,6 +71,9 @@ private:
     inline void encryptKeyWithSecret(uint8_t *array, uint8_t secretType);
     inline std::string *getCurrentSecret(uint8_t secretType);
     void onDisconnectedInternal(int32_t reason, int32_t error);
+    void stopReconnectTimer();
+    void traceReconnectScheduled(int64_t delay);
+    void traceTunnelDecision(const char *event);
 
     ProtocolType currentProtocolType = ProtocolTypeEE;
 
@@ -79,7 +82,7 @@ private:
     std::string hostAddress;
     std::string secret;
     uint16_t hostPort;
-    uint16_t failedConnectionCount;
+    uint16_t failedConnectionCount = 0;
     Datacenter *currentDatacenter;
     uint32_t currentAddressFlags;
     ConnectionType connectionType;
@@ -92,6 +95,8 @@ private:
     bool wasConnected = false;
     uint32_t willRetryConnectCount = 5;
     Timer *reconnectTimer;
+    int64_t traceRetryScheduledAt = -1;
+    int64_t traceRetryDelay = 0;
     bool usefullData = false;
     bool forceNextPort = false;
     bool isMediaConnection = false;

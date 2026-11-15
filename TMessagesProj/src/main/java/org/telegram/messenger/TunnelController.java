@@ -282,6 +282,8 @@ final class TunnelController {
                 runtimeState = RuntimeState.STARTING;
                 long generation = ++lifecycleGeneration;
                 int knownAccountCount = maxKnownAccountCount;
+                logger.debug("tunnel_trace event=lifecycle_request operation=network_refresh generation=" + generation
+                        + " reason=network_changed");
                 applyTunnelRouteForAccountsLocked(knownAccountCount);
                 lifecycleTask = tracedLifecycleTask("network_refresh", generation,
                         () -> refreshNetworkBindings(generation, knownAccountCount));
@@ -304,6 +306,12 @@ final class TunnelController {
     }
 
     void restart(int accountCount) {
+        restart(accountCount, RestartReason.EXPLICIT);
+    }
+
+    enum RestartReason { EXPLICIT, ENABLE, PROFILE_SELECTED, PROFILE_SAVED, IPV6_POLICY_CHANGED }
+
+    void restart(int accountCount, RestartReason reason) {
         if (!configProvider.isEnabled()) {
             disable(accountCount);
             return;
@@ -320,6 +328,8 @@ final class TunnelController {
             runtimeState = RuntimeState.STARTING;
             long generation = ++lifecycleGeneration;
             int knownAccountCount = maxKnownAccountCount;
+            logger.debug("tunnel_trace event=lifecycle_request operation=restart generation=" + generation
+                    + " reason=" + reason.name());
             applyTunnelRouteForAccountsLocked(knownAccountCount);
             lifecycleTask = tracedLifecycleTask("restart", generation,
                     () -> startRuntime(generation, knownAccountCount, true));

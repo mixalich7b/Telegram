@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <memory>
 #include <string>
+#include "TunnelConnectionDiagnostics.h"
 
 class NativeByteBuffer;
 class ConnectionsManager;
@@ -38,6 +39,7 @@ public:
     void onHostNameResolved(std::string host, std::string ip, bool ipv6);
 
 protected:
+    tgnet::TunnelConnectionTrace tunnelTrace;
     int32_t instanceNum;
     void onEvent(uint32_t events);
     bool checkTimeout(int64_t now);
@@ -86,6 +88,7 @@ private:
     uint8_t proxyAuthState;
 
     int32_t checkSocketError(int32_t *error);
+    ssize_t sendSocketData(const void *data, size_t size);
     void closeSocket(int32_t reason, int32_t error);
     void openConnectionInternal(bool ipv6);
     void openTunnelConnection(std::string address, uint16_t port);

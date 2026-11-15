@@ -459,6 +459,7 @@ tasks.register("verifyWireGuardStaticGuards") {
         }
         // Dedicated tunnel diagnostics must never inherit global app log settings.
         ["src/main/java/org/telegram/messenger/TunnelLog.java",
+         "src/main/java/org/telegram/messenger/NetworkAddressSettings.java",
          "src/main/java/org/telegram/messenger/TunnelManager.java",
          "src/main/java/org/telegram/messenger/WireGuardSecureStore.java",
          "src/main/java/org/telegram/ui/WireGuardSettingsActivity.java",
@@ -694,6 +695,11 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def tgnetConnectionSocketText = file("jni/tgnet/ConnectionSocket.cpp").text
+        def connectionDiagnosticsText = file("jni/tgnet/TunnelConnectionDiagnostics.h").text
+        if ((connectionDiagnosticsText =~ /\bLOGS_ENABLED\b|FileLog|__android_log_/).find()
+                || !connectionDiagnosticsText.contains("TG_TUNNEL_LOGS_ENABLED")) {
+            throw new GradleException("Connection diagnostics must use only the dedicated tunnel logger and flag")
+        }
         ["tunnelRouteEnabled", "tunnelRouteBlocked", "socketpair", "libtg-tunnel-go.so", "tgTunnelTcpConnect", "tgTunnelTcpRead", "tgTunnelTcpWrite", "tgTunnelTcpClose", "MSG_NOSIGNAL", "connectAttemptCompleted", "onTunnelTcpConnectStarted", "onTunnelTcpConnectFailed", "onTunnelTcpConnected", "onTunnelTcpConnectCancelled", "tunnel_trace event=tcp_dial_start", "tunnel_trace event=tcp_dial_connected", "tunnel_trace event=tcp_dial_failed", "tunnel_trace event=tcp_dial_cancelled", "elapsed_ms="].each { token ->
             if (!tgnetConnectionSocketText.contains(token)) {
                 throw new GradleException("tgnet tunnel route must use direct tunnel TCP transport token '${token}'")

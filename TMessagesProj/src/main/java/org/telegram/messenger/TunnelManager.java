@@ -141,7 +141,7 @@ public final class TunnelManager {
     public static void enable(String profileId) {
         WireGuardSettings.setCurrentProfileId(profileId);
         WireGuardSettings.setEnabled(true);
-        controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+        controller.restart(UserConfig.MAX_ACCOUNT_COUNT, TunnelController.RestartReason.ENABLE);
     }
 
     public static void disable() {
@@ -152,14 +152,14 @@ public final class TunnelManager {
     public static void selectProfile(String profileId) {
         WireGuardSettings.setCurrentProfileId(profileId);
         if (WireGuardSettings.isEnabled()) {
-            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT, TunnelController.RestartReason.PROFILE_SELECTED);
         }
     }
 
     public static WireGuardProfile saveProfile(WireGuardProfile profile) {
         WireGuardProfile saved = WireGuardSettings.saveProfile(profile);
         if (WireGuardSettings.isEnabled() && saved.id.equals(WireGuardSettings.getCurrentProfileId())) {
-            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT, TunnelController.RestartReason.PROFILE_SAVED);
         }
         return saved;
     }
@@ -202,7 +202,7 @@ public final class TunnelManager {
 
     public static void onIpVersionPolicyChanged() {
         if (WireGuardSettings.isEnabled()) {
-            controller.restart(UserConfig.MAX_ACCOUNT_COUNT);
+            controller.restart(UserConfig.MAX_ACCOUNT_COUNT, TunnelController.RestartReason.IPV6_POLICY_CHANGED);
         }
     }
 

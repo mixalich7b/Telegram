@@ -206,6 +206,63 @@ Java exceptions expose their type without exception messages or stack traces
 that might contain profile data. Native tgnet's per-attempt TCP timing and
 MTProto readiness follow the same tunnel build flag and use the same tag.
 
+Connection phase diagnostics extend this trace:
+
+- `ipv6_policy` records `requested`, `effective`, `deferred` and a fixed reason
+  (`startup`, `requested`, `last_session_ended`, `applied`). `requested` describes
+  the policy decision; `applied` follows native policy application. Call deferral
+  can leave requested/effective values different. Native `route_state` and
+  `address_selected` include `ipv6_enabled`; `address_family_rejected` explains
+  a policy rejection without printing an address.
+- `lifecycle_request` identifies network change or the fixed restart initiator
+  (`ENABLE`, `PROFILE_SELECTED`, `PROFILE_SAVED`, `IPV6_POLICY_CHANGED`,
+  `EXPLICIT`) and the resulting lifecycle generation.
+- `connection_start`, `connection_tcp_ready`, `tgnet_connected`,
+  `tgnet_first_write`, `tgnet_first_read`, and `connection_mtproto_ready` follow
+  one socket attempt. `attempt`, `account`, and `generation` correlate with the
+  existing `tcp_dial_*` events. `dc` and `type` identify the datacenter and native
+  connection type. The trace retains the attempt's original lifecycle generation
+  even after the account route changes.
+- `elapsed_ms` is measured from attempt start; `tcp_elapsed_ms`,
+  `write_elapsed_ms`, and `read_elapsed_ms` measure time since TCP completion,
+  first successful socket write, and first read respectively, or `-1` if that
+  phase has not happened. `phase` describes the furthest observed phase.
+- tgnet's socket in tunnel mode is a local socketpair: `tgnet_first_write` means
+  bytes entered that local bridge. `bridge_first_write` follows the first full
+  Go tunnel TCP write; it is not an acknowledgement from Telegram.
+  `bridge_first_read` follows the first positive Go tunnel TCP read.
+  Bridge events report their own thread's result and elapsed time using the
+  same monotonic clock; thread scheduling can reorder their log records.
+- `connection_closed` records numeric `reason` and `error` before cleanup.
+  `connection_timeout`/`timeout_details` record idle duration, configured timeout
+  and whether tgnet was notified of TCP connection establishment.
+  `socket_read_failed`/`socket_write_failed` preserve the syscall error code;
+  `bridge_write_failed`/`bridge_read_end` report Go API results and whether the
+  handle was already closing. A Go API result is not a system errno.
+- `tgnet_state` accompanies connection, suspension, disconnection and retry
+  decisions. It records network availability, handshake state, pending requests,
+  failure/retry counts, address flags, and tgnet's separate connection generation.
+  `address_retry_advance` marks address/port rotation; fixed `reconnect_*` event
+  names distinguish transport errors, malformed headers/framing, decryption
+  failure and session recreation. `mtproto_transport_error` adds only the numeric
+  transport error, never packet contents or key/session identifiers.
+- `tgnet_retry_scheduled`/`tgnet_retry_delay`, `tgnet_retry_fired`, and
+  `tgnet_retry_cancelled` expose timer decisions; fired events compare requested
+  `delay_ms` with `actual_wait_ms`. Timers and route selection are unchanged.
+- `route_blocked` replaces the repetitive `tunnel route is blocked` message.
+  It reports at most once per second per account while blocked;
+  `route_blocked_summary` counts suppressed repetitions and flushes on route
+  transitions, including generation changes. This state is independent of IPv6.
+
+For a fast TCP dial followed by slow readiness, compare the first-write event
+with `connection_tcp_ready`, the first-read event with the first write, and
+readiness with the first read. For example, immediate write followed by an
+8-second wait to read places the delay on the response path; an 8-second pause
+before writing instead points to local scheduling/request/handshake processing.
+Use `tgnet_state` and reconnect/timeout events to distinguish these from a new
+attempt. `mtproto_ready` retains its existing meaning: tgnet's connected-state
+transition, not proof that authentication or all queued requests have completed.
+
 Read one lifecycle generation in this order:
 
 - `runtime_active`: the WireGuard or AmneziaWG userspace runtime started;
@@ -236,7 +293,10 @@ and each app-wide log state; disabled logging must not evaluate log arguments
 or create files. They also cover records before initialization, Java/Go C ABI
 inputs, queue drain, concurrent producers, stable export snapshots, rotation,
 clear/reopen, preservation of prior-process records and recovery after export
-or file-open failure. Go tests exercise enabled and disabled bridge diagnostics. Static guards prevent
+or file-open failure. Connection diagnostic checks cover first-I/O milestones,
+empty/failed I/O, single readiness/close events, attempt resets, direct-route
+clearing, blocked-burst aggregation and export of the resulting records, under
+each tunnel/general logging combination. Go tests exercise enabled and disabled bridge diagnostics. Static guards prevent
 Java and dedicated VoIP diagnostics from returning to app-wide log sinks and
 prevent upstream Go device loggers from bypassing the flag via stdout.
 

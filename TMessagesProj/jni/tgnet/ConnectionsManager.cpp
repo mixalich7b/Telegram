@@ -835,6 +835,9 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
     bool error = false;
     if (length <= 24 + 32) {
         int32_t code = data->readInt32(&error);
+        if (connection->tunnelTrace.active() && code != 0 && code != -1) {
+            connection->tunnelTrace.event("mtproto_transport_error", getCurrentTimeMonotonicMillis(), 0, code);
+        }
         if (code == 0) {
             if (LOGS_ENABLED) DEBUG_D("mtproto noop");
         } else if (code == -1) {
@@ -856,7 +859,7 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
                     if (LOGS_ENABLED) DEBUG_D("connection(%p, account%u, dc%u, type %d) reset auth key due to -404 error", connection, instanceNum, datacenter->getDatacenterId(), connection->getConnectionType());
                 }
             } else {
-                connection->reconnect();
+                connection->reconnect("reconnect_transport_error");
             }
         }
         return;
@@ -866,13 +869,16 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
     int64_t keyId = data->readInt64(&error);
 
     if (error) {
-        connection->reconnect();
+        connection->reconnect("reconnect_key_header_error");
         return;
     }
 
     Datacenter *datacenter = connection->getDatacenter();
 
     if (connectionState != ConnectionStateConnected && connection->getConnectionType() == ConnectionTypeGeneric && datacenter->getDatacenterId() == currentDatacenterId) {
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            connection->tunnelTrace.ready(getCurrentTimeMonotonicMillis());
+        }
         if (tunnelRouteEnabled && !tunnelRouteBlocked && !tunnelRouteReadyLogged) {
             tunnelRouteReadyLogged = true;
             if (TG_TUNNEL_LOGS_ENABLED) {
@@ -896,7 +902,7 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
     if (keyId == 0) {
         int64_t messageId = data->readInt64(&error);
         if (error) {
-            connection->reconnect();
+            connection->reconnect("reconnect_handshake_header_error");
             return;
         }
 
@@ -906,14 +912,14 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
 
         uint32_t messageLength = data->readUint32(&error);
         if (error) {
-            connection->reconnect();
+            connection->reconnect("reconnect_handshake_length_error");
             return;
         }
 
         if (!connection->allowsCustomPadding()) {
             if (messageLength != data->remaining()) {
                 if (LOGS_ENABLED) DEBUG_E("connection(%p) received incorrect message length", connection);
-                connection->reconnect();
+                connection->reconnect("reconnect_message_length_mismatch");
                 return;
             }
         }
@@ -937,7 +943,7 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
                 datacenter->processHandshakeResponse(connection->isMediaConnection, object, messageId);
             } else {
                 if (LOGS_ENABLED) DEBUG_E("connection(%p) received incorrect unencrypted message type", connection);
-                connection->reconnect();
+                connection->reconnect("reconnect_unexpected_handshake_message");
                 return;
             }
             lastProtocolUsefullData = true;
@@ -953,7 +959,7 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
         }
         if (length < 24 + 32 || (!connection->allowsCustomPadding() && (length - 24) % 16 != 0) || !datacenter->decryptServerResponse(keyId, data->bytes() + mark + 8, data->bytes() + mark + 24, length - 24, connection)) {
             if (LOGS_ENABLED) DEBUG_E("connection(%p) unable to decrypt server response", connection);
-            connection->reconnect();
+            connection->reconnect("reconnect_decrypt_failed");
             return;
         }
         data->position(mark + 24);
@@ -989,7 +995,7 @@ void ConnectionsManager::onConnectionDataReceived(Connection *connection, Native
             if (processedStatus == 2) {
                 if (object == nullptr) {
                     connection->recreateSession();
-                    connection->reconnect();
+                    connection->reconnect("reconnect_session_recreated");
                     return;
                 } else {
                     delete object;
@@ -1180,7 +1186,7 @@ void ConnectionsManager::processServerResponse(TLObject *message, int64_t messag
             if (processedStatus == 2) {
                 if (innerMessage->unparsedBody != nullptr) {
                     connection->recreateSession();
-                    connection->reconnect();
+                    connection->reconnect("reconnect_container_session_recreated");
                     return;
                 }
                 processedStatus = 0;
@@ -3800,6 +3806,9 @@ void ConnectionsManager::setProxySettings(std::string address, uint16_t port, st
         std::string newSecret = decodeSecret(secret);
         bool secretChanged = proxySecret != newSecret;
         bool reconnect = proxyAddress != address || proxyPort != port || username != proxyUser || proxyPassword != password || secretChanged;
+        if (TG_TUNNEL_LOGS_ENABLED) {
+            tunnelBlockedTrace.flush(instanceNum, tunnelRouteGeneration, getCurrentTimeMonotonicMillis());
+        }
         tunnelRouteEnabled = false;
         tunnelRouteBlocked = false;
         tunnelRouteGeneration = 0;
@@ -3855,6 +3864,9 @@ void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked, int64_t l
                     || tunnelRouteBlocked
                     || tunnelRouteGeneration != lifecycleGeneration
                     || tunnelRouteActiveSince == 0);
+        if (reconnect && TG_TUNNEL_LOGS_ENABLED) {
+            tunnelBlockedTrace.flush(instanceNum, tunnelRouteGeneration, getCurrentTimeMonotonicMillis());
+        }
         tunnelRouteEnabled = enabled;
         tunnelRouteBlocked = enabled && blocked;
         tunnelRouteGeneration = lifecycleGeneration;
@@ -3866,11 +3878,12 @@ void ConnectionsManager::setTunnelSettings(bool enabled, bool blocked, int64_t l
             tunnelRouteReadyLogged = false;
         }
         if (TG_TUNNEL_LOGS_ENABLED) {
-            TG_TUNNEL_LOG_D("tunnel_trace event=route_state account=%d generation=%" PRId64 " enabled=%d blocked=%d",
+            TG_TUNNEL_LOG_D("tunnel_trace event=route_state account=%d generation=%" PRId64 " enabled=%d blocked=%d ipv6_enabled=%d reconnect=%d",
                     instanceNum,
                     tunnelRouteGeneration,
                     tunnelRouteEnabled,
-                    tunnelRouteBlocked);
+                    tunnelRouteBlocked,
+                    tgnet::ipv6Enabled(), reconnect);
         }
         proxyAddress = "";
         proxyPort = 1080;

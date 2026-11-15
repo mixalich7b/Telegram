@@ -206,6 +206,12 @@ AmneziaWG peer.
 - Canonical checks include native logger on/off coverage with each general-log
   state, queue drain/snapshot, concurrent writers, rotation and clear/reopen,
   Go logger on/off coverage and guards against bypassing the flag.
+- Connection delay traces correlate tgnet phase/timer/close events and Go bridge
+  first-I/O events by TCP attempt, account and lifecycle generation. Preserve
+  that generation when a route changes. First socketpair write and full Go TCP
+  write are separate milestones; neither proves peer acknowledgement. Aggregate
+  blocked-route bursts per account and flush suppression on route transitions.
+  Record IPv6 requested/effective/deferred state without profile data or payloads.
 
 ## UI Invariants
 

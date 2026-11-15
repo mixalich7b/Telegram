@@ -114,12 +114,24 @@ struct TunnelSocketState {
     int64_t lifecycleGeneration = 0;
     uint64_t traceAttemptId = 0;
     int64_t traceStartedAtMs = 0;
+    int traceAccount = 0;
     std::mutex fdMutex;
     int appFd = -1;
     int bridgeFd = -1;
 };
 
 namespace {
+
+void traceTunnelBridge(const std::shared_ptr<TunnelSocketState> &state, const char *event, int result) {
+    if (!TG_TUNNEL_LOGS_ENABLED) return;
+    struct timespec now;
+    clock_gettime(CLOCK_BOOTTIME, &now);
+    const int64_t elapsedMs = static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_nsec / 1000000 - state->traceStartedAtMs;
+    TG_TUNNEL_LOG_D("tunnel_trace event=%s attempt=%" PRIu64 " account=%d generation=%" PRId64
+            " elapsed_ms=%" PRId64 " result=%d closed=%d",
+            event, state->traceAttemptId, state->traceAccount, state->lifecycleGeneration,
+            elapsedMs, result, state->closed.load());
+}
 
 void closeFd(int &fd) {
     if (fd >= 0) {
@@ -161,6 +173,7 @@ bool writeAllToFd(int fd, const uint8_t *data, size_t size) {
 
 void relayLocalToTunnel(const std::shared_ptr<TunnelSocketState> &state) {
     std::vector<uint8_t> buffer(32 * 1024);
+    bool firstWrite = true;
     while (!state->closed.load()) {
         int fd;
         {
@@ -186,7 +199,12 @@ void relayLocalToTunnel(const std::shared_ptr<TunnelSocketState> &state) {
         }
         int written = TunnelBridge::shared().tcpWrite(handle, buffer.data(), static_cast<int>(readCount));
         if (written != readCount) {
+            traceTunnelBridge(state, "bridge_write_failed", written);
             break;
+        }
+        if (firstWrite) {
+            firstWrite = false;
+            traceTunnelBridge(state, "bridge_first_write", written);
         }
     }
     closeTunnelSocketState(state);
@@ -194,6 +212,7 @@ void relayLocalToTunnel(const std::shared_ptr<TunnelSocketState> &state) {
 
 void relayTunnelToLocal(const std::shared_ptr<TunnelSocketState> &state) {
     std::vector<uint8_t> buffer(32 * 1024);
+    bool firstRead = true;
     while (!state->closed.load()) {
         int64_t handle = state->handle.load();
         if (handle <= 0 || !TunnelBridge::shared().load()) {
@@ -201,7 +220,12 @@ void relayTunnelToLocal(const std::shared_ptr<TunnelSocketState> &state) {
         }
         int readCount = TunnelBridge::shared().tcpRead(handle, buffer.data(), static_cast<int>(buffer.size()));
         if (readCount <= 0) {
+            traceTunnelBridge(state, "bridge_read_end", readCount);
             break;
+        }
+        if (firstRead) {
+            firstRead = false;
+            traceTunnelBridge(state, "bridge_first_read", readCount);
         }
         int fd;
         {
@@ -250,6 +274,7 @@ ConnectionSocket::~ConnectionSocket() {
 }
 
 void ConnectionSocket::openConnection(std::string address, uint16_t port, std::string secret, bool ipv6, int32_t networkType) {
+    tunnelTrace.clear();
     currentNetworkType = networkType;
     isIpv6 = ipv6;
     currentAddress = address;
@@ -264,13 +289,22 @@ void ConnectionSocket::openConnection(std::string address, uint16_t port, std::s
     memset(&socketAddress6, 0, sizeof(sockaddr_in6));
 
     if (!tgnet::addressAllowed(address) || (ipv6 && !tgnet::ipv6Enabled())) {
+        if (ConnectionsManager::getInstance(instanceNum).tunnelRouteEnabled) {
+            TG_TUNNEL_LOG_D("tunnel_trace event=address_family_rejected account=%d generation=%" PRId64 " ipv6=%d ipv6_enabled=%d",
+                    instanceNum, ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration,
+                    ipv6, tgnet::ipv6Enabled());
+        }
         closeSocket(1, EAFNOSUPPORT);
         return;
     }
     bool useTunnelRoute = overrideProxyAddress.empty() && ConnectionsManager::getInstance(instanceNum).tunnelRouteEnabled;
     if (useTunnelRoute) {
         if (ConnectionsManager::getInstance(instanceNum).tunnelRouteBlocked) {
-            TG_TUNNEL_LOG_E("connection(%p) tunnel route is blocked", this);
+            if (TG_TUNNEL_LOGS_ENABLED) {
+                auto &manager = ConnectionsManager::getInstance(instanceNum);
+                manager.tunnelBlockedTrace.record(instanceNum, manager.tunnelRouteGeneration,
+                        manager.getCurrentTimeMonotonicMillis());
+            }
             closeSocket(1, ENETDOWN);
             return;
         }
@@ -433,6 +467,10 @@ void ConnectionSocket::openConnectionInternal(bool ipv6) {
 }
 
 void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) {
+    const uint64_t traceAttemptId = nextTunnelTraceAttemptId.fetch_add(1);
+    const int64_t traceStartedAtMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
+    tunnelTrace.begin(instanceNum, ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration,
+            traceAttemptId, traceStartedAtMs);
     int fds[2] = {-1, -1};
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
         TG_TUNNEL_LOG_E("connection(%p) can't create tunnel socketpair", this);
@@ -444,8 +482,9 @@ void ConnectionSocket::openTunnelConnection(std::string address, uint16_t port) 
     state->appFd = fds[0];
     state->bridgeFd = fds[1];
     state->lifecycleGeneration = ConnectionsManager::getInstance(instanceNum).tunnelRouteGeneration;
-    state->traceAttemptId = nextTunnelTraceAttemptId.fetch_add(1);
-    state->traceStartedAtMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
+    state->traceAttemptId = traceAttemptId;
+    state->traceStartedAtMs = traceStartedAtMs;
+    state->traceAccount = instanceNum;
     tunnelSocketState = state;
     if (TG_TUNNEL_LOGS_ENABLED) {
         TG_TUNNEL_LOG_D("tunnel_trace event=tcp_dial_start attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " target=%s:%u",
@@ -539,6 +578,7 @@ void ConnectionSocket::finishTunnelConnection(const std::shared_ptr<TunnelSocket
     bool reportConnected = !state->connectAttemptCompleted.exchange(true);
     if (reportConnected) {
         if (TG_TUNNEL_LOGS_ENABLED) {
+            tunnelTrace.connected(ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis());
             int64_t elapsedMs = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis()
                     - state->traceStartedAtMs;
             TG_TUNNEL_LOG_D("tunnel_trace event=tcp_dial_connected attempt=%" PRIu64 " socket=%p account=%d generation=%" PRId64 " elapsed_ms=%" PRId64,
@@ -632,6 +672,9 @@ int32_t ConnectionSocket::checkSocketError(int32_t *error) {
 }
 
 void ConnectionSocket::closeSocket(int32_t reason, int32_t error) {
+    if (TG_TUNNEL_LOGS_ENABLED) {
+        tunnelTrace.close(ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis(), reason, error);
+    }
     lastEventTime = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
     ConnectionsManager::getInstance(instanceNum).detachConnection(this);
     closeTunnelConnection();
@@ -655,6 +698,18 @@ void ConnectionSocket::closeSocket(int32_t reason, int32_t error) {
     onDisconnected(reason, error);
 }
 
+ssize_t ConnectionSocket::sendSocketData(const void *data, size_t size) {
+    const ssize_t result = send(socketFd, data, size, 0);
+    const int sendError = errno;
+    if (tunnelTrace.active() && (result < 0 || tunnelTrace.needsIo(false))) {
+        const int64_t now = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
+        tunnelTrace.io(false, result, now);
+        if (result < 0) tunnelTrace.event("socket_write_failed", now, 0, sendError);
+    }
+    errno = sendError;
+    return result;
+}
+
 void ConnectionSocket::onEvent(uint32_t events) {
     if (events & EPOLLIN) {
         int32_t error;
@@ -673,11 +728,17 @@ void ConnectionSocket::onEvent(uint32_t events) {
                     if (err == EAGAIN) {
                         break;
                     }
+                    if (TG_TUNNEL_LOGS_ENABLED) {
+                        tunnelTrace.event("socket_read_failed", ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis(), 0, err);
+                    }
                     closeSocket(1, -1);
                     if (LOGS_ENABLED) DEBUG_E("connection(%p) recv failed", this);
                     return;
                 }
                 if (readCount > 0) {
+                    if (tunnelTrace.needsIo(true)) {
+                        tunnelTrace.io(true, readCount, ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis());
+                    }
                     buffer->limit((uint32_t) readCount);
                     lastEventTime = ConnectionsManager::getInstance(instanceNum).getCurrentTimeMonotonicMillis();
                     if (proxyAuthState == 11) {
@@ -901,7 +962,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
                         memcpy(tempBuffer->bytes + 11, tempBuffer->bytes + 64 * 1024, 32);
                         bytesRead = 0;
 
-                        if (send(socketFd, tempBuffer->bytes, size, 0) < 0) {
+                        if (sendSocketData(tempBuffer->bytes, size) < 0) {
                             if (LOGS_ENABLED) DEBUG_E("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -916,7 +977,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
                         tempBuffer->bytes[1] = 0x02;
                         tempBuffer->bytes[2] = 0x00;
                         tempBuffer->bytes[3] = 0x02;
-                        if (send(socketFd, tempBuffer->bytes, 4, 0) < 0) {
+                        if (sendSocketData(tempBuffer->bytes, 4) < 0) {
                             if (LOGS_ENABLED) DEBUG_E("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -940,7 +1001,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
                         tempBuffer->bytes[2 + len1] = len2;
                         memcpy(tempBuffer->bytes + 3 + len1, proxyPassword->c_str(), len2);
                         proxyAuthState = 4;
-                        if (send(socketFd, tempBuffer->bytes, 3 + len1 + len2, 0) < 0) {
+                        if (sendSocketData(tempBuffer->bytes, 3 + len1 + len2) < 0) {
                             if (LOGS_ENABLED) DEBUG_E("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -955,7 +1016,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
                         inet_pton(isIpv6 ? AF_INET6 : AF_INET, currentAddress.c_str(), tempBuffer->bytes + 4);
                         memcpy(tempBuffer->bytes + 4 + (isIpv6 ? 16 : 4), &networkPort, sizeof(uint16_t));
                         proxyAuthState = 6;
-                        if (send(socketFd, tempBuffer->bytes, 4 + (isIpv6 ? 16 : 4) + 2, 0) < 0) {
+                        if (sendSocketData(tempBuffer->bytes, 4 + (isIpv6 ? 16 : 4) + 2) < 0) {
                             if (LOGS_ENABLED) DEBUG_E("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -999,7 +1060,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
 
                         std::memcpy(tempBuffer->bytes + headersSize, buffer->bytes(), remaining);
 
-                        if ((sentLength = send(socketFd, tempBuffer->bytes, headersSize + remaining, 0)) < headersSize) {
+                        if ((sentLength = sendSocketData(tempBuffer->bytes, headersSize + remaining)) < headersSize) {
                             if (LOGS_ENABLED) DEBUG_E("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -1011,7 +1072,7 @@ void ConnectionSocket::onEvent(uint32_t events) {
                             adjustWriteOp();
                         }
                     } else {
-                        if ((sentLength = send(socketFd, buffer->bytes(), remaining, 0)) < 0) {
+                        if ((sentLength = sendSocketData(buffer->bytes(), remaining)) < 0) {
                             if (LOGS_ENABLED) DEBUG_D("connection(%p) send failed", this);
                             closeSocket(1, -1);
                             return;
@@ -1089,6 +1150,13 @@ time_t ConnectionSocket::getTimeout() {
 bool ConnectionSocket::checkTimeout(int64_t now) {
     if (timeout != 0 && (now - lastEventTime) > (int64_t) timeout * 1000) {
         if (!onConnectedSent || hasPendingRequests()) {
+            if (tunnelTrace.active()) {
+                tunnelTrace.event("connection_timeout", now);
+                TG_TUNNEL_LOG_D("tunnel_trace event=timeout_details attempt=%" PRIu64 " account=%d generation=%" PRId64
+                        " timeout_ms=%lld idle_ms=%" PRId64 " tcp_notified=%d",
+                        tunnelTrace.attempt(), instanceNum, tunnelTrace.generation(),
+                        static_cast<long long>(timeout) * 1000, now - lastEventTime, onConnectedSent);
+            }
             closeSocket(2, 0);
             return true;
         } else {

@@ -19,6 +19,7 @@ public final class NetworkAddressSettings {
         if (policy == null) {
             policy = new IpVersionPolicy(preferences().getBoolean(IPV6_ENABLED, true));
             ConnectionsManager.native_setIpv6Enabled(policy.isEnabled());
+            logPolicy("startup");
         }
     }
 
@@ -35,7 +36,9 @@ public final class NetworkAddressSettings {
     public static synchronized void setIpv6Enabled(boolean enabled) {
         initialize();
         preferences().edit().putBoolean(IPV6_ENABLED, enabled).apply();
-        if (policy.request(enabled)) applyEffectivePolicy();
+        boolean changed = policy.request(enabled);
+        logPolicy("requested");
+        if (changed) applyEffectivePolicy();
     }
 
     public static synchronized void beginVoipSession() {
@@ -46,15 +49,28 @@ public final class NetworkAddressSettings {
     public static void endVoipSession() {
         AndroidUtilities.runOnUIThread(() -> {
             synchronized (NetworkAddressSettings.class) {
-                if (policy.endSession()) applyEffectivePolicy();
+                boolean changed = policy.endSession();
+                if (changed) {
+                    logPolicy("last_session_ended");
+                    applyEffectivePolicy();
+                }
             }
         });
     }
 
     private static void applyEffectivePolicy() {
         ConnectionsManager.native_setIpv6Enabled(policy.isEnabled());
+        logPolicy("applied");
         // TunnelController serializes restart and blocks the route until ready.
         TunnelManager.onIpVersionPolicyChanged();
         ConnectionsManager.onIpVersionPolicyChanged();
+    }
+
+    private static void logPolicy(String reason) {
+        if (BuildConfig.TG_TUNNEL_LOGS_ENABLED) {
+            TunnelLog.d("tunnel_trace event=ipv6_policy reason=" + reason
+                    + " requested=" + policy.isRequested() + " effective=" + policy.isEnabled()
+                    + " deferred=" + (policy.isRequested() != policy.isEnabled()));
+        }
     }
 }
