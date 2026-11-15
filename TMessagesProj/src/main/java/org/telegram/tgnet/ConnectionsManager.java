@@ -953,8 +953,8 @@ public class ConnectionsManager extends BaseController {
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needShowAlert, 3));
     }
 
-    public static void onTunnelTcpConnectStarted(int account, long lifecycleGeneration) {
-        TunnelManager.onTunnelTcpConnectStarted(account, lifecycleGeneration);
+    public static boolean onTunnelTcpConnectStarted(int account, long lifecycleGeneration) {
+        return TunnelManager.onTunnelTcpConnectStarted(account, lifecycleGeneration);
     }
 
     public static void onTunnelTcpConnectFailed(int account, long lifecycleGeneration) {

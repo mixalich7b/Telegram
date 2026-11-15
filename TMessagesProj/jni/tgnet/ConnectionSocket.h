@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include "TunnelConnectionDiagnostics.h"
+#include "TunnelConnectAttempt.h"
 
 class NativeByteBuffer;
 class ConnectionsManager;
@@ -94,7 +95,9 @@ private:
     void openTunnelConnection(std::string address, uint16_t port);
     void finishTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
     void failTunnelConnection(const std::shared_ptr<TunnelSocketState> &state);
-    void closeTunnelConnection();
+    void closeTunnelConnection(int reason = 0);
+    void reportTunnelConnectAttempt(const std::shared_ptr<TunnelSocketState> &state,
+            tgnet::TunnelConnectAttempt::Result result, const char *source);
     void cancelTunnelConnectAttempt(const std::shared_ptr<TunnelSocketState> &state);
     void configureSecretTransport(const std::string &secret, bool socksWhenEmpty);
     void adjustWriteOp();

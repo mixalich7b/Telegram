@@ -154,6 +154,23 @@ an IPv4-only profile, does not stop the runtime while another attempt is pending
 or has succeeded. A 250 ms settlement window lets a sequential alternate-address
 attempt join the same failed group. Every alternate attempt still uses the Go
 tunnel socket API; aggregation never permits a direct socket fallback.
+An unfinished dial terminated by tgnet's own timeout counts as failure rather
+than cancellation. A shared native completion guard assigns exactly one result
+to each admitted attempt and retains its original lifecycle generation;
+suspension/explicit closure remains cancellation. The Go dial can finish later
+without delivering a second result.
+
+The first failure starts an independent 20-second recovery window. If repeated
+replacement attempts keep the unsuccessful group alive until that window
+expires, the controller temporarily stops admitting new dials while existing
+ones drain under their original deadlines. Boolean JNI admission is decided
+atomically with incrementing the pending counter, before any Go dial starts.
+Rejected attempts receive a transient tunnel-only error and do not generate
+aggregate terminal callbacks. The route stays active for admitted attempts;
+success cancels recovery and reopens admission. With pending=0 and no success,
+the existing settlement/lifecycle/backoff recovery runs. Lifecycle changes
+invalidate both deadline and settlement tasks. The 20-second budget bounds
+admission, not total reconnect time, and leaves the Go connect timeout unchanged.
 `TunnelManager` selects the native runtime from the active profile protocol.
 
 Builds with `TG_TUNNEL_LOGS_ENABLED=true` (the default) emit `tunnel_trace` events at runtime activation or successful

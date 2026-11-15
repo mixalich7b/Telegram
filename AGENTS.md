@@ -147,6 +147,18 @@ AmneziaWG peer.
   while another tunnel TCP attempt is pending or has succeeded. Restart only
   after the current attempt group has no success; alternate-address attempts
   must remain on the tunnel route and must never fall back to direct sockets.
+- An unfinished tgnet tunnel TCP dial closed by timeout is a failed attempt,
+  not an ordinary cancellation. Each admitted attempt has exactly one terminal
+  result tied to its original lifecycle generation. Explicit suspension and
+  route/lifecycle closure remain cancellations; late Go results cannot complete
+  an attempt twice.
+- A continuously failing TCP attempt group has a 20-second admission window
+  from its first failure. After expiry without success, defer new starts on the
+  tunnel route while admitted attempts drain; do not close their sockets to
+  force recovery. Only restart after pending reaches zero without success.
+  TCP success reopens admission and cancels recovery. Lifecycle changes must
+  invalidate recovery timers. JNI admission returns boolean; rejected attempts
+  must not increment pending or launch a Go dial.
 - `NetworkRouteSettings` is the route-mode policy layer for proxy/tunnel mutual
   exclusion.
 - `ConnectionsManager.setProxySettings(...)` must not clear or replace the

@@ -695,6 +695,22 @@ tasks.register("verifyWireGuardStaticGuards") {
             }
         }
         def tgnetConnectionSocketText = file("jni/tgnet/ConnectionSocket.cpp").text
+        def tunnelJniText = file("jni/TgNetWrapper.cpp").text
+        if (!file("jni/tgnet/Defines.h").text.contains("virtual bool onTunnelTcpConnectStarted(")
+                || !tunnelJniText.contains('"onTunnelTcpConnectStarted", "(IJ)Z"')
+                || !tunnelJniText.contains("CallStaticBooleanMethod")
+                || !tunnelJniText.contains("env->ExceptionCheck()")
+                || !tgnetConnectionSocketText.contains("delegate == nullptr || !delegate->onTunnelTcpConnectStarted")) {
+            throw new GradleException("Tunnel attempt admission must be boolean and reject missing/failed JNI callbacks")
+        }
+        def tunnelOpenOffset = tgnetConnectionSocketText.indexOf("void ConnectionSocket::openTunnelConnection(")
+        def admissionOffset = tgnetConnectionSocketText.indexOf("!delegate->onTunnelTcpConnectStarted", tunnelOpenOffset)
+        def tunnelThreadOffset = tgnetConnectionSocketText.indexOf("std::thread(", tunnelOpenOffset)
+        if (admissionOffset < 0 || tunnelThreadOffset < admissionOffset
+                || !tgnetConnectionSocketText.contains("closeTunnelConnection(reason);")
+                || !tgnetConnectionSocketText.contains("connectAttemptCompleted.close(reason)")) {
+            throw new GradleException("Tunnel dials must be admitted before starting Go work and classify close outcomes")
+        }
         def connectionDiagnosticsText = file("jni/tgnet/TunnelConnectionDiagnostics.h").text
         if ((connectionDiagnosticsText =~ /\bLOGS_ENABLED\b|FileLog|__android_log_/).find()
                 || !connectionDiagnosticsText.contains("TG_TUNNEL_LOGS_ENABLED")) {
@@ -819,6 +835,12 @@ tasks.register("testVoipSocks5") {
                     "-I", file("jni"), file("src/test/cpp/NetworkAddressPolicyTest.cpp"), "-o", policyBinary
         }
         exec { commandLine policyBinary }
+        def attemptBinary = new File(outputDir, "tunnel-connect-attempt-test")
+        exec {
+            commandLine System.getenv("CXX") ?: "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                    "-I", file("jni"), file("src/test/cpp/TunnelConnectAttemptTest.cpp"), "-pthread", "-o", attemptBinary
+        }
+        exec { commandLine attemptBinary }
     }
 }
 

@@ -1,6 +1,8 @@
 #include "tgnet/NetworkAddressPolicy.h"
 #include <jni.h>
 #include <dlfcn.h>
+#include <cinttypes>
+#include "tg_tunnel/TunnelLog.h"
 #include "tgnet/ApiScheme.h"
 #include "tgnet/BuffersStorage.h"
 #include "tgnet/NativeByteBuffer.h"
@@ -405,13 +407,23 @@ class Delegate : public ConnectionsManagerDelegate {
         jniEnv[instanceNum]->CallStaticVoidMethod(jclass_ConnectionsManager, jclass_ConnectionsManager_onProxyError);
     }
 
-    void onTunnelTcpConnectStarted(int32_t instanceNum, int64_t lifecycleGeneration) {
-        jniEnv[instanceNum]->CallStaticVoidMethod(
+    bool onTunnelTcpConnectStarted(int32_t instanceNum, int64_t lifecycleGeneration) {
+        JNIEnv *env = jniEnv[instanceNum];
+        if (env == nullptr || jclass_ConnectionsManager_onTunnelTcpConnectStarted == nullptr) return false;
+        const jboolean admitted = env->CallStaticBooleanMethod(
                 jclass_ConnectionsManager,
                 jclass_ConnectionsManager_onTunnelTcpConnectStarted,
                 instanceNum,
                 (jlong) lifecycleGeneration
         );
+        if (env->ExceptionCheck()) {
+            // Do not print Java messages or stack traces: they may contain profile data.
+            env->ExceptionClear();
+            TG_TUNNEL_LOG_E("tunnel_trace event=tcp_admission_error account=%d generation=%" PRId64,
+                    instanceNum, lifecycleGeneration);
+            return false;
+        }
+        return admitted == JNI_TRUE;
     }
 
     void onTunnelTcpConnectFailed(int32_t instanceNum, int64_t lifecycleGeneration) {
@@ -733,7 +745,7 @@ extern "C" int registerNativeTgNetFunctions(JavaVM *vm, JNIEnv *env) {
     if (jclass_ConnectionsManager_onProxyError == 0) {
         return JNI_FALSE;
     }
-    jclass_ConnectionsManager_onTunnelTcpConnectStarted = env->GetStaticMethodID(jclass_ConnectionsManager, "onTunnelTcpConnectStarted", "(IJ)V");
+    jclass_ConnectionsManager_onTunnelTcpConnectStarted = env->GetStaticMethodID(jclass_ConnectionsManager, "onTunnelTcpConnectStarted", "(IJ)Z");
     if (jclass_ConnectionsManager_onTunnelTcpConnectStarted == 0) {
         return JNI_FALSE;
     }

@@ -218,8 +218,8 @@ public final class TunnelManager {
         return controller.isReconnecting();
     }
 
-    public static void onTunnelTcpConnectStarted(int account, long lifecycleGeneration) {
-        controller.onTunnelTcpConnectStarted(account, lifecycleGeneration);
+    public static boolean onTunnelTcpConnectStarted(int account, long lifecycleGeneration) {
+        return controller.onTunnelTcpConnectStarted(account, lifecycleGeneration);
     }
 
     public static void onTunnelTcpConnectFailed(int account, long lifecycleGeneration) {

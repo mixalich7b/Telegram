@@ -153,7 +153,7 @@ typedef struct ConnectionsManagerDelegate {
     virtual void onBytesReceived(int32_t amount, int32_t networkType, int32_t instanceNum) = 0;
     virtual void onRequestNewServerIpAndPort(int32_t second, int32_t instanceNum) = 0;
     virtual void onProxyError(int32_t instanceNum) = 0;
-    virtual void onTunnelTcpConnectStarted(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
+    virtual bool onTunnelTcpConnectStarted(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
     virtual void onTunnelTcpConnectFailed(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
     virtual void onTunnelTcpConnected(int32_t instanceNum, int64_t lifecycleGeneration) = 0;
     virtual void onTunnelTcpConnectCancelled(int32_t instanceNum, int64_t lifecycleGeneration) = 0;

@@ -843,6 +843,184 @@ public class TunnelControllerTest {
         assertFalse(lastCallForAccount(routeStateApplier, 1).blocked);
     }
 
+    @Test
+    public void timedOutOnlyGroupSchedulesRecovery() {
+        RecoveryFixture f = new RecoveryFixture();
+        assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+        f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+        f.scheduler.runNext();
+        assertEquals(1, f.runtime.stopCalls);
+        assertTrue(lastCallForAccount(f.routes, 0).blocked);
+    }
+
+    @Test
+    public void continuousFailuresEventuallyDeferNewAdmissions() {
+        RecoveryFixture f = new RecoveryFixture();
+        for (int i = 0; i < 12; ++i) {
+            assertTrue(f.controller.onTunnelTcpConnectStarted(i % 4, f.generation));
+            f.controller.onTunnelTcpConnectFailed(i % 4, f.generation, 4);
+        }
+        // Starts inside the 250ms settlement keep the same first-failure episode.
+        assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+        assertEquals(1, f.scheduler.recoveryWindows.size());
+        f.scheduler.recoveryWindows.get(0).run();
+        for (int account = 0; account < 4; ++account) {
+            assertFalse(f.controller.onTunnelTcpConnectStarted(account, f.generation));
+        }
+        assertEquals(0, f.runtime.stopCalls);
+        assertFalse(lastCallForAccount(f.routes, 0).blocked);
+        f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+        f.scheduler.runAllShortTasksUntilStop(f.runtime);
+        assertEquals(1, f.runtime.stopCalls);
+    }
+
+    @Test
+    public void drainingWaitsForLastAdmittedAttempt() {
+        RecoveryFixture f = new RecoveryFixture();
+        for (int i = 0; i < 4; ++i) assertTrue(f.controller.onTunnelTcpConnectStarted(i, f.generation));
+        f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+        f.scheduler.recoveryWindows.get(0).run();
+        f.controller.onTunnelTcpConnectCancelled(1, f.generation);
+        f.controller.onTunnelTcpConnectFailed(2, f.generation, 4);
+        assertEquals(0, f.runtime.stopCalls);
+        assertTrue(f.scheduler.runnables.isEmpty());
+        f.controller.onTunnelTcpConnectFailed(3, f.generation, 4);
+        assertEquals(0, f.runtime.stopCalls);
+        f.scheduler.runNext();
+        assertEquals(1, f.runtime.stopCalls);
+    }
+
+    @Test
+    public void successDuringDrainReopensAdmission() {
+        RecoveryFixture f = new RecoveryFixture();
+        assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+        assertTrue(f.controller.onTunnelTcpConnectStarted(1, f.generation));
+        assertTrue(f.controller.onTunnelTcpConnectStarted(3, f.generation));
+        f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+        Runnable deadline = f.scheduler.recoveryWindows.get(0);
+        deadline.run();
+        assertFalse(f.controller.onTunnelTcpConnectStarted(2, f.generation));
+        f.controller.onTunnelTcpConnected(1, f.generation);
+        assertTrue(f.controller.onTunnelTcpConnectStarted(2, f.generation));
+        deadline.run(); // Repeated/cancelled deadline must not close admission again.
+        assertTrue(f.controller.onTunnelTcpConnectStarted(3, f.generation));
+        f.controller.onTunnelTcpConnectFailed(2, f.generation, 4);
+        f.controller.onTunnelTcpConnectCancelled(3, f.generation);
+        f.controller.onTunnelTcpConnectCancelled(3, f.generation);
+        assertTrue(f.scheduler.runnables.isEmpty());
+        assertEquals(0, f.runtime.stopCalls);
+    }
+
+    @Test
+    public void ordinaryCancellationsNeverOpenRecoveryWindow() {
+        RecoveryFixture f = new RecoveryFixture();
+        assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+        f.controller.onTunnelTcpConnectCancelled(0, f.generation);
+        assertTrue(f.scheduler.recoveryWindows.isEmpty());
+        assertTrue(f.scheduler.runnables.isEmpty());
+        assertEquals(0, f.runtime.stopCalls);
+    }
+
+    @Test
+    public void staleRecoveryTimersCannotAffectNewGeneration() {
+        for (int transition = 0; transition < 3; ++transition) {
+            RecoveryFixture f = new RecoveryFixture();
+            assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+            assertTrue(f.controller.onTunnelTcpConnectStarted(1, f.generation));
+            f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+            Runnable deadline = f.scheduler.recoveryWindows.get(0);
+            if (transition == 0) {
+                f.config.enabled = false;
+                f.controller.disable(4);
+            } else if (transition == 1) {
+                f.controller.onNetworkChanged(4);
+            } else {
+                f.controller.restart(4);
+            }
+            int stopCalls = f.runtime.stopCalls;
+            deadline.run();
+            f.controller.onTunnelTcpConnectFailed(1, f.generation, 4);
+            assertFalse(f.controller.onTunnelTcpConnectStarted(2, f.generation));
+            assertEquals(stopCalls, f.runtime.stopCalls);
+            if (transition != 0) {
+                long generation = lastCallForAccount(f.routes, 0).lifecycleGeneration;
+                assertTrue(f.controller.onTunnelTcpConnectStarted(0, generation));
+            }
+        }
+    }
+
+    @Test
+    public void concurrentAdmissionsAtDeadlineStayBalanced() throws Exception {
+        RecoveryFixture f = new RecoveryFixture();
+        assertTrue(f.controller.onTunnelTcpConnectStarted(0, f.generation));
+        assertTrue(f.controller.onTunnelTcpConnectStarted(1, f.generation));
+        f.controller.onTunnelTcpConnectFailed(0, f.generation, 4);
+        Runnable deadline = f.scheduler.recoveryWindows.get(0);
+        java.util.concurrent.atomic.AtomicInteger admitted = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch go = new CountDownLatch(1);
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 8; ++i) {
+            Thread thread = new Thread(() -> {
+                try { go.await(); } catch (InterruptedException e) { throw new AssertionError(e); }
+                if (f.controller.onTunnelTcpConnectStarted(2, f.generation)) admitted.incrementAndGet();
+            });
+            threads.add(thread);
+            thread.start();
+        }
+        go.countDown();
+        deadline.run();
+        for (Thread thread : threads) thread.join(2000);
+        for (Thread thread : threads) assertFalse(thread.isAlive());
+        assertFalse(f.controller.onTunnelTcpConnectStarted(3, f.generation));
+        for (int i = 0; i < admitted.get(); ++i) f.controller.onTunnelTcpConnectCancelled(2, f.generation);
+        assertEquals(0, f.runtime.stopCalls);
+        f.controller.onTunnelTcpConnectFailed(1, f.generation, 4);
+        f.scheduler.runNext();
+        assertEquals(1, f.runtime.stopCalls);
+    }
+
+    @Test
+    public void admissionLoggerFailureDoesNotLeakPendingAttempt() {
+        FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        FakeTunnelRuntime runtime = new FakeTunnelRuntime();
+        FakeTunnelRouteStateApplier routes = new FakeTunnelRouteStateApplier();
+        FakeLifecycleTaskScheduler scheduler = new FakeLifecycleTaskScheduler();
+        boolean[] throwOnce = {true};
+        TunnelController.Logger logger = new TunnelController.Logger() {
+            @Override public void debug(String message) {
+                if (throwOnce[0] && message.startsWith("tunnel_trace event=tcp_attempt_started")) {
+                    throwOnce[0] = false;
+                    throw new IllegalStateException("diagnostic sink unavailable");
+                }
+            }
+            @Override public void error(String message) { }
+            @Override public void error(Throwable error) { }
+        };
+        TunnelController controller = new TunnelController(config, runtime, routes, logger, scheduler);
+        controller.applyTunnelSettingsForAllAccounts(1);
+        long generation = lastCallForAccount(routes, 0).lifecycleGeneration;
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> controller.onTunnelTcpConnectStarted(0, generation));
+        assertTrue(controller.onTunnelTcpConnectStarted(0, generation));
+        controller.onTunnelTcpConnectFailed(0, generation, 1);
+        assertEquals(1, scheduler.runnables.size());
+        scheduler.runNext();
+        assertEquals(1, runtime.stopCalls);
+    }
+
+    private static final class RecoveryFixture {
+        final FakeTunnelConfigProvider config = new FakeTunnelConfigProvider();
+        final FakeTunnelRuntime runtime = new FakeTunnelRuntime();
+        final FakeTunnelRouteStateApplier routes = new FakeTunnelRouteStateApplier();
+        final FakeLifecycleTaskScheduler scheduler = new FakeLifecycleTaskScheduler();
+        final TunnelController controller = newController(config, runtime, routes, scheduler);
+        final long generation;
+        RecoveryFixture() {
+            controller.applyTunnelSettingsForAllAccounts(4);
+            generation = lastCallForAccount(routes, 0).lifecycleGeneration;
+        }
+    }
+
     private static TunnelController newController(FakeTunnelConfigProvider config, FakeTunnelRuntime tunnelRuntime, FakeTunnelRouteStateApplier routeStateApplier) {
         return newController(config, tunnelRuntime, routeStateApplier, new FakeLifecycleTaskScheduler());
     }
@@ -1038,6 +1216,7 @@ public class TunnelControllerTest {
         final List<Runnable> lifecycleTasks = new ArrayList<>();
         final List<Thread> lifecycleThreads = new ArrayList<>();
         final List<Runnable> runnables = new ArrayList<>();
+        final List<Runnable> recoveryWindows = new ArrayList<>();
         final List<Runnable> canceled = new ArrayList<>();
         final List<Long> delays = new ArrayList<>();
         boolean executeImmediately = true;
@@ -1059,8 +1238,13 @@ public class TunnelControllerTest {
 
         @Override
         public void schedule(Runnable runnable, long delayMs) {
-            runnables.add(runnable);
-            delays.add(delayMs);
+            // Keep independently-fired long recovery deadlines separate from
+            // settlement/backoff assertions in the existing tests.
+            if (delayMs == 20_000L) recoveryWindows.add(runnable);
+            else {
+                runnables.add(runnable);
+                delays.add(delayMs);
+            }
         }
 
         @Override
@@ -1074,6 +1258,10 @@ public class TunnelControllerTest {
             if (!canceled.contains(runnable)) {
                 runnable.run();
             }
+        }
+
+        void runAllShortTasksUntilStop(FakeTunnelRuntime runtime) {
+            while (runtime.stopCalls == 0 && !runnables.isEmpty()) runNext();
         }
 
         void runNextLifecycleTask() {

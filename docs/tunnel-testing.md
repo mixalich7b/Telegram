@@ -206,6 +206,34 @@ Java exceptions expose their type without exception messages or stack traces
 that might contain profile data. Native tgnet's per-attempt TCP timing and
 MTProto readiness follow the same tunnel build flag and use the same tag.
 
+Timeout recovery checks also cover the native attempt's single terminal result:
+an unfinished dial closed with tgnet timeout is `tcp_dial_failed` with
+`source=tgnet_timeout`; a Go dial error uses `source=go_connect_failed`, and an
+unfinished socket setup/I/O error uses `source=socket_error`. Explicit closure
+or suspension remains cancelled. A timeout after a connected result does not
+report the initial attempt again. A late Go timeout can still appear as a Go
+error after tgnet logically ended the dial; it must not duplicate the aggregate
+callback. No shorter Go timeout or direct fallback is introduced.
+
+`tcp_recovery_window` records the first failure's 20-second admission budget.
+Ordinary failed groups can recover earlier through the existing 250 ms
+settlement. New retries can cancel settlement, but cannot extend the recovery
+window. `tcp_recovery_draining` marks expiry without success: new attempts are
+deferred with a transient tunnel-only error, while admitted attempts keep their
+existing deadlines. `tcp_attempt_deferred` is logged once per episode;
+`tcp_recovery_drained` and `tcp_recovery_cleared` include the total deferred count.
+The runtime is not stopped until pending=0 and no attempt in the group has
+succeeded. A success during draining immediately reopens admission and cancels
+recovery. `tcp_recovery_cleared` records `tcp_success` or `lifecycle_reset`.
+The window is not a maximum reconnect duration: draining, settlement, backoff,
+runtime startup and Android scheduling may add time.
+
+Host C++ tests exercise timeout/cancellation classification, original generation
+identity, duplicate/late results, and competing terminal completions. JVM tests
+exercise overlapping four-account groups, success during draining, ordinary
+cancellation, stale recovery tasks after disable/refresh/restart, concurrent
+admission at expiry and admission exceptions without leaked pending counts.
+
 Connection phase diagnostics extend this trace:
 
 - `ipv6_policy` records `requested`, `effective`, `deferred` and a fixed reason

@@ -2,6 +2,7 @@ package org.telegram.messenger;
 
 final class TunnelController {
     private static final long TCP_CONNECT_FAILURE_SETTLE_DELAY_MS = 250L;
+    private static final long TCP_CONNECT_RECOVERY_WINDOW_MS = 20_000L;
     private static final long[] RECONNECT_BACKOFF_DELAYS_MS = new long[]{
             1000L,
             2000L,
@@ -109,6 +110,10 @@ final class TunnelController {
     private boolean tcpConnectSuccessSeen;
     private Runnable pendingTcpConnectFailureEvaluation;
     private long tcpConnectFailureEvaluationScheduleGeneration;
+    private Runnable pendingTcpRecoveryDeadline;
+    private long tcpRecoveryScheduleGeneration;
+    private boolean tcpRecoveryDraining;
+    private long tcpDeferredAttempts;
 
     TunnelController(
             TunnelConfigProvider configProvider,
@@ -357,33 +362,44 @@ final class TunnelController {
         lifecycleTaskScheduler.execute(tracedLifecycleTask("disable", currentGeneration(), this::stopRuntimeSafely));
     }
 
-    void onTunnelTcpConnectStarted(int sourceAccount, long callbackGeneration) {
+    boolean onTunnelTcpConnectStarted(int sourceAccount, long callbackGeneration) {
         Runnable tcpFailureEvaluationToCancel = null;
         int pendingAttempts;
         synchronized (stateLock) {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
-                return;
+                return false;
+            }
+            if (tcpRecoveryDraining) {
+                if (++tcpDeferredAttempts == 1) {
+                    logger.debug("tunnel_trace event=tcp_attempt_deferred generation=" + callbackGeneration
+                            + " pending=" + pendingTcpConnectAttempts);
+                }
+                return false;
             }
             if (tcpAttemptLifecycleGeneration != callbackGeneration) {
                 tcpFailureEvaluationToCancel = resetTcpConnectAttemptsLocked();
                 tcpAttemptLifecycleGeneration = callbackGeneration;
             } else if (pendingTcpConnectAttempts == 0) {
-                boolean continuingFailedBatch = pendingTcpConnectFailureEvaluation != null;
+                boolean continuingFailedBatch = pendingTcpConnectFailureEvaluation != null
+                        || pendingTcpRecoveryDeadline != null;
                 tcpFailureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
                 if (!continuingFailedBatch) {
                     tcpConnectFailureSeen = false;
                 }
                 tcpConnectSuccessSeen = false;
             }
+            pendingAttempts = pendingTcpConnectAttempts + 1;
+            cancelScheduledTask(tcpFailureEvaluationToCancel);
+            logger.debug("tunnel_trace event=tcp_attempt_started protocol=" + configProvider.protocolLabel()
+                    + " account=" + sourceAccount
+                    + " generation=" + callbackGeneration
+                    + " pending=" + pendingAttempts
+                    + " settle_cancelled=" + (tcpFailureEvaluationToCancel != null));
+            // Commit admission last: a Java exception must not leave JNI's
+            // rejected attempt counted as pending. No throwing work follows.
             pendingTcpConnectAttempts++;
-            pendingAttempts = pendingTcpConnectAttempts;
+            return true;
         }
-        cancelScheduledTask(tcpFailureEvaluationToCancel);
-        logger.debug("tunnel_trace event=tcp_attempt_started protocol=" + configProvider.protocolLabel()
-                + " account=" + sourceAccount
-                + " generation=" + callbackGeneration
-                + " pending=" + pendingAttempts
-                + " settle_cancelled=" + (tcpFailureEvaluationToCancel != null));
     }
 
     void onTunnelTcpConnectFailed(int sourceAccount, long callbackGeneration, int accountCount) {
@@ -391,6 +407,7 @@ final class TunnelController {
             return;
         }
         Runnable failureEvaluation = null;
+        Runnable recoveryDeadline;
         int pendingAttempts;
         boolean successSeen;
         synchronized (stateLock) {
@@ -398,11 +415,10 @@ final class TunnelController {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
             }
-            ensureTcpAttemptGenerationLocked(callbackGeneration);
-            if (pendingTcpConnectAttempts > 0) {
-                pendingTcpConnectAttempts--;
-            }
+            if (tcpAttemptLifecycleGeneration != callbackGeneration || pendingTcpConnectAttempts <= 0) return;
+            pendingTcpConnectAttempts--;
             tcpConnectFailureSeen = true;
+            recoveryDeadline = tcpConnectSuccessSeen ? null : prepareTcpRecoveryDeadlineLocked(callbackGeneration);
             if (pendingTcpConnectAttempts == 0 && !tcpConnectSuccessSeen) {
                 failureEvaluation = prepareTcpConnectFailureEvaluationLocked(
                         sourceAccount,
@@ -419,6 +435,9 @@ final class TunnelController {
                 + " pending=" + pendingAttempts
                 + " success_seen=" + successSeen
                 + " settle_scheduled=" + (failureEvaluation != null));
+        if (recoveryDeadline != null) {
+            lifecycleTaskScheduler.schedule(recoveryDeadline, TCP_CONNECT_RECOVERY_WINDOW_MS);
+        }
         if (failureEvaluation != null) {
             lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
         }
@@ -432,13 +451,12 @@ final class TunnelController {
             if (!isCurrentTunnelTcpCallbackLocked(callbackGeneration)) {
                 return;
             }
-            ensureTcpAttemptGenerationLocked(callbackGeneration);
-            if (pendingTcpConnectAttempts > 0) {
-                pendingTcpConnectAttempts--;
-            }
+            if (tcpAttemptLifecycleGeneration != callbackGeneration || pendingTcpConnectAttempts <= 0) return;
+            pendingTcpConnectAttempts--;
             tcpConnectSuccessSeen = true;
             tcpConnectFailureSeen = false;
             tcpFailureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
+            clearTcpRecoveryLocked("tcp_success");
             nextReconnectDelayIndex = 0;
             failureReason = null;
             reconnecting = false;
@@ -760,6 +778,10 @@ final class TunnelController {
                 return;
             }
             runtimeState = RuntimeState.RECONNECT_WAIT;
+            if (tcpRecoveryDraining) {
+                logger.debug("tunnel_trace event=tcp_recovery_drained generation=" + callbackGeneration
+                        + " pending=0 deferred=" + tcpDeferredAttempts);
+            }
             failureReason = configProvider.protocolLabel() + " TCP connections failed";
             reconnecting = false;
             logger.error("tunnel_trace event=tcp_attempt_group_failed protocol=" + configProvider.protocolLabel()
@@ -822,21 +844,59 @@ final class TunnelController {
                 && configProvider.isEnabled();
     }
 
-    private void ensureTcpAttemptGenerationLocked(long callbackGeneration) {
-        if (tcpAttemptLifecycleGeneration == callbackGeneration) {
-            return;
-        }
-        resetTcpConnectAttemptsLocked();
-        tcpAttemptLifecycleGeneration = callbackGeneration;
-    }
-
     private Runnable resetTcpConnectAttemptsLocked() {
         Runnable failureEvaluationToCancel = clearPendingTcpConnectFailureEvaluationLocked();
+        clearTcpRecoveryLocked("lifecycle_reset");
         tcpAttemptLifecycleGeneration = 0;
         pendingTcpConnectAttempts = 0;
         tcpConnectFailureSeen = false;
         tcpConnectSuccessSeen = false;
         return failureEvaluationToCancel;
+    }
+
+    private Runnable prepareTcpRecoveryDeadlineLocked(long generation) {
+        if (pendingTcpRecoveryDeadline != null || tcpRecoveryDraining) return null;
+        long schedule = ++tcpRecoveryScheduleGeneration;
+        Runnable deadline = () -> expireTcpRecoveryWindow(generation, schedule);
+        pendingTcpRecoveryDeadline = deadline;
+        logger.debug("tunnel_trace event=tcp_recovery_window generation=" + generation
+                + " window_ms=" + TCP_CONNECT_RECOVERY_WINDOW_MS);
+        return deadline;
+    }
+
+    private void expireTcpRecoveryWindow(long generation, long schedule) {
+        Runnable failureEvaluation = null;
+        synchronized (stateLock) {
+            if (!isCurrentTunnelTcpCallbackLocked(generation)
+                    || tcpAttemptLifecycleGeneration != generation
+                    || tcpRecoveryScheduleGeneration != schedule
+                    || pendingTcpRecoveryDeadline == null
+                    || !tcpConnectFailureSeen || tcpConnectSuccessSeen) return;
+            pendingTcpRecoveryDeadline = null;
+            tcpRecoveryDraining = true;
+            logger.debug("tunnel_trace event=tcp_recovery_draining generation=" + generation
+                    + " pending=" + pendingTcpConnectAttempts);
+            if (pendingTcpConnectAttempts == 0) {
+                failureEvaluation = prepareTcpConnectFailureEvaluationLocked(0, generation, maxKnownAccountCount);
+            }
+        }
+        if (failureEvaluation != null) {
+            lifecycleTaskScheduler.schedule(failureEvaluation, TCP_CONNECT_FAILURE_SETTLE_DELAY_MS);
+        }
+    }
+
+    private void clearTcpRecoveryLocked(String reason) {
+        ++tcpRecoveryScheduleGeneration;
+        Runnable deadline = pendingTcpRecoveryDeadline;
+        if (deadline != null || tcpRecoveryDraining) {
+            logger.debug("tunnel_trace event=tcp_recovery_cleared generation=" + tcpAttemptLifecycleGeneration
+                    + " reason=" + reason + " deferred=" + tcpDeferredAttempts);
+        }
+        pendingTcpRecoveryDeadline = null;
+        tcpRecoveryDraining = false;
+        tcpDeferredAttempts = 0;
+        // Removes a queued runnable only; never executes lifecycle/native work.
+        if (deadline != null) lifecycleTaskScheduler.cancel(deadline);
     }
 
     private Runnable clearPendingTcpConnectFailureEvaluationLocked() {
